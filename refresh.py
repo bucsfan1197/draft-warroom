@@ -61,7 +61,8 @@ def pull_sleeper_players():
             if p.get("position") not in ("QB","RB","WR","TE","K"): continue
             nm=p.get("full_name") or ""
             if not nm: continue
-            out[norm(nm)]={"age":p.get("age"),"team":p.get("team"),"inj":p.get("injury_status"),"depth":p.get("depth_chart_order")}
+            out[norm(nm)]={"name":nm,"pos":p.get("position"),"age":p.get("age"),"team":p.get("team"),
+                           "inj":p.get("injury_status"),"depth":p.get("depth_chart_order")}
         log(f"  Sleeper players: {len(out)}")
     except Exception as ex: log("  Sleeper players fail:",ex)
     return out
@@ -247,6 +248,41 @@ def build_data():
             if sa.get("dyn"): p["adpSdyn"]=sa["dyn"]
             if sa.get("dynSf"): p["adpSdynSf"]=sa["dynSf"]
         players.append(p); pid+=1
+
+    # ---- expand the pool beyond FFC's ~230 so deep leagues don't run out of players ----
+    # 12 teams x 18-man best ball = 216 picks; dynasty rosters go deeper still.
+    POOL_TARGET=420
+    posCount={}
+    for p in players: posCount[p["pos"]]=posCount.get(p["pos"],0)+1
+    cand=[]
+    for k,info in slp.items():
+        if k in ffc: continue
+        pos=info.get("pos")
+        if pos not in ("QB","RB","WR","TE"): continue
+        c=cons(pos,k)
+        if not c or not c.get("s"): continue
+        cand.append((c["s"],k,info,pos,c))
+    cand.sort(key=lambda x:-x[0])
+    for seasonPts,k,info,pos,c in cand:
+        if len(players)>=POOL_TARGET: break
+        team=std(info.get("team") or "FA")
+        posCount[pos]=posCount.get(pos,0)+1
+        sa=sadp.get(k)
+        adp=sa["ppr"] if sa else round(300+len(players)*0.2,1)   # depth guys slot after the drafted pool
+        p={"id":pid,"name":info["name"],"pos":pos,"team":team,"bye":BYE.get(team,0),
+           "adp":adp,"adpSf":(sa.get("sf") if sa else adp),"override":None,"age":info.get("age") or 25,
+           "stats":build_stats(pos,seasonPts,TEMPL),"cons":{"s":c["s"],"e":c["e"],"k":c["k"]},"wk":c["wk"]}
+        fa=dist_for(pos,posCount[pos],FACT,BANDW)
+        if fa: p["dist"]={"f":fa["f"],"c":fa["c"],"bust":fa["bust"],"boom":fa["boom"]}
+        if info.get("inj"): p["inj"]=info["inj"]
+        if info.get("depth") is not None: p["depth"]=info["depth"]
+        if sa:
+            p["adpS"]=sa["ppr"]
+            if sa.get("sf"): p["adpSsf"]=sa["sf"]
+            if sa.get("dyn"): p["adpSdyn"]=sa["dyn"]
+            if sa.get("dynSf"): p["adpSdynSf"]=sa["dynSf"]
+        players.append(p); pid+=1
+    log(f"  pool expanded to {len(players)} players")
 
     # superflex QB-shift insight: mean overall ADP of top-12 QBs, 1QB (adp) vs SF (adpSf)
     qbs=sorted([p for p in players if p["pos"]=="QB"], key=lambda x:x["adp"])[:12]
