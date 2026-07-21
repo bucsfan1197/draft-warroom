@@ -477,6 +477,16 @@
               </div>
               <div id="syncStatus" class="meta" style="margin-top:6px">Not connected — you're entering picks manually.</div>
             </div>
+            <div class="field" style="grid-column:1/-1"><label>🧠 Learn your league — model how your actual leaguemates draft</label>
+              <div class="syncrow">
+                <button class="draftbtn alt" id="leagueLoadBtn">Find my leagues</button>
+                <select id="leagueSelect" class="hide" style="flex:1;min-width:200px"></select>
+                <button class="draftbtn hide" id="leagueLearnBtn">Learn</button>
+                <button class="ghost hide" id="leagueClearBtn">Clear</button>
+              </div>
+              <div id="leagueStatus" class="meta" style="margin-top:6px">Uses your past drafts (via Sleeper) to predict what each manager actually does.</div>
+              <div id="leagueTend" class="hide" style="margin-top:8px"></div>
+            </div>
             <div class="field"><label>Auction draft</label>
               <div class="seg" id="s_auction"><button data-v="0" class="on">Off</button><button data-v="1">On</button></div>
             </div>
@@ -1162,6 +1172,133 @@ function sleeperDisconnect(){
   const b=$("#syncBtn");if(b)b.textContent="Connect";
   syncStatus("Disconnected — you're entering picks manually.");
 }
+/* ===================== LEAGUE-SPECIFIC OPPONENT MODELING =====================
+   Learns how YOUR actual leaguemates draft from your Sleeper league history,
+   then makes the mock CPU and the simulator behave like those people instead of
+   a generic noisy-ADP bot. No commercial tool can do this — they don't have your league. */
+const SJ=u=>fetch(u).then(r=>r.json());
+function leagueStatus(t,c){const el=$("#leagueStatus");if(el){el.innerHTML=t;el.style.color=c||"";}}
+const RB_BUCKET=r=>r<=3?"early":r<=8?"mid":"late";
+
+async function loadMyLeagues(){
+  const user=($("#syncUser").value||"").trim();
+  if(!user){leagueStatus("Enter your Sleeper username above first.","var(--crit)");return;}
+  leagueStatus("Looking up your leagues…");
+  try{
+    const u=await SJ(`https://api.sleeper.app/v1/user/${encodeURIComponent(user)}`);
+    if(!u||!u.user_id){leagueStatus("Username not found.","var(--crit)");return;}
+    let all=[];
+    for(const yr of [String(new Date().getFullYear()),String(new Date().getFullYear()-1)]){
+      try{const l=await SJ(`https://api.sleeper.app/v1/user/${u.user_id}/leagues/nfl/${yr}`);
+        (l||[]).forEach(x=>all.push({id:x.league_id,name:`${x.name} (${yr}, ${x.total_rosters}-team)`}));}catch(e){}
+    }
+    if(!all.length){leagueStatus("No leagues found on that account.","var(--warn)");return;}
+    const sel=$("#leagueSelect");
+    sel.innerHTML=all.map(l=>`<option value="${l.id}">${l.name}</option>`).join("");
+    sel.classList.remove("hide"); $("#leagueLearnBtn").classList.remove("hide");
+    leagueStatus(`Found ${all.length} leagues — pick one and hit Learn.`);
+  }catch(e){leagueStatus("Couldn't reach Sleeper.","var(--crit)");}
+}
+
+async function learnLeague(leagueId){
+  leagueStatus("Reading your league's draft history…");
+  const tally={}, sources=[]; let lid=leagueId, hops=0, names={};
+  try{
+    while(lid&&hops<4){
+      const lg=await SJ(`https://api.sleeper.app/v1/league/${lid}`);
+      if(!lg||!lg.league_id)break;
+      try{ (await SJ(`https://api.sleeper.app/v1/league/${lid}/users`)||[])
+             .forEach(u=>{names[u.user_id]=u.display_name||u.username||("Manager "+u.user_id.slice(-4));}); }catch(e){}
+      const drafts=await SJ(`https://api.sleeper.app/v1/league/${lid}/drafts`)||[];
+      for(const d of drafts){
+        if(d.status!=="complete")continue;
+        const slotToUser={};Object.entries(d.draft_order||{}).forEach(([uid,s])=>slotToUser[s]=uid);
+        const picks=await SJ(`https://api.sleeper.app/v1/draft/${d.draft_id}/picks`)||[];
+        let used=0;
+        picks.forEach(p=>{
+          const uid=p.picked_by||slotToUser[p.draft_slot];
+          const pos=(p.metadata||{}).position;
+          if(!uid||!pos)return;
+          const t=tally[uid]||(tally[uid]={early:{},mid:{},late:{},n:0});
+          const b=RB_BUCKET(p.round||1);
+          t[b][pos]=(t[b][pos]||0)+1;t.n++;used++;
+        });
+        if(used)sources.push(`${lg.name} ${d.season}`);
+      }
+      lid=lg.previous_league_id;hops++;
+    }
+  }catch(e){leagueStatus("Error reading history: "+e,"var(--crit)");return;}
+  const mgrs=Object.keys(tally);
+  if(!mgrs.length){leagueStatus("No completed drafts found for that league.","var(--warn)");return;}
+  // league-average positional share per bucket, then each manager's bias vs it
+  const bias={};
+  ["early","mid","late"].forEach(b=>{
+    const tot={},grand={n:0};
+    mgrs.forEach(u=>{Object.entries(tally[u][b]).forEach(([pos,c])=>{tot[pos]=(tot[pos]||0)+c;grand.n+=c;});});
+    mgrs.forEach(u=>{
+      const mine=tally[u][b], mineN=Object.values(mine).reduce((a,c)=>a+c,0)||1;
+      bias[u]=bias[u]||{};bias[u][b]={};
+      ["QB","RB","WR","TE","K","DST"].forEach(pos=>{
+        const lgShare=(tot[pos]||0)/(grand.n||1), myShare=(mine[pos]||0)/mineN;
+        // drafts this position more than the league -> he takes it EARLIER -> lower effective ADP
+        let r=(myShare>0&&lgShare>0)?Math.sqrt(lgShare/myShare):1;
+        bias[u][b][pos]=Math.max(0.7,Math.min(1.4,r));
+      });
+    });
+  });
+  state.league={bias,names,tally,sources:[...new Set(sources)],slotToUser:null,leagueId};
+  await mapLeagueSlots();
+  renderLeagueTendencies();
+  save();
+  leagueStatus(`🧠 Learned <b>${mgrs.length} managers</b> from ${state.league.sources.length} draft(s): ${state.league.sources.join(", ")}. The mock CPU and simulator now draft like them.`,"var(--good)");
+  $("#leagueClearBtn").classList.remove("hide");
+}
+
+// map current draft slots -> the manager who holds them (needs the live draft's order)
+async function mapLeagueSlots(){
+  if(!state.league)return;
+  try{
+    if(SYNC.id){
+      const d=await SJ(`https://api.sleeper.app/v1/draft/${SYNC.id}`);
+      const m={};Object.entries(d.draft_order||{}).forEach(([uid,s])=>m[s]=uid);
+      if(Object.keys(m).length){state.league.slotToUser=m;return;}
+    }
+    const drafts=await SJ(`https://api.sleeper.app/v1/league/${state.league.leagueId}/drafts`)||[];
+    const d=drafts[0];
+    if(d&&d.draft_order&&Object.keys(d.draft_order).length){
+      const m={};Object.entries(d.draft_order).forEach(([uid,s])=>m[s]=uid);state.league.slotToUser=m;return;}
+    // Pre-draft leagues have no order yet — learn each manager's slot from picks as they happen.
+    if(SYNC.id){
+      const picks=await SJ(`https://api.sleeper.app/v1/draft/${SYNC.id}/picks`)||[];
+      const m={};picks.forEach(p=>{if(p.picked_by&&p.draft_slot)m[p.draft_slot]=p.picked_by;});
+      if(Object.keys(m).length)state.league.slotToUser=m;
+    }
+  }catch(e){}
+}
+function renderLeagueTendencies(){
+  const box=$("#leagueTend");if(!box||!state.league)return;
+  const {bias,names,slotToUser,tally}=state.league;
+  const rows=Object.keys(bias).map(uid=>{
+    const e=bias[uid].early, lean=Object.entries(e).filter(([p])=>["QB","RB","WR","TE"].includes(p)).sort((a,b)=>a[1]-b[1]);
+    const loves=lean[0], avoids=lean[lean.length-1];
+    const slot=slotToUser?Object.keys(slotToUser).find(s=>slotToUser[s]===uid):null;
+    return {uid,slot,name:names[uid]||("Manager "+uid.slice(-4)),picks:tally[uid].n,
+      loves:loves&&loves[1]<0.95?loves[0]:null, avoids:avoids&&avoids[1]>1.05?avoids[0]:null};
+  }).sort((a,b)=>(+a.slot||99)-(+b.slot||99));
+  box.classList.remove("hide");
+  box.innerHTML=rows.map(r=>`<div class="kv"><span>${r.slot?`<b class="num">Slot ${r.slot}</b> `:""}${r.name} <span class="meta">${r.picks} picks</span></span>
+    <span class="meta">${r.loves?`loves <span class="pos ${r.loves}">${r.loves}</span> early`:"balanced"}${r.avoids?` · fades ${r.avoids}`:""}</span></div>`).join("")
+    +`<div class="note" style="margin-top:8px">Opponents in mock drafts and the championship simulator now follow these tendencies${state.league.slotToUser?"":" (slots unknown — league-average tendencies applied)"}.</div>`;
+}
+// positional bias multiplier for a given opponent + round
+function oppBias(teamIdx,round){
+  const L=state.league;
+  if(!L||!L.bias||!L.slotToUser)return null;
+  const uid=L.slotToUser[String(teamIdx+1)];
+  if(!uid||!L.bias[uid])return null;
+  return L.bias[uid][RB_BUCKET(round||1)]||null;
+}
+
 async function syncTick(first,slotMsg){
   if(!SYNC.id)return;
   try{
@@ -1177,6 +1314,10 @@ async function syncTick(first,slotMsg){
     const sig=next.map(x=>x.playerId+":"+x.teamIdx).join(",");
     if(sig!==SYNC.sig||first){
       SYNC.sig=sig;state.picks=next;SIMCACHE={key:null};renderAll();
+      // keep learning which manager holds which slot as the real draft unfolds
+      if(state.league&&state.league.bias&&(!state.league.slotToUser||Object.keys(state.league.slotToUser).length<state.settings.teams)){
+        mapLeagueSlots().then(()=>{try{renderLeagueTendencies();}catch(e){}});
+      }
     }
     SYNC.applied=next.length;
     const mine=teamForPick(currentPick())===myIdx();
@@ -1274,7 +1415,7 @@ function runSim(nIters){
       let id=-1;
       if(pick===startPick)id=forceId;
       else if(tm===myI){id=bestMyPick(taken,tc[myI]);}
-      else{let best=1e18,cnt=0;for(let i=ah;i<adpArr.length&&cnt<16;i++){const pr=adpArr[i];if(taken.has(pr.id))continue;if(tc[tm][pr.pos]>=oppCap[pr.pos])continue;cnt++;const nz=pr.adp*(1+gauss()*0.11)+gauss()*2;if(nz<best){best=nz;id=pr.id;}}}
+      else{const ob=oppBias(tm,Math.floor(pick/T)+1);let best=1e18,cnt=0;for(let i=ah;i<adpArr.length&&cnt<16;i++){const pr=adpArr[i];if(taken.has(pr.id))continue;if(tc[tm][pr.pos]>=oppCap[pr.pos])continue;cnt++;const nz=pr.adp*(1+gauss()*0.11)*(ob?(ob[pr.pos]||1):1)+gauss()*2;if(nz<best){best=nz;id=pr.id;}}}
       if(id<0)continue;
       taken.add(id);const pos=state.players[id].pos;tc[tm][pos]++;tc[tm].skill++;ros[tm].push(id);
       while(ah<adpArr.length&&taken.has(adpArr[ah].id))ah++;
@@ -1964,6 +2105,7 @@ function applyFormatUI(){
 /* ---- Mock draft: CPU opponents auto-pick by realistic (noisy) ADP ---- */
 function cpuPickFor(t){
   const R=state.settings.roster, taken=draftedIds();
+  const cpuBias=oppBias(t,Math.floor(state.picks.length/Math.max(1,state.settings.teams))+1);
   const cnt={QB:0,RB:0,WR:0,TE:0,K:0,DST:0}; teamRoster(t).forEach(p=>cnt[p.pos]++);
   const skillCnt=cnt.QB+cnt.RB+cnt.WR+cnt.TE;
   const rosterSize=Object.values(R).reduce((a,b)=>a+b,0);
@@ -1976,7 +2118,7 @@ function cpuPickFor(t){
     const kd=(p.pos==="K"||p.pos==="DST");
     if(onlyKD?!kd:kd)continue;
     if((cnt[p.pos]||0)>=(posCap[p.pos]||99))continue;
-    const nz=adpOf(p)*(1+gauss()*0.11)+gauss()*2;
+    const nz=adpOf(p)*(1+gauss()*0.11)*(cpuBias?(cpuBias[p.pos]||1):1)+gauss()*2;
     if(nz<bestScore){bestScore=nz;best=p;}
   }
   if(!best){for(const p of state.players){if(!taken.has(p.id)){best=p;break;}}}
@@ -2116,6 +2258,13 @@ function wireSetup(){
   }catch(e){}
   $("#syncBtn").onclick=()=>{ SYNC.id?sleeperDisconnect():sleeperConnect(); };
   $("#syncDraftId").onkeydown=e=>{ if(e.key==="Enter"&&!SYNC.id)sleeperConnect(); };
+  // league opponent modeling
+  $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
+  $("#leagueLearnBtn").onclick=()=>learnLeague($("#leagueSelect").value);
+  $("#leagueClearBtn").onclick=()=>{ state.league=null; $("#leagueTend").classList.add("hide");
+    $("#leagueClearBtn").classList.add("hide"); leagueStatus("Cleared — opponents are generic again."); save(); };
+  if(state.league&&state.league.bias){ renderLeagueTendencies(); $("#leagueClearBtn").classList.remove("hide");
+    leagueStatus(`🧠 Modeling <b>${Object.keys(state.league.bias).length} managers</b> from ${(state.league.sources||[]).join(", ")||"your league history"}.`,"var(--good)"); }
   $("#adpPasteApply").onclick=()=>{
     const parsed=parseCustomADP($("#adpPasteText").value);
     let n=0;state.players.forEach(p=>{const pn=nrm(p.name);const hit=parsed.find(x=>x.k===pn||x.k.startsWith(pn+" ")||pn.startsWith(x.k+" "));if(hit){p.adpCustom=hit.adp;n++;}});
