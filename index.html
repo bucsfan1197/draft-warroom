@@ -923,8 +923,13 @@ function rosterTargets(){
   const floorOf=p=>Math.max(req[p]||0,(p==="QB"&&sf)?2:(req[p]?1:0));
   const trim=["WR","RB","TE","QB"]; let sum=Object.values(t).reduce((a,b)=>a+b,0), i=0;
   while(sum>totalSlots&&i<80){ const p=trim[i%trim.length]; if(t[p]>floorOf(p)){t[p]--;sum--;} i++; }
-  const grow=["WR","RB"]; i=0;
-  while(sum<totalSlots&&i<80){ const p=grow[i%grow.length]; if(t[p]<mx[p]){t[p]++;sum++;} i++; }
+  // Deep rosters (dynasty startups, 25-30 spots) legitimately carry more bench bodies than a
+  // 15-man target — grow RB/WR (and TE) capacity to absorb the extra slots instead of leaving
+  // them unaccounted for, which would force junk picks like a 2nd kicker.
+  const grow=["WR","RB","WR","RB","TE"]; i=0;
+  while(sum<totalSlots&&i<300){ const p=grow[i%grow.length];
+    if(t[p]>=mx[p]) mx[p]++;
+    t[p]++; sum++; i++; }
   return {t,mx,req,sf,bb};
 }
 function recommendations(){
