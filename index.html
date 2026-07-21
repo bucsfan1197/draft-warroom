@@ -1,0 +1,1913 @@
+<title>Draft War Room — Fantasy Football Draft Optimizer</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --panel-2:#f0f2f5; --ink:#1a1d24; --ink-2:#5a6472;
+    --line:#e2e6ec; --line-2:#d3d9e2;
+    --accent:#0e9f6e; --accent-ink:#ffffff; --accent-soft:#dff5ec;
+    --good:#0e9f6e; --warn:#c77700; --crit:#d64545; --info:#2f6fd6;
+    --qb:#d64545; --rb:#0e9f6e; --wr:#2f6fd6; --te:#e07b12; --k:#8a56c2; --dst:#0c8ea0; --flex:#6b7280;
+    --shadow:0 1px 2px rgba(20,25,35,.06),0 8px 24px rgba(20,25,35,.06);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1116; --panel:#161b23; --panel-2:#1c232d; --ink:#e8ecf2; --ink-2:#94a0b0;
+      --line:#252d38; --line-2:#323c49;
+      --accent:#28c98a; --accent-ink:#04150e; --accent-soft:#123026;
+      --good:#28c98a; --warn:#e6a53d; --crit:#f0716b; --info:#5b9bf0;
+      --qb:#f0716b; --rb:#28c98a; --wr:#5b9bf0; --te:#f0a353; --k:#b085e0; --dst:#3fc0d4; --flex:#8b96a5;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f5f7; --panel:#ffffff; --panel-2:#f0f2f5; --ink:#1a1d24; --ink-2:#5a6472;
+    --line:#e2e6ec; --line-2:#d3d9e2;
+    --accent:#0e9f6e; --accent-ink:#ffffff; --accent-soft:#dff5ec;
+    --good:#0e9f6e; --warn:#c77700; --crit:#d64545; --info:#2f6fd6;
+    --qb:#d64545; --rb:#0e9f6e; --wr:#2f6fd6; --te:#e07b12; --k:#8a56c2; --dst:#0c8ea0; --flex:#6b7280;
+    --shadow:0 1px 2px rgba(20,25,35,.06),0 8px 24px rgba(20,25,35,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1116; --panel:#161b23; --panel-2:#1c232d; --ink:#e8ecf2; --ink-2:#94a0b0;
+    --line:#252d38; --line-2:#323c49;
+    --accent:#28c98a; --accent-ink:#04150e; --accent-soft:#123026;
+    --good:#28c98a; --warn:#e6a53d; --crit:#f0716b; --info:#5b9bf0;
+    --qb:#f0716b; --rb:#28c98a; --wr:#5b9bf0; --te:#f0a353; --k:#b085e0; --dst:#3fc0d4; --flex:#8b96a5;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:1400px;margin:0 auto;padding:0 18px 60px}
+
+  /* Header */
+  header.top{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .topin{max-width:1400px;margin:0 auto;padding:12px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--info)));display:grid;place-items:center;color:var(--accent-ink);font-weight:800;font-size:17px;box-shadow:var(--shadow)}
+  .brand b{font-size:16px;letter-spacing:-.02em}
+  .brand span{display:block;font-size:11px;color:var(--ink-2);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+  .tabs{display:flex;gap:4px;margin-left:6px;flex-wrap:wrap}
+  .tab{border:1px solid transparent;background:transparent;color:var(--ink-2);padding:7px 13px;border-radius:8px;font-weight:600;font-size:13px}
+  .tab:hover{color:var(--ink);background:var(--panel-2)}
+  .tab.on{background:var(--panel);color:var(--ink);border-color:var(--line-2);box-shadow:var(--shadow)}
+  .tab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:6px;vertical-align:middle}
+  .spacer{flex:1}
+  .ghost{border:1px solid var(--line-2);background:var(--panel);color:var(--ink);padding:7px 11px;border-radius:8px;font-weight:600;font-size:12.5px}
+  .ghost:hover{border-color:var(--accent)}
+  .ghost.mockon{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+
+  /* Layout */
+  .grid-draft{display:grid;grid-template-columns:340px 1fr 300px;gap:16px;align-items:start;margin-top:18px}
+  @media(max-width:1150px){.grid-draft{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+  .panel .hd{padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .panel .hd h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)}
+  .panel .bd{padding:14px 15px}
+  .sticky-col{position:sticky;top:74px}
+
+  .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);font-weight:700}
+
+  /* pills */
+  .pos{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:2px 6px;border-radius:6px;font-size:11px;font-weight:800;letter-spacing:.03em;color:#fff}
+  .pos.QB{background:var(--qb)}.pos.RB{background:var(--rb)}.pos.WR{background:var(--wr)}.pos.TE{background:var(--te)}.pos.K{background:var(--k)}.pos.DST{background:var(--dst)}.pos.FLEX{background:var(--flex)}
+  .pos.SUPERFLEX{background:linear-gradient(120deg,var(--qb),var(--wr))}
+  .rec.SUPERFLEX:before{background:linear-gradient(180deg,var(--qb),var(--wr))}
+  .btgrid{width:100%;border-collapse:separate;border-spacing:3px}
+  .btgrid th{background:transparent;position:static;padding:4px 6px;text-align:center}
+  .btgrid td{border:none;padding:0;text-align:center}
+  .btcell{border-radius:7px;padding:7px 4px;font-weight:700;font-family:var(--mono);font-size:12px;line-height:1.2}
+  .btcell small{display:block;font-weight:500;font-size:9.5px;opacity:.8}
+  .btcell.empty{background:var(--panel-2);color:var(--ink-2)}
+  .rndlab{font-weight:700;color:var(--ink-2);font-family:var(--mono);font-size:12px;text-align:right;padding-right:6px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid var(--line-2);color:var(--ink-2)}
+  .chip.good{color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,transparent);background:color-mix(in srgb,var(--good) 12%,transparent)}
+  .chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+  .chip.crit{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 40%,transparent);background:color-mix(in srgb,var(--crit) 12%,transparent)}
+  .chip.info{color:var(--info);border-color:color-mix(in srgb,var(--info) 40%,transparent);background:color-mix(in srgb,var(--info) 12%,transparent)}
+
+  /* On the clock banner */
+  .clock{display:flex;align-items:center;gap:14px;padding:14px 15px;border-radius:12px;background:linear-gradient(120deg,var(--accent-soft),transparent);border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line))}
+  .clock .big{font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .clock.you{background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 22%,transparent),transparent);border-color:var(--accent)}
+  /* pick clock timer */
+  .timerbox{margin-top:12px;padding:12px 15px;border-radius:12px;border:1px solid var(--line-2);background:var(--panel);box-shadow:var(--shadow);text-align:center}
+  .timerbox .tlabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);font-weight:700}
+  .timerbox .tbig{font-family:var(--mono);font-size:36px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;margin:2px 0}
+  .timerbox .tbar{height:8px;border-radius:5px;background:var(--panel-2);overflow:hidden;margin-top:6px}
+  .timerbox .tbar>i{display:block;height:100%;background:var(--accent);border-radius:5px;transition:width .25s linear}
+  .timerbox.warn{border-color:var(--warn)}.timerbox.warn .tbig{color:var(--warn)}.timerbox.warn .tbar>i{background:var(--warn)}
+  .timerbox.crit{border-color:var(--crit);animation:tpulse 1s infinite}.timerbox.crit .tbig{color:var(--crit)}.timerbox.crit .tbar>i{background:var(--crit)}
+  .timerbox.paused{border-color:var(--accent)}.timerbox.paused .tbig{color:var(--ink-2)}.timerbox.paused .tbar>i{background:var(--ink-2)}
+  @keyframes tpulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--crit) 45%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+
+  /* Recommendation cards */
+  .rec{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--panel-2);position:relative;overflow:hidden}
+  .rec:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--flex)}
+  .rec.QB:before{background:var(--qb)}.rec.RB:before{background:var(--rb)}.rec.WR:before{background:var(--wr)}.rec.TE:before{background:var(--te)}.rec.K:before{background:var(--k)}.rec.DST:before{background:var(--dst)}
+  .rec.top{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .rec .r1{display:flex;align-items:center;gap:8px}
+  .rec .nm{font-weight:700;font-size:15px}
+  .rec .r2{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .rec .why{font-size:13px;color:var(--ink);margin-top:7px;line-height:1.45}
+  .cardmeta{font-size:12.5px;color:var(--ink-2);margin-top:5px;display:flex;flex-wrap:wrap;gap:5px;align-items:baseline}
+  .cardmeta b{color:var(--ink);font-size:15px;font-family:var(--mono);font-weight:700}
+  .tier{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:20px}
+  .tier.elite{color:var(--accent-ink);background:var(--accent)}
+  .tier.great{color:#fff;background:var(--good)}
+  .tier.good{color:#fff;background:var(--info)}
+  .tier.ok{color:#fff;background:var(--warn)}
+  .tier.depth{color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line-2)}
+  .rank-badge{position:absolute;right:10px;top:10px;font-family:var(--mono);font-size:11px;color:var(--ink-2);font-weight:700}
+  .draftbtn{margin-top:10px;width:100%;border:none;background:var(--accent);color:var(--accent-ink);font-weight:700;padding:8px;border-radius:8px;font-size:13px}
+  .draftbtn:hover{filter:brightness(1.06)}
+  .draftbtn.alt{background:transparent;color:var(--ink);border:1px solid var(--line-2)}
+
+  /* Available table */
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  input[type=text],input[type=number],select{font-family:inherit;font-size:13px;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink);padding:7px 9px;border-radius:8px}
+  input:focus,select:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:0;border-color:var(--accent)}
+  .search{flex:1;min-width:140px}
+  .fbtn{border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink-2);padding:5px 9px;border-radius:7px;font-size:12px;font-weight:700}
+  .fbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse}
+  .tblwrap{overflow-x:auto}
+  th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line-2);position:sticky;top:0;background:var(--panel);cursor:pointer;white-space:nowrap;user-select:none}
+  th.r,td.r{text-align:right}
+  td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody tr:hover{background:var(--panel-2)}
+  .plname{font-weight:600}
+  .meta{color:var(--ink-2);font-size:11.5px}
+  .mini{border:1px solid var(--line-2);background:var(--panel);color:var(--ink);border-radius:7px;padding:4px 9px;font-size:12px;font-weight:700}
+  .mini:hover{border-color:var(--accent);color:var(--accent)}
+  .mini.dr{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .scrollbox{max-height:560px;overflow:auto}
+
+  /* roster */
+  .slotrow{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .slotrow:last-child{border-bottom:none}
+  .slotlab{width:44px;flex-shrink:0}
+  .slotname{flex:1;font-weight:600;font-size:13px}
+  .slotname.empty{color:var(--ink-2);font-weight:500;font-style:italic}
+  .bye{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+
+  /* setup */
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);font-weight:700}
+  .field input,.field select{width:100%}
+  .seg{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:var(--panel);color:var(--ink-2);padding:7px 12px;font-weight:700;font-size:12.5px;border-right:1px solid var(--line-2)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--accent);color:var(--accent-ink)}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .kv:last-child{border:none}
+  .kv b{font-family:var(--mono)}
+  .note{font-size:12px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;line-height:1.5}
+  .board{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .teamcard{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel-2)}
+  .teamcard.me{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .teamcard h4{margin:0 0 6px;font-size:12px;display:flex;justify-content:space-between}
+  .teamcard .pl{font-size:11.5px;padding:2px 0;color:var(--ink-2);display:flex;gap:5px;align-items:center}
+  .barrow{display:flex;align-items:center;gap:8px;margin:5px 0}
+  .barrow .lab{width:46px}
+  .bar{flex:1;height:9px;border-radius:5px;background:var(--panel-2);overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:5px}
+  .matchup{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin-bottom:7px;background:var(--panel-2)}
+  .wl{font-weight:800;font-family:var(--mono);width:26px;text-align:center;border-radius:6px;padding:2px 0}
+  .wl.W{color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+  .wl.L{color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent)}
+  .emptystate{text-align:center;color:var(--ink-2);padding:40px 20px;font-size:13px}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--ink-2);margin-top:8px}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .hide{display:none!important}
+  .flashwrap{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:80}
+  .flash{background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-weight:600;font-size:13px;box-shadow:var(--shadow);opacity:0;transition:opacity .25s,transform .25s}
+  .flash.show{opacity:1;transform:translateY(-4px)}
+  a.link{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .editcell{width:64px}
+  .statgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:12.5px}
+  .statgrid .kv{border-bottom:1px dashed var(--line)}
+  .pickcounter{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}.timerbox.crit{animation:none!important}}
+</style>
+
+<header class="top">
+  <div class="topin">
+    <div class="brand">
+      <div class="logo">◈</div>
+      <div><b>Draft War Room</b><span>Redraft optimizer · VORP engine</span></div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab on" data-tab="draft">Draft Room</button>
+      <button class="tab" data-tab="team">My Team</button>
+      <button class="tab" data-tab="matchups">Matchups</button>
+      <button class="tab" data-tab="backtest">Backtest</button>
+      <button class="tab hide" data-tab="dynasty" id="dynastyTabBtn">Dynasty</button>
+      <button class="tab" data-tab="players">Projections</button>
+      <button class="tab" data-tab="setup">League Setup</button>
+    </nav>
+    <div class="spacer"></div>
+    <button class="ghost" id="mockBtn">🤖 Mock draft</button>
+    <button class="ghost" id="themeBtn">◐ Theme</button>
+    <button class="ghost" id="exportBtn">↧ Save</button>
+    <button class="ghost" id="importBtn">↥ Load</button>
+    <button class="ghost" id="resetBtn">⟳ Reset draft</button>
+    <input type="file" id="fileIn" accept="application/json" class="hide">
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- DRAFT TAB -->
+  <section id="tab-draft">
+    <div class="grid-draft">
+      <!-- LEFT: recommendations -->
+      <div class="sticky-col">
+        <div id="clockBanner"></div>
+        <div id="pickTimer" class="timerbox hide"></div>
+        <div class="panel" style="margin-top:14px">
+          <div class="hd"><h2>Best pick for you</h2>
+            <div class="seg" id="recMode" style="margin-left:auto;transform:scale(.9);transform-origin:right"><button data-m="heur" class="on">Fast</button><button data-m="sim">Simulate 🎲</button></div>
+          </div>
+          <div class="bd"><div id="recCtx" class="pickcounter" style="margin-bottom:8px"></div><div id="recList"></div></div>
+        </div>
+      </div>
+
+      <!-- CENTER: available players -->
+      <div class="panel">
+        <div class="hd"><h2>Available players</h2><span id="availCount" class="pickcounter" style="margin-left:auto"></span></div>
+        <div class="bd">
+          <div class="toolbar">
+            <input type="text" class="search" id="search" placeholder="Search player…">
+            <div id="posFilters"></div>
+            <button class="fbtn" id="hideDrafted">Hide drafted ✓</button>
+          </div>
+          <div id="auctionBar" class="toolbar hide" style="margin-bottom:10px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;padding:8px 10px"></div>
+          <div class="tblwrap scrollbox">
+            <table id="availTable">
+              <thead><tr>
+                <th data-sort="rank">#</th>
+                <th data-sort="name">Player</th>
+                <th data-sort="pos">Pos</th>
+                <th class="r" data-sort="age">Age</th>
+                <th class="r" data-sort="proj">Proj</th>
+                <th class="r">Floor–Ceil</th>
+                <th class="r" data-sort="vorp" id="vorpHead">VORP</th>
+                <th class="r" data-sort="adp" id="adpHead">ADP</th>
+                <th></th>
+              </tr></thead>
+              <tbody id="availBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: your roster + queue -->
+      <div class="sticky-col">
+        <div class="panel">
+          <div class="hd"><h2>My roster</h2><span id="rosterPts" class="pickcounter" style="margin-left:auto"></span></div>
+          <div class="bd" id="myRoster"></div>
+        </div>
+        <div class="panel" style="margin-top:14px">
+          <div class="hd"><h2>Positional need</h2></div>
+          <div class="bd" id="needBox"></div>
+        </div>
+        <div class="panel" style="margin-top:14px">
+          <div class="hd"><h2>Tiers &amp; runs</h2></div>
+          <div class="bd" id="tierBox"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MY TEAM TAB -->
+  <section id="tab-team" class="hide">
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr">
+      <div class="panel">
+        <div class="hd"><h2>Roster construction</h2></div>
+        <div class="bd" id="construction"></div>
+      </div>
+      <div class="panel">
+        <div class="hd"><h2>Bye-week coverage</h2></div>
+        <div class="bd" id="byeBox"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Stacks &amp; correlation</h2></div>
+      <div class="bd" id="stackBox"></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Full draft board — all teams</h2></div>
+      <div class="bd"><div class="board" id="allTeams"></div></div>
+    </div>
+  </section>
+
+  <!-- MATCHUPS TAB -->
+  <section id="tab-matchups" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Weekly matchup projections</h2><span class="pickcounter" style="margin-left:auto">Optimal lineup · season pace ÷ games · byes zeroed</span></div>
+      <div class="bd">
+        <div class="note" id="matchNote" style="margin-bottom:14px"></div>
+        <div class="grid-draft" style="grid-template-columns:1.1fr .9fr">
+          <div>
+            <h3 style="font-size:13px;margin-bottom:8px" class="eyebrow">Your week-by-week schedule</h3>
+            <div id="myScheduleBox"></div>
+          </div>
+          <div>
+            <h3 style="font-size:13px;margin-bottom:8px" class="eyebrow">Projected league standings</h3>
+            <div class="tblwrap"><table><thead><tr><th>Team</th><th class="r">Rec</th><th class="r">PF/wk</th><th class="r">Roster pts</th></tr></thead><tbody id="standingsBody"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BACKTEST TAB -->
+  <section id="tab-backtest" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Draft backtest — 11 seasons (2014–2024)</h2><span id="btCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="note" id="btNote" style="margin-bottom:14px"></div>
+        <div id="btInsights" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:18px"></div>
+        <h3 class="eyebrow" style="margin-bottom:8px">Startable-season hit rate by round &amp; position</h3>
+        <p class="meta" style="margin:0 0 10px">Each cell: the historical probability a player drafted in that round at that position returned a <b>startable</b> season for your league size, with average PPR points below. Colored by hit rate. This is your current league (<b id="btLeague"></b>).</p>
+        <div class="tblwrap"><table class="btgrid" id="btTable"></table></div>
+        <div class="legend"><span><i class="sw" style="background:var(--good)"></i>≥70% hit</span><span><i class="sw" style="background:var(--warn)"></i>50–69%</span><span><i class="sw" style="background:var(--crit)"></i>&lt;50%</span><span class="meta">n = sample size across 11 seasons</span></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Where the value lives — best position per round</h2></div>
+      <div class="bd"><div id="btBest"></div>
+        <div class="note" style="margin-top:12px">Data: <b>Fantasy Football Calculator</b> historical ADP + <b>nflverse</b> actual fantasy finishes, 2014–2024. "Best" = highest startable-hit-rate position available at that round's ADP. Use it as a positional roadmap, not a mandate — your board's specific values (VORP) still rule any single pick.</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Does your draft slot matter?</h2><span class="pickcounter" style="margin-left:auto" id="slotCtx"></span></div>
+      <div class="bd">
+        <div id="slotChart"></div>
+        <div id="slotBest" style="margin-top:14px"></div>
+        <div class="note" style="margin-top:12px" id="slotNote"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Model calibration — how accurate are these projections?</h2><span id="calibCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd" id="calibBox"></div>
+    </div>
+  </section>
+
+  <!-- DYNASTY TAB -->
+  <section id="tab-dynasty" class="hide">
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr">
+      <div class="panel">
+        <div class="hd"><h2>Your roster age profile</h2><span id="ageProfileHd" class="pickcounter" style="margin-left:auto"></span></div>
+        <div class="bd" id="ageProfile"></div>
+      </div>
+      <div class="panel">
+        <div class="hd"><h2>Aging curves — production vs peak</h2></div>
+        <div class="bd">
+          <div id="curveBox"></div>
+          <div class="note" style="margin-top:12px">Each line is the share of a position's peak production at a given age. <b>RBs</b> spike early and collapse by ~29; <b>WRs</b> hold a long plateau; <b>TEs</b> peak late; <b>QBs</b> barely age. Dynasty value projects each player's current points forward along his curve.</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Rookie draft pick values</h2><span class="pickcounter" style="margin-left:auto">1QB PPR · relative 0–100 · superflex bumps QBs</span></div>
+      <div class="bd">
+        <div class="board" id="rookieBox" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))"></div>
+        <div class="note" style="margin-top:12px">Use these to weigh a pick against a player in trades or startup auctions: a player's dynasty value (the DynVORP column, roughly) is comparable to these pick values once you scale to the same range. <b>Rebuilders</b> hoard early 1sts and future firsts; <b>contenders</b> cash picks for proven vets.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROJECTIONS TAB -->
+  <section id="tab-players" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Projection editor</h2><span class="pickcounter" style="margin-left:auto">Edit any Proj cell · Enter to save</span></div>
+      <div class="bd">
+        <div class="note" style="margin-bottom:12px"><b>How these projections are built:</b> The <b>baseline is the ESPN + Sleeper 2026 consensus</b> (season <i>and</i> week-to-week), scaled onto stat lines so <i>your</i> scoring settings still recompute (PPR/half/TE-premium). The <b>Src E/S</b> column shows both sources — a big gap means the experts disagree (more uncertain). <b>Floor/Ceil</b> and <b>Boom/Bust%</b> come from 11 seasons of actual outcome spread by position &amp; ADP rank (the historical model now powers <i>risk</i>, not the point estimate). <b>ADP</b> (1QB + superflex), <b>injuries</b> (Q/OUT/IR), and depth flags are live from Fantasy Football Calculator + Sleeper. The simulator scores each week off the <b>real consensus weekly grid</b>. Override any Proj/bye; edits save with the draft.</div>
+        <div class="toolbar">
+          <input type="text" class="search" id="psearch" placeholder="Search player…">
+          <div id="pposFilters"></div>
+        </div>
+        <div class="tblwrap scrollbox" style="max-height:640px">
+          <table><thead><tr>
+            <th data-psort="rank">#</th><th data-psort="name">Player</th><th data-psort="pos">Pos</th><th data-psort="team">Tm</th>
+            <th class="r" data-psort="age">Age</th><th class="r" data-psort="bye">Bye</th><th class="r" data-psort="adp">ADP</th><th class="r" data-psort="proj">Proj (editable)</th>
+            <th class="r">Floor</th><th class="r">Ceil</th><th class="r">Boom</th><th class="r">Bust</th>
+            <th class="r" title="Season strength of schedule (matchup ease, 1.00 = avg)">Sched</th><th class="r" title="Playoff-weeks (15–17) strength of schedule">Playoff SoS</th>
+            <th class="r" title="ESPN / Sleeper season projections — big gap = experts disagree">Src E/S</th>
+          </tr></thead><tbody id="playersBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP TAB -->
+  <section id="tab-setup" class="hide">
+    <div class="grid-draft" style="grid-template-columns:1.15fr .85fr">
+      <div class="panel">
+        <div class="hd"><h2>League &amp; roster</h2></div>
+        <div class="bd">
+          <div class="form-grid" style="margin-bottom:16px">
+            <div class="field"><label>Format</label>
+              <div class="seg" id="s_format"><button data-v="redraft" class="on">Redraft</button><button data-v="dynasty">Dynasty</button></div>
+            </div>
+            <div class="field" id="windowField"><label>Team window</label>
+              <div class="seg" id="s_window"><button data-v="contend">Contend</button><button data-v="balanced" class="on">Balanced</button><button data-v="rebuild">Rebuild</button></div>
+            </div>
+            <div class="field"><label>Best ball</label>
+              <div class="seg" id="s_bestball"><button data-v="0" class="on">Off</button><button data-v="1">On</button></div>
+            </div>
+          </div>
+          <div class="note hide" id="bbNote" style="margin-bottom:16px">🎈 <b>Best ball on.</b> Your optimal lineup scores automatically every week — no start/sit — so <b>ceiling and boom weeks win, floor matters less</b>. Player values now tilt toward upside, and stacks get extra credit in the simulator. Draft deeper at QB/WR/TE for spike weeks.</div>
+          <div class="note hide" id="dynNote" style="margin-bottom:16px">🏰 <b>Dynasty mode on.</b> Player value now blends current production with a 4-year age-adjusted projection. <b>Contend</b> weights this season heavily (chase win-now vets); <b>Rebuild</b> weights future years (prioritize youth); <b>Balanced</b> splits the difference. Set each player's age on the Projections tab, and check the Dynasty tab for rookie-pick values and your roster's age profile.</div>
+          <div class="form-grid">
+            <div class="field"><label>Teams</label><input type="number" id="s_teams" min="4" max="16" step="1"></div>
+            <div class="field"><label>Your draft slot</label><input type="number" id="s_slot" min="1" step="1"></div>
+            <div class="field"><label>Draft type</label>
+              <div class="seg" id="s_snake"><button data-v="1" class="on">Snake</button><button data-v="0">Linear</button></div>
+            </div>
+            <div class="field"><label>ADP source (match your draft site)</label>
+              <div class="seg" id="s_adp"><button data-v="ffc" class="on">FFC</button><button data-v="espn">ESPN</button><button data-v="yahoo">Yahoo</button><button data-v="custom" id="adpCustomBtn" class="hide">Custom</button></div>
+            </div>
+            <div class="field"><label>Auction draft</label>
+              <div class="seg" id="s_auction"><button data-v="0" class="on">Off</button><button data-v="1">On</button></div>
+            </div>
+            <div class="field" id="budgetField"><label>Budget ($ per team)</label><input type="number" id="s_budget" min="1" step="5"></div>
+          </div>
+          <div class="note" style="margin-top:10px"><b>ESPN</b> = live ESPN ADP (+ superflex board); <b>Yahoo</b> = Yahoo ADP (1QB); <b>FFC</b> = Fantasy Football Calculator consensus (1QB + true superflex). <b>Sleeper has no public ADP feed</b> — but you can <b>paste it in</b> below (from a Sleeper mock or any list) and it becomes a “Custom” source.</div>
+          <button class="ghost" id="adpPasteToggle" style="margin-top:8px;font-size:12px">＋ Paste custom ADP (Sleeper, etc.)</button>
+          <div id="adpPasteBox" class="hide" style="margin-top:8px">
+            <textarea id="adpPasteText" placeholder="One player per line — name then ADP. Rank prefixes and team codes are ignored, e.g.&#10;1. Ja'Marr Chase CIN  2.9&#10;Bijan Robinson  1.4&#10;Josh Allen  18.7" style="width:100%;height:130px;font-family:var(--mono);font-size:12px;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px"></textarea>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+              <button class="draftbtn" id="adpPasteApply" style="width:auto;padding:8px 16px">Apply as “Custom” ADP</button>
+              <span id="adpPasteStatus" class="meta"></span>
+            </div>
+          </div>
+          <h3 style="font-size:12px;margin:18px 0 8px" class="eyebrow">Pick clock (per pick)</h3>
+          <div class="form-grid">
+            <div class="field"><label>Preset</label>
+              <div class="seg" id="s_clock"><button data-v="0" class="on">Off</button><button data-v="30">30s</button><button data-v="60">1m</button><button data-v="90">90s</button><button data-v="120">2m</button></div>
+            </div>
+            <div class="field"><label>…or custom seconds</label><input type="number" id="s_clockCustom" min="0" step="5" placeholder="e.g. 45"></div>
+          </div>
+          <div class="note" style="margin-top:10px">Sets a countdown on <b>your</b> pick to match your league's draft clock. When it hits zero, your <b>best available</b> is auto-drafted (like a real autodraft) so you practice deciding on the clock. Great paired with <b>🤖 Mock draft</b> + <b>Simulate</b>.</div>
+          <h3 style="font-size:12px;margin:18px 0 8px" class="eyebrow">Starting lineup</h3>
+          <div class="form-grid">
+            <div class="field"><label>QB</label><input type="number" id="r_QB" min="0" step="1"></div>
+            <div class="field"><label>RB</label><input type="number" id="r_RB" min="0" step="1"></div>
+            <div class="field"><label>WR</label><input type="number" id="r_WR" min="0" step="1"></div>
+            <div class="field"><label>TE</label><input type="number" id="r_TE" min="0" step="1"></div>
+            <div class="field"><label>FLEX (R/W/T)</label><input type="number" id="r_FLEX" min="0" step="1"></div>
+            <div class="field"><label>SUPERFLEX (Q/R/W/T)</label><input type="number" id="r_SUPERFLEX" min="0" step="1"></div>
+            <div class="field"><label>K</label><input type="number" id="r_K" min="0" step="1"></div>
+            <div class="field"><label>DST</label><input type="number" id="r_DST" min="0" step="1"></div>
+            <div class="field"><label>Bench</label><input type="number" id="r_BENCH" min="0" step="1"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="hd"><h2>Scoring</h2></div>
+        <div class="bd">
+          <div class="field" style="margin-bottom:14px"><label>Reception preset</label>
+            <div class="seg" id="s_ppr"><button data-v="1">PPR</button><button data-v="0.5">Half-PPR</button><button data-v="0">Standard</button></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Pass yd (pts)</label><input type="number" id="sc_passYd" step="0.01"></div>
+            <div class="field"><label>Pass TD</label><input type="number" id="sc_passTd" step="0.5"></div>
+            <div class="field"><label>Interception</label><input type="number" id="sc_int" step="0.5"></div>
+            <div class="field"><label>Rush yd (pts)</label><input type="number" id="sc_rushYd" step="0.01"></div>
+            <div class="field"><label>Rush TD</label><input type="number" id="sc_rushTd" step="0.5"></div>
+            <div class="field"><label>Reception</label><input type="number" id="sc_rec" step="0.5"></div>
+            <div class="field"><label>Rec yd (pts)</label><input type="number" id="sc_recYd" step="0.01"></div>
+            <div class="field"><label>Rec TD</label><input type="number" id="sc_recTd" step="0.5"></div>
+            <div class="field"><label>Fumble lost</label><input type="number" id="sc_fl" step="0.5"></div>
+          </div>
+          <div class="note" style="margin-top:14px">Changing scoring instantly re-projects every player and recomputes VORP, replacement levels, and pick recommendations.</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Replacement levels (VORP baselines)</h2></div>
+      <div class="bd"><div class="statgrid" id="replBox"></div>
+      <div class="note" style="margin-top:12px">VORP = a player's projected points minus the projected points of the <b>last startable player</b> at that position across your league. It's the true draft-day value: a 300-pt RB in a shallow position is worth more than a 320-pt WR in a deep one.</div></div>
+    </div>
+  </section>
+</div>
+
+<div class="flashwrap"><div class="flash" id="flash"></div></div>
+
+<script src="data.js"></script>
+<script>
+/* ============================= DATA ============================= */
+// Bye weeks: editable baseline for the upcoming season — verify vs your league.
+const TEAM_BYE={ARI:14,ATL:11,BAL:13,BUF:7,CAR:5,CHI:10,CIN:6,CLE:11,DAL:14,DEN:10,DET:6,GB:11,HOU:8,IND:13,JAX:7,KC:5,LV:13,LAC:7,LAR:11,MIA:6,MIN:6,NE:11,NO:8,NYG:8,NYJ:13,PHI:10,PIT:9,SF:8,SEA:11,TB:10,TEN:9,WAS:7};
+
+// stats: py=passYd ptd=passTD int ry=rushYd rtd=rushTD rec recy=recYd rectd fl=fumblesLost
+// K/DST use flat `p` (season points). adp = rough average draft position.
+const RAW=[
+ // QB
+ ["Josh Allen","QB","BUF",1,{py:4100,ptd:30,int:12,ry:550,rtd:8,fl:3}],
+ ["Lamar Jackson","QB","BAL",1,{py:3900,ptd:28,int:8,ry:750,rtd:5,fl:3}],
+ ["Jayden Daniels","QB","WAS",1,{py:3800,ptd:25,int:10,ry:800,rtd:6,fl:3}],
+ ["Jalen Hurts","QB","PHI",1,{py:3700,ptd:24,int:10,ry:600,rtd:12,fl:3}],
+ ["Patrick Mahomes","QB","KC",1,{py:4200,ptd:30,int:10,ry:350,rtd:3,fl:2}],
+ ["Joe Burrow","QB","CIN",1,{py:4600,ptd:36,int:12,ry:250,rtd:3,fl:2}],
+ ["Baker Mayfield","QB","TB",1,{py:4200,ptd:33,int:12,ry:200,rtd:3,fl:2}],
+ ["Bo Nix","QB","DEN",1,{py:3900,ptd:28,int:12,ry:400,rtd:4,fl:2}],
+ ["Justin Herbert","QB","LAC",1,{py:4000,ptd:28,int:10,ry:250,rtd:3,fl:2}],
+ ["Kyler Murray","QB","ARI",1,{py:3800,ptd:24,int:10,ry:550,rtd:5,fl:3}],
+ ["Brock Purdy","QB","SF",1,{py:4100,ptd:28,int:10,ry:250,rtd:3,fl:2}],
+ ["Dak Prescott","QB","DAL",1,{py:4200,ptd:30,int:10,ry:150,rtd:2,fl:2}],
+ ["Jared Goff","QB","DET",1,{py:4300,ptd:32,int:10,ry:100,rtd:1,fl:2}],
+ ["Caleb Williams","QB","CHI",1,{py:3700,ptd:23,int:11,ry:420,rtd:3,fl:3}],
+ ["C.J. Stroud","QB","HOU",1,{py:4100,ptd:26,int:9,ry:220,rtd:3,fl:2}],
+ ["Drake Maye","QB","NE",1,{py:3700,ptd:22,int:11,ry:450,rtd:4,fl:3}],
+ // RB
+ ["Bijan Robinson","RB","ATL",1,{ry:1350,rtd:12,rec:55,recy:450,rectd:2,fl:2}],
+ ["Saquon Barkley","RB","PHI",1,{ry:1500,rtd:13,rec:40,recy:350,rectd:2,fl:2}],
+ ["Jahmyr Gibbs","RB","DET",1,{ry:1150,rtd:11,rec:55,recy:450,rectd:3,fl:2}],
+ ["De'Von Achane","RB","MIA",1,{ry:950,rtd:8,rec:70,recy:550,rectd:3,fl:2}],
+ ["Ashton Jeanty","RB","LV",1,{ry:1200,rtd:10,rec:45,recy:350,rectd:2,fl:2}],
+ ["Christian McCaffrey","RB","SF",1,{ry:1100,rtd:9,rec:60,recy:500,rectd:2,fl:2}],
+ ["Jonathan Taylor","RB","IND",1,{ry:1350,rtd:11,rec:35,recy:250,rectd:1,fl:2}],
+ ["Derrick Henry","RB","BAL",1,{ry:1450,rtd:14,rec:20,recy:150,rectd:1,fl:2}],
+ ["Josh Jacobs","RB","GB",1,{ry:1150,rtd:11,rec:40,recy:300,rectd:1,fl:2}],
+ ["Bucky Irving","RB","TB",1,{ry:1100,rtd:8,rec:50,recy:400,rectd:2,fl:2}],
+ ["Kyren Williams","RB","LAR",1,{ry:1250,rtd:12,rec:35,recy:250,rectd:1,fl:2}],
+ ["Chase Brown","RB","CIN",1,{ry:1050,rtd:8,rec:50,recy:400,rectd:2,fl:2}],
+ ["James Cook","RB","BUF",1,{ry:1050,rtd:10,rec:35,recy:250,rectd:1,fl:2}],
+ ["Breece Hall","RB","NYJ",1,{ry:1000,rtd:7,rec:55,recy:400,rectd:2,fl:2}],
+ ["Kenneth Walker III","RB","SEA",1,{ry:1000,rtd:8,rec:40,recy:300,rectd:1,fl:2}],
+ ["Alvin Kamara","RB","NO",1,{ry:900,rtd:6,rec:65,recy:500,rectd:2,fl:2}],
+ ["Omarion Hampton","RB","LAC",1,{ry:950,rtd:7,rec:40,recy:300,rectd:1,fl:2}],
+ ["Joe Mixon","RB","HOU",1,{ry:1050,rtd:9,rec:40,recy:300,rectd:1,fl:2}],
+ ["Chuba Hubbard","RB","CAR",1,{ry:1000,rtd:8,rec:40,recy:300,rectd:1,fl:2}],
+ ["TreVeyon Henderson","RB","NE",1,{ry:800,rtd:6,rec:40,recy:300,rectd:2,fl:1}],
+ ["David Montgomery","RB","DET",1,{ry:850,rtd:9,rec:30,recy:200,rectd:1,fl:1}],
+ ["Aaron Jones","RB","MIN",1,{ry:900,rtd:6,rec:45,recy:350,rectd:1,fl:2}],
+ ["RJ Harvey","RB","DEN",1,{ry:750,rtd:6,rec:35,recy:250,rectd:1,fl:1}],
+ ["Tony Pollard","RB","TEN",1,{ry:900,rtd:6,rec:40,recy:300,rectd:1,fl:2}],
+ ["D'Andre Swift","RB","CHI",1,{ry:900,rtd:6,rec:40,recy:300,rectd:1,fl:2}],
+ ["Isiah Pacheco","RB","KC",1,{ry:850,rtd:7,rec:35,recy:250,rectd:1,fl:1}],
+ ["Brian Robinson Jr.","RB","WAS",1,{ry:850,rtd:8,rec:25,recy:180,rectd:1,fl:1}],
+ ["Rhamondre Stevenson","RB","NE",1,{ry:800,rtd:5,rec:35,recy:250,rectd:1,fl:2}],
+ ["Jaylen Warren","RB","PIT",1,{ry:700,rtd:4,rec:45,recy:350,rectd:1,fl:1}],
+ ["Zach Charbonnet","RB","SEA",1,{ry:600,rtd:6,rec:30,recy:220,rectd:1,fl:1}],
+ // WR
+ ["Ja'Marr Chase","WR","CIN",1,{rec:105,recy:1450,rectd:12,fl:1}],
+ ["Justin Jefferson","WR","MIN",1,{rec:100,recy:1450,rectd:10,fl:1}],
+ ["CeeDee Lamb","WR","DAL",1,{rec:100,recy:1400,rectd:9,fl:1}],
+ ["Puka Nacua","WR","LAR",1,{rec:100,recy:1350,rectd:7,fl:1}],
+ ["Malik Nabers","WR","NYG",1,{rec:100,recy:1300,rectd:8,fl:1}],
+ ["Amon-Ra St. Brown","WR","DET",1,{rec:100,recy:1200,rectd:9,fl:1}],
+ ["Nico Collins","WR","HOU",1,{rec:85,recy:1250,rectd:8,fl:1}],
+ ["Brian Thomas Jr.","WR","JAX",1,{rec:85,recy:1250,rectd:8,fl:1}],
+ ["A.J. Brown","WR","PHI",1,{rec:85,recy:1250,rectd:8,fl:1}],
+ ["Drake London","WR","ATL",1,{rec:90,recy:1200,rectd:8,fl:1}],
+ ["Ladd McConkey","WR","LAC",1,{rec:85,recy:1100,rectd:6,fl:1}],
+ ["Jaxon Smith-Njigba","WR","SEA",1,{rec:85,recy:1150,rectd:6,fl:1}],
+ ["Tyreek Hill","WR","MIA",1,{rec:85,recy:1150,rectd:7,fl:1}],
+ ["Tee Higgins","WR","CIN",1,{rec:75,recy:1050,rectd:8,fl:1}],
+ ["Davante Adams","WR","LAR",1,{rec:85,recy:1100,rectd:8,fl:1}],
+ ["Terry McLaurin","WR","WAS",1,{rec:80,recy:1100,rectd:8,fl:1}],
+ ["Marvin Harrison Jr.","WR","ARI",1,{rec:80,recy:1100,rectd:8,fl:1}],
+ ["Mike Evans","WR","TB",1,{rec:75,recy:1050,rectd:9,fl:1}],
+ ["DK Metcalf","WR","PIT",1,{rec:75,recy:1050,rectd:7,fl:1}],
+ ["Garrett Wilson","WR","NYJ",1,{rec:85,recy:1050,rectd:6,fl:1}],
+ ["DJ Moore","WR","CHI",1,{rec:80,recy:1000,rectd:6,fl:1}],
+ ["Courtland Sutton","WR","DEN",1,{rec:75,recy:1000,rectd:7,fl:1}],
+ ["Zay Flowers","WR","BAL",1,{rec:80,recy:1000,rectd:6,fl:1}],
+ ["Jaylen Waddle","WR","MIA",1,{rec:75,recy:950,rectd:5,fl:1}],
+ ["DeVonta Smith","WR","PHI",1,{rec:75,recy:950,rectd:6,fl:1}],
+ ["Xavier Worthy","WR","KC",1,{rec:75,recy:950,rectd:6,fl:1}],
+ ["George Pickens","WR","DAL",1,{rec:70,recy:1000,rectd:6,fl:1}],
+ ["Rome Odunze","WR","CHI",1,{rec:70,recy:950,rectd:6,fl:1}],
+ ["Jordan Addison","WR","MIN",1,{rec:70,recy:950,rectd:6,fl:1}],
+ ["Calvin Ridley","WR","TEN",1,{rec:70,recy:950,rectd:5,fl:1}],
+ ["Chris Godwin","WR","TB",1,{rec:75,recy:900,rectd:5,fl:1}],
+ ["Jameson Williams","WR","DET",1,{rec:60,recy:950,rectd:6,fl:1}],
+ ["Jerry Jeudy","WR","CLE",1,{rec:75,recy:950,rectd:5,fl:1}],
+ ["Deebo Samuel","WR","WAS",1,{rec:65,recy:750,rectd:4,ry:250,rtd:3,fl:2}],
+ ["Khalil Shakir","WR","BUF",1,{rec:75,recy:850,rectd:4,fl:1}],
+ ["Jauan Jennings","WR","SF",1,{rec:65,recy:800,rectd:5,fl:1}],
+ ["Jaylen McMillan","WR","TB",1,{rec:60,recy:800,rectd:5,fl:1}],
+ ["Rashee Rice","WR","KC",1,{rec:70,recy:850,rectd:5,fl:1}],
+ ["Travis Hunter","WR","JAX",1,{rec:65,recy:850,rectd:5,fl:1}],
+ ["Jakobi Meyers","WR","LV",1,{rec:75,recy:850,rectd:4,fl:1}],
+ // TE
+ ["Brock Bowers","TE","LV",1,{rec:90,recy:1050,rectd:6,fl:1}],
+ ["Trey McBride","TE","ARI",1,{rec:90,recy:1000,rectd:5,fl:1}],
+ ["George Kittle","TE","SF",1,{rec:70,recy:950,rectd:7,fl:1}],
+ ["Sam LaPorta","TE","DET",1,{rec:75,recy:850,rectd:6,fl:1}],
+ ["T.J. Hockenson","TE","MIN",1,{rec:70,recy:800,rectd:5,fl:1}],
+ ["Mark Andrews","TE","BAL",1,{rec:55,recy:700,rectd:7,fl:1}],
+ ["David Njoku","TE","CLE",1,{rec:65,recy:750,rectd:5,fl:1}],
+ ["Travis Kelce","TE","KC",1,{rec:65,recy:700,rectd:4,fl:1}],
+ ["Evan Engram","TE","DEN",1,{rec:65,recy:700,rectd:4,fl:1}],
+ ["Tucker Kraft","TE","GB",1,{rec:55,recy:650,rectd:5,fl:1}],
+ ["Jonnu Smith","TE","MIA",1,{rec:60,recy:650,rectd:4,fl:1}],
+ ["Dallas Goedert","TE","PHI",1,{rec:55,recy:600,rectd:4,fl:1}],
+ ["Colston Loveland","TE","CHI",1,{rec:50,recy:600,rectd:4,fl:1}],
+ ["Tyler Warren","TE","IND",1,{rec:55,recy:600,rectd:4,fl:1}],
+ ["Kyle Pitts","TE","ATL",1,{rec:55,recy:650,rectd:4,fl:1}],
+ // K (flat season points)
+ ["Brandon Aubrey","K","DAL",1,{p:165}],
+ ["Cameron Dicker","K","LAC",1,{p:150}],
+ ["Chris Boswell","K","PIT",1,{p:148}],
+ ["Jake Bates","K","DET",1,{p:145}],
+ ["Ka'imi Fairbairn","K","HOU",1,{p:142}],
+ ["Harrison Butker","K","KC",1,{p:140}],
+ ["Tyler Bass","K","BUF",1,{p:138}],
+ ["Jason Sanders","K","MIA",1,{p:135}],
+ ["Younghoe Koo","K","ATL",1,{p:133}],
+ ["Wil Lutz","K","DEN",1,{p:132}],
+ // DST (flat season points)
+ ["Broncos D/ST","DST","DEN",1,{p:140}],
+ ["Eagles D/ST","DST","PHI",1,{p:135}],
+ ["Ravens D/ST","DST","BAL",1,{p:130}],
+ ["Texans D/ST","DST","HOU",1,{p:128}],
+ ["Bills D/ST","DST","BUF",1,{p:125}],
+ ["Steelers D/ST","DST","PIT",1,{p:124}],
+ ["Vikings D/ST","DST","MIN",1,{p:120}],
+ ["Packers D/ST","DST","GB",1,{p:118}],
+ ["Lions D/ST","DST","DET",1,{p:115}],
+ ["Seahawks D/ST","DST","SEA",1,{p:113}],
+ ["Chargers D/ST","DST","LAC",1,{p:112}],
+ ["Chiefs D/ST","DST","KC",1,{p:110}],
+];
+
+// Player age as of the upcoming season (editable in the Projections tab). Drives dynasty aging curves.
+const AGE={
+ "Josh Allen":30,"Lamar Jackson":29,"Jayden Daniels":25,"Jalen Hurts":27,"Patrick Mahomes":30,"Joe Burrow":29,
+ "Baker Mayfield":31,"Bo Nix":26,"Justin Herbert":28,"Kyler Murray":29,"Brock Purdy":26,"Dak Prescott":33,
+ "Jared Goff":31,"Caleb Williams":24,"C.J. Stroud":24,"Drake Maye":23,
+ "Bijan Robinson":24,"Saquon Barkley":29,"Jahmyr Gibbs":24,"De'Von Achane":24,"Ashton Jeanty":22,
+ "Christian McCaffrey":30,"Jonathan Taylor":27,"Derrick Henry":32,"Josh Jacobs":28,"Bucky Irving":23,
+ "Kyren Williams":26,"Chase Brown":26,"James Cook":26,"Breece Hall":25,"Kenneth Walker III":25,"Alvin Kamara":31,
+ "Omarion Hampton":22,"Joe Mixon":30,"Chuba Hubbard":26,"TreVeyon Henderson":22,"David Montgomery":29,
+ "Aaron Jones":31,"RJ Harvey":24,"Tony Pollard":29,"D'Andre Swift":27,"Isiah Pacheco":27,"Brian Robinson Jr.":27,
+ "Rhamondre Stevenson":28,"Jaylen Warren":27,"Zach Charbonnet":25,
+ "Ja'Marr Chase":26,"Justin Jefferson":27,"CeeDee Lamb":27,"Puka Nacua":25,"Malik Nabers":23,
+ "Amon-Ra St. Brown":26,"Nico Collins":27,"Brian Thomas Jr.":23,"A.J. Brown":29,"Drake London":24,
+ "Ladd McConkey":24,"Jaxon Smith-Njigba":24,"Tyreek Hill":32,"Tee Higgins":27,"Davante Adams":33,
+ "Terry McLaurin":30,"Marvin Harrison Jr.":24,"Mike Evans":33,"DK Metcalf":28,"Garrett Wilson":25,
+ "DJ Moore":29,"Courtland Sutton":30,"Zay Flowers":25,"Jaylen Waddle":27,"DeVonta Smith":27,"Xavier Worthy":23,
+ "George Pickens":25,"Rome Odunze":24,"Jordan Addison":24,"Calvin Ridley":31,"Chris Godwin":30,
+ "Jameson Williams":25,"Jerry Jeudy":27,"Deebo Samuel":30,"Khalil Shakir":26,"Jauan Jennings":29,
+ "Jaylen McMillan":23,"Rashee Rice":26,"Travis Hunter":23,"Jakobi Meyers":29,
+ "Brock Bowers":23,"Trey McBride":26,"George Kittle":32,"Sam LaPorta":25,"T.J. Hockenson":29,"Mark Andrews":30,
+ "David Njoku":30,"Travis Kelce":36,"Evan Engram":31,"Tucker Kraft":25,"Jonnu Smith":31,"Dallas Goedert":31,
+ "Colston Loveland":22,"Tyler Warren":23,"Kyle Pitts":25
+};
+// Production as a fraction of positional peak, by integer age. Clamped at the ends.
+const AGE_CURVE={
+ RB:{21:.85,22:.90,23:.96,24:1,25:1,26:.93,27:.84,28:.72,29:.60,30:.48,31:.38,32:.30,33:.24,34:.20},
+ WR:{21:.78,22:.84,23:.90,24:.95,25:.99,26:1,27:1,28:.96,29:.90,30:.82,31:.73,32:.63,33:.53,34:.44,35:.37,36:.30},
+ TE:{22:.62,23:.72,24:.82,25:.90,26:.96,27:1,28:1,29:.97,30:.92,31:.85,32:.77,33:.68,34:.59,35:.50,36:.42,37:.35},
+ QB:{22:.82,23:.87,24:.91,25:.95,26:.98,27:1,28:1,29:1,30:1,31:1,32:.99,33:.97,34:.94,35:.90,36:.85,37:.79,38:.72,39:.65,40:.58}
+};
+function ageMult(pos,age){const c=AGE_CURVE[pos];if(!c)return 1;const ks=Object.keys(c).map(Number);
+ const a=Math.max(Math.min(...ks),Math.min(Math.max(...ks),Math.round(age)));return c[a]??1;}
+// Window weights over a 4-year horizon: contenders value now, rebuilders value the future.
+const WINDOW_W={contend:[1,.55,.30,.15],balanced:[1,.80,.62,.45],rebuild:[.65,.85,1,1]};
+// Dynasty rookie-pick reference values (1QB PPR, 0–100 scale). Superflex bumps QBs up.
+const ROOKIE_PICKS=[
+ ["1.01",100,"elite"],["1.02",92,"elite"],["1.03",85,"elite"],["1.04",79,"high"],["1.05",73,"high"],["1.06",68,"high"],
+ ["1.07",63,"high"],["1.08",58,"mid"],["1.09",53,"mid"],["1.10",49,"mid"],["1.11",45,"mid"],["1.12",42,"mid"],
+ ["2.01",38,"swing"],["2.03",33,"swing"],["2.06",27,"swing"],["2.09",21,"swing"],["2.12",17,"swing"],
+ ["3.01–3.12",14,"dart"],["4.01–4.12",8,"dart"],
+ ["Future 1st (contender)",40,"future"],["Future 1st (mid)",55,"future"],["Future 1st (rebuild)",70,"future"],["Future 2nd",24,"future"]
+];
+
+/* ============================= STATE ============================= */
+const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0.1,recTd:6,fl:-2};
+const DEF_ROSTER={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,BENCH:6};
+const nrm=s=>String(s).toLowerCase().replace(/[.'`]/g,"").replace(/\b(jr|sr|ii|iii|iv|v)\b/g,"").replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
+const STORE_KEY="draftwarroom_v1";
+let state;
+
+function buildPlayers(){
+  const D=window.__FFDATA__;
+  if(D&&D.PLAYERS&&D.PLAYERS.length){
+    // projections DERIVED from 11-season ADP-rank production curves (see Projections tab)
+    return D.PLAYERS.map((e,i)=>({id:i,name:e.name,pos:e.pos,team:e.team,bye:e.bye||TEAM_BYE[e.team]||0,
+      stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,
+      dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,
+      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY}));
+  }
+  return RAW.map((r,i)=>{const [name,pos,team,,stats]=r;return {id:i,name,pos,team,bye:TEAM_BYE[team]||0,stats:{...stats},adp:i+1,adpSf:i+1,override:null,age:AGE[name]??27};});
+}
+function freshState(){
+  return {
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:8},
+    players:buildPlayers(),
+    picks:[], // [{playerId, teamIdx}]
+    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
+  };
+}
+
+function load(){
+  try{const s=localStorage.getItem(STORE_KEY);if(s){const p=JSON.parse(s);if(p&&p.players)return migrate(p);}}catch(e){}
+  return freshState();
+}
+function migrate(st){
+  if(!st.settings.format)st.settings.format="redraft";
+  if(!st.settings.window)st.settings.window="balanced";
+  if(st.settings.roster.SUPERFLEX==null)st.settings.roster.SUPERFLEX=0;
+  if(st.settings.pickClock==null)st.settings.pickClock=0;
+  if(st.settings.adpSource==null)st.settings.adpSource="ffc";
+  if(st.settings.bestball==null)st.settings.bestball=false;
+  if(st.settings.auction==null){st.settings.auction=false;st.settings.budget=200;}
+  st.players.forEach(p=>{if(p.age==null)p.age=27;});
+  // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
+  const D=window.__FFDATA__;
+  if(D&&D.PLAYERS&&st.settings._projv!==8){
+    const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
+    const have=new Set(st.players.map(p=>nrm(p.name)));
+    let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
+    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
+    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY});});
+    st.settings._projv=8;
+  }
+  return st;
+}
+function save(){try{localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}}
+
+/* ============================= MATH ============================= */
+function pts(pl){
+  const s=state.settings.scoring, t=pl.stats;
+  if(pl.override!=null && pl.override!=="") return +pl.override;
+  if(t.p!=null) return t.p; // K/DST flat
+  return (t.py||0)*s.passYd+(t.ptd||0)*s.passTd+(t.int||0)*s.int
+    +(t.ry||0)*s.rushYd+(t.rtd||0)*s.rushTd
+    +(t.rec||0)*s.rec+(t.recy||0)*s.recYd+(t.rectd||0)*s.recTd
+    +(t.fl||0)*s.fl;
+}
+// Dynasty asset value: current-year points projected forward along the aging curve, weighted by team window.
+function dynValue(pl){
+  const w=WINDOW_W[state.settings.window]||WINDOW_W.balanced;
+  const base=pts(pl);
+  if(pl.pos==="K"||pl.pos==="DST") return base*w.reduce((a,b)=>a+b,0)*0.6; // age-agnostic + replaceable discount
+  const a=pl.age||27, cur=ageMult(pl.pos,a)||1; let v=0;
+  for(let t=0;t<w.length;t++) v+=w[t]*base*(ageMult(pl.pos,a+t)/cur);
+  return v;
+}
+// Ranking value: dynasty value in dynasty mode, else current-year points. Best-ball tilts toward ceiling.
+function valueOf(pl){let v=state.settings.format==="dynasty"?dynValue(pl):pts(pl);if(state.settings.bestball&&pl.dist)v*=(0.55+0.45*pl.dist.c);return v;}
+function isDyno(){return state.settings.format==="dynasty";}
+function ageTag(pl){
+  if(pl.pos==="K"||pl.pos==="DST")return null;
+  const a=pl.age||27, m=ageMult(pl.pos,a);
+  const peakStart={RB:24,WR:25,TE:26,QB:27}[pl.pos]||25;
+  if(a<=peakStart&&m>=0.9)return {label:`age ${a} · ascending`,cls:"good"};
+  if(m<0.72)return {label:`age ${a} · win-now`,cls:"crit"};
+  if(m<0.88)return {label:`age ${a} · aging`,cls:"warn"};
+  return {label:`age ${a} · prime`,cls:"info"};
+}
+const FLEX_POS=["RB","WR","TE"];
+const SUPER_POS=["QB","RB","WR","TE"];
+const ALLPOS=["QB","RB","WR","TE","K","DST"];
+// Matchup multiplier for a player in NFL week w (0 = bye), from real 2026 schedule × opponent DvP
+function matchupMultWeek(pl,w){const D=window.__FFDATA__;if(!D||!D.DVP||!D.SCHED)return 1;const sc=D.SCHED[pl.team];if(!sc)return 1;const opp=sc[w-1];if(!opp)return 0;const dv=D.DVP[opp];return dv?(dv[pl.pos]||1):1;}
+function sosOf(pl,a,b){let s=0,n=0;for(let w=a;w<=b;w++){const m=matchupMultWeek(pl,w);if(m>0){s+=m;n++;}}return n?s/n:1;}
+// Weekly multiplier (avg 1, 0 on bye): real ESPN/Sleeper consensus weekly if available, else DvP matchup model
+function weeklyMultOf(pl,w){
+  if(pl.wk&&pl.wk.length>=w){let s=0,n=0;for(const v of pl.wk){if(v>0){s+=v;n++;}}const avg=n?s/n:0;const v=pl.wk[w-1]||0;if(avg>0)return v>0?v/avg:0;}
+  return matchupMultWeek(pl,w);
+}
+function floorOf(pl){return pl.dist?pts(pl)*pl.dist.f:pts(pl);}
+function ceilOf(pl){return pl.dist?pts(pl)*pl.dist.c:pts(pl);}
+function injChip(pl){
+  let h="";const s=pl.inj;
+  if(s){const m={Questionable:["Q","warn"],Doubtful:["D","warn"],Out:["OUT","crit"],IR:["IR","crit"],PUP:["PUP","crit"],Sus:["SUS","crit"],NA:["NA","crit"],COV:["COV","warn"],DNR:["DNR","crit"]};
+    const x=m[s]||[String(s).slice(0,3),"warn"];h+=`<span class="chip ${x[1]}" title="${s}">${x[0]}</span>`;}
+  if((pl.pos==="RB"||pl.pos==="WR")&&pl.depth>1)h+=`<span class="chip" title="Depth chart #${pl.depth} — not clear starter">2nd</span>`;
+  return h;
+}
+function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
+function adpOf(pl){
+  const src=state.settings.adpSource||"ffc", sf=isSF();
+  let v=null;
+  if(src==="custom") v = (pl.adpCustom!=null?pl.adpCustom:null);
+  else if(src==="espn") v = sf ? (pl.adpEsf!=null?pl.adpEsf:null) : (pl.adpE!=null?pl.adpE:null);
+  else if(src==="yahoo"&&!sf) v = (pl.adpY!=null?pl.adpY:null); // Yahoo = 1QB only; SF falls back to FFC
+  if(v==null) v = sf ? (pl.adpSf!=null?pl.adpSf:pl.adp) : pl.adp; // FFC (default + fallback)
+  return v!=null?v:999;
+}
+const ADP_SRC={ffc:"FFC",espn:"ESPN",yahoo:"Yahoo",custom:"Custom"};
+function parseCustomADP(text){
+  const lines=(text||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
+  const POS=/^(QB|RB|WR|TE|K|PK|DEF|DST|D\/ST|FLEX)$/i, isNum=l=>/^-?\d+(\.\d+)?$/.test(l);
+  const set=[], seen=new Set();
+  // Vertical format (one cell per line — Sleeper/ESPN board): …name, POSITION, team, [injury], ADP, bye, …
+  for(let i=1;i<lines.length;i++){
+    if(!POS.test(lines[i]))continue;
+    const name=lines[i-1];
+    if(!name||isNum(name)||POS.test(name))continue;
+    let j=i+1,g=0; while(j<lines.length&&!isNum(lines[j])&&g<6){j++;g++;} // skip team + injury tokens
+    if(j>=lines.length)continue;
+    const adp=parseFloat(lines[j]), k=nrm(name);
+    if(adp>0&&adp<900&&!seen.has(k)){seen.add(k);set.push({k,adp});} // <900 drops "999"/undrafted
+  }
+  if(set.length>=3)return set;
+  // Fallback: horizontal "Name … ADP" per line
+  lines.forEach(ln=>{const s=ln.replace(/^\d{1,3}[.)]\s+/,"");const nums=s.match(/\d+\.?\d*/g);if(!nums)return;
+    const adp=parseFloat(nums[nums.length-1]);
+    const name=s.slice(0,s.lastIndexOf(nums[nums.length-1])).replace(/[^A-Za-z.'\- ]/g," ").replace(/\s+/g," ").trim();
+    const k=nrm(name);if(name&&adp>0&&adp<900&&!seen.has(k)){seen.add(k);set.push({k,adp});}});
+  return set;
+}
+function slotLabel(s){return s==="SUPERFLEX"?"SF":s;}
+function btKey(){const sizes=[8,10,12];const t=sizes.reduce((a,b)=>Math.abs(b-state.settings.teams)<Math.abs(a-state.settings.teams)?b:a,12);return `${t}_${isSF()?1:0}`;}
+function btCell(round,pos){const t=(window.__FFDATA__&&window.__FFDATA__.BACKTEST[btKey()])||{};return (t[String(round)]||{})[pos]||null;}
+
+// replacement level points per position, given league settings
+function replacementLevels(){
+  const T=state.settings.teams, R=state.settings.roster;
+  // base starters per position across league
+  const base={QB:T*R.QB,RB:T*R.RB,WR:T*R.WR,TE:T*R.TE,K:T*R.K,DST:T*R.DST};
+  // distribute FLEX slots across RB/WR/TE by typical usage
+  const flexTotal=T*R.FLEX, share={RB:0.45,WR:0.45,TE:0.10};
+  FLEX_POS.forEach(p=>base[p]+=Math.round(flexTotal*share[p]));
+  // superflex slots start mostly QBs — this raises QB replacement depth (and thus elite-QB VORP)
+  const sfTotal=T*(R.SUPERFLEX||0);
+  base.QB+=Math.round(sfTotal*0.72);base.RB+=Math.round(sfTotal*0.13);base.WR+=Math.round(sfTotal*0.12);base.TE+=Math.round(sfTotal*0.03);
+  const levels={};
+  ALLPOS.forEach(pos=>{
+    const arr=state.players.filter(p=>p.pos===pos).map(valueOf).sort((a,b)=>b-a);
+    const idx=Math.min(Math.max(base[pos]-1,0),arr.length-1);
+    levels[pos]=arr.length?arr[idx]:0;
+  });
+  return {levels,base};
+}
+function vorp(pl,levels){return valueOf(pl)-(levels[pl.pos]||0);}
+
+/* ---- draft order (snake / linear) ---- */
+function teamForPick(pickIdx){
+  const T=state.settings.teams;
+  const round=Math.floor(pickIdx/T), inRound=pickIdx%T;
+  if(state.settings.snake && round%2===1) return T-1-inRound;
+  return inRound;
+}
+function myIdx(){return state.settings.slot-1;}
+function currentPick(){return state.picks.length;}
+function myNextPick(after){
+  const start=(after==null?currentPick():after);
+  const mine=myIdx();
+  for(let p=start;p<start+state.settings.teams*2+2;p++){if(teamForPick(p)===mine)return p;}
+  return start;
+}
+function draftedIds(){return new Set(state.picks.map(p=>p.playerId));}
+function teamRoster(idx){return state.picks.filter(p=>p.teamIdx===idx).map(p=>state.players[p.playerId]);}
+
+/* ---- roster slotting: fills starting lineup optimally ---- */
+function fillLineup(roster){
+  const R=state.settings.roster;
+  const byPos={};ALLPOS.forEach(p=>byPos[p]=roster.filter(x=>x.pos===p).slice().sort((a,b)=>pts(b)-pts(a)));
+  const used=new Set(), slots=[];
+  function take(pos){const arr=byPos[pos];for(const pl of arr){if(!used.has(pl.id)){used.add(pl.id);return pl;}}return null;}
+  const order=[["QB",R.QB],["RB",R.RB],["WR",R.WR],["TE",R.TE]];
+  order.forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
+  function fillBest(poolPos,label,n){
+    for(let i=0;i<(n||0);i++){
+      let best=null;poolPos.forEach(pos=>{const arr=byPos[pos];for(const pl of arr){if(!used.has(pl.id)){if(!best||pts(pl)>pts(best.pl))best={pl,pos};break;}}});
+      if(best){used.add(best.pl.id);slots.push({slot:label,pl:best.pl});}else slots.push({slot:label,pl:null});
+    }
+  }
+  fillBest(FLEX_POS,"FLEX",R.FLEX);
+  fillBest(SUPER_POS,"SUPERFLEX",R.SUPERFLEX);
+  [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
+  const bench=roster.filter(x=>!used.has(x.id)).sort((a,b)=>pts(b)-pts(a));
+  return {slots,bench};
+}
+
+// what starting positions does a roster still NEED?
+function positionalNeed(roster){
+  const R=state.settings.roster;
+  const have={};ALLPOS.forEach(p=>have[p]=roster.filter(x=>x.pos===p).length);
+  const need={};
+  ["QB","RB","WR","TE","K","DST"].forEach(p=>need[p]=Math.max(0,R[p]-have[p]));
+  // flex demand: remaining flex-eligible starters
+  const flexHave=FLEX_POS.reduce((s,p)=>s+Math.max(0,have[p]-R[p]),0);
+  const flexNeed=Math.max(0,R.FLEX-flexHave);
+  // superflex demand: leftovers after starters+flex, plus surplus QBs (QB-eligible flex)
+  const flexLeftover=Math.max(0,flexHave-R.FLEX);
+  const superPool=flexLeftover+Math.max(0,have.QB-R.QB);
+  const superNeed=Math.max(0,(R.SUPERFLEX||0)-superPool);
+  return {need,flexNeed,superNeed,have};
+}
+
+/* ---- recommendation engine ---- */
+function recommendations(){
+  const {levels}=replacementLevels();
+  const drafted=draftedIds();
+  const mine=teamRoster(myIdx());
+  const {need,flexNeed,superNeed}=positionalNeed(mine);
+  const avail=state.players.filter(p=>!drafted.has(p.id));
+  const nextPick=myNextPick(currentPick()+1); // pick after this one
+  const picksUntilNext=Math.max(0,nextPick-currentPick()-1);
+  const myRound=Math.ceil((currentPick()+1)/state.settings.teams);
+  // core (skill-position) starting slots still open — K/DST stay parked until these are ~filled
+  const coreNeed=need.QB+need.RB+need.WR+need.TE+flexNeed+superNeed;
+
+  // available startable (vorp>0) per position, sorted
+  const byPos={};ALLPOS.forEach(p=>byPos[p]=avail.filter(x=>x.pos===p).sort((a,b)=>vorp(b,levels)-vorp(a,levels)));
+
+  const scored=avail.map(pl=>{
+    const v=vorp(pl,levels);
+    // need multiplier
+    let needMult=0.75, needTag="depth";
+    if(need[pl.pos]>0){needMult=1.35;needTag="starter need";}
+    else if(FLEX_POS.includes(pl.pos)&&flexNeed>0){needMult=1.12;needTag="flex fit";}
+    else if(SUPER_POS.includes(pl.pos)&&superNeed>0){needMult=1.12;needTag="superflex fit";}
+    // roster-full damping for K/DST/QB you already have enough of
+    // scarcity: how many startable left at pos, and cliff to next available
+    const pool=byPos[pl.pos];
+    const myRank=pool.findIndex(x=>x.id===pl.id);
+    const startableLeft=pool.filter(x=>vorp(x,levels)>0).length;
+    const next=pool[myRank+1];
+    const cliff=next?Math.max(0,v-vorp(next,levels)):v;
+    // run risk: rough estimate of how many at this pos vanish before my next turn
+    const goneEst=Math.round(picksUntilNext*posDemandShare(pl.pos));
+    const runRisk = startableLeft>0 && goneEst>=myRank+1 && v>0;
+    let score=v*needMult + Math.min(cliff,25)*0.5;
+    if(v<=0)score-=40; // never recommend below replacement as a "need"
+    // K/DST: park them until skill-position starters are filled (real draft behavior)
+    if((pl.pos==="K"||pl.pos==="DST")&&coreNeed>0){score=v*0.15-60;needMult=0.15;needTag="wait";}
+    const adp=adpOf(pl), adpDelta=adp-(currentPick()+1); // >0 = ADP later than now (value); <0 = reach
+    return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,myRank,adp,adpDelta};
+  });
+  scored.sort((a,b)=>b.score-a.score);
+  return {list:scored,levels,picksUntilNext,need,flexNeed,superNeed,myRound};
+}
+// crude share of upcoming picks likely spent on a position
+function posDemandShare(pos){return ({QB:0.12,RB:0.34,WR:0.34,TE:0.10,K:0.04,DST:0.04})[pos]||0.1;}
+
+/* ---- Positional tiers (Elite/Great/…) + run detection ---- */
+function tierData(){
+  const drafted=draftedIds(), lv=replacementLevels().levels, out={};
+  ["QB","RB","WR","TE"].forEach(pos=>{
+    const avail=state.players.filter(p=>p.pos===pos&&!drafted.has(p.id)).sort((a,b)=>vorp(b,lv)-vorp(a,lv));
+    if(!avail.length){out[pos]={n:0,total:0,tier:"—"};return;}
+    const topLabel=valueTier(vorp(avail[0],lv)).label;
+    let n=0; for(const p of avail){if(valueTier(vorp(p,lv)).label===topLabel)n++;else break;}
+    out[pos]={n,total:avail.length,tier:topLabel};
+  });
+  return out;
+}
+function runData(){const last=state.picks.slice(-8),c={QB:0,RB:0,WR:0,TE:0};last.forEach(pk=>{const p=state.players[pk.playerId];if(c[p.pos]!==undefined)c[p.pos]++;});return {c,n:last.length};}
+
+/* ===================== MONTE CARLO DRAFT SIMULATOR ===================== */
+let SIMCACHE={key:null,results:null,ms:0,sims:0};
+function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function simKey(){const s=state.settings;return `${state.picks.length}|${s.teams}|${s.slot}|${s.snake}|${isSF()?1:0}|${JSON.stringify(s.roster)}|${JSON.stringify(s.scoring)}`;}
+function simNeedMult(pos,c,R){
+  const req={QB:R.QB,RB:R.RB,WR:R.WR,TE:R.TE};
+  if(c[pos]<req[pos])return 1.35;
+  const flexFill=["RB","WR","TE"].reduce((s,p)=>s+Math.max(0,c[p]-req[p]),0);
+  if(["RB","WR","TE"].includes(pos)&&flexFill<R.FLEX)return 1.12;
+  const superFill=Math.max(0,flexFill-R.FLEX)+Math.max(0,c.QB-req.QB);
+  if((R.SUPERFLEX||0)>0&&superFill<R.SUPERFLEX)return 1.1;
+  return 0.68;
+}
+function simLineupValue(ids){
+  const R=state.settings.roster, byPos={QB:[],RB:[],WR:[],TE:[]};
+  ids.forEach(id=>{const p=state.players[id];if(byPos[p.pos])byPos[p.pos].push(pts(p));});
+  for(const k in byPos)byPos[k].sort((a,b)=>b-a);
+  const idx={QB:0,RB:0,WR:0,TE:0}; let tot=0;
+  const take=pos=>{if(byPos[pos]&&idx[pos]<byPos[pos].length)tot+=byPos[pos][idx[pos]++];};
+  for(let i=0;i<R.QB;i++)take("QB");for(let i=0;i<R.RB;i++)take("RB");
+  for(let i=0;i<R.WR;i++)take("WR");for(let i=0;i<R.TE;i++)take("TE");
+  const flex=elig=>{let bp=null,bv=-1;elig.forEach(p=>{if(byPos[p]&&idx[p]<byPos[p].length&&byPos[p][idx[p]]>bv){bv=byPos[p][idx[p]];bp=p;}});if(bp)tot+=byPos[bp][idx[bp]++];};
+  for(let i=0;i<R.FLEX;i++)flex(["RB","WR","TE"]);
+  for(let i=0;i<(R.SUPERFLEX||0);i++)flex(["QB","RB","WR","TE"]);
+  return tot;
+}
+// Optimal lineup on SAMPLED season totals → returns {starters,bench} of {pos,tot,wk,bye}
+function fillSampledLineup(arr,R){
+  const byPos={QB:[],RB:[],WR:[],TE:[]};
+  arr.forEach(x=>{if(byPos[x.pos])byPos[x.pos].push(x);});
+  for(const k in byPos)byPos[k].sort((a,b)=>b.tot-a.tot);
+  const idx={QB:0,RB:0,WR:0,TE:0}, starters=[], used=new Set();
+  const take=pos=>{const a=byPos[pos];if(a&&idx[pos]<a.length){const x=a[idx[pos]++];starters.push(x);used.add(x);}};
+  for(let i=0;i<R.QB;i++)take("QB");for(let i=0;i<R.RB;i++)take("RB");
+  for(let i=0;i<R.WR;i++)take("WR");for(let i=0;i<R.TE;i++)take("TE");
+  const flex=elig=>{let bp=null,bv=-1;elig.forEach(p=>{const a=byPos[p];if(a&&idx[p]<a.length&&a[idx[p]].tot>bv){bv=a[idx[p]].tot;bp=p;}});if(bp){const x=byPos[bp][idx[bp]++];starters.push(x);used.add(x);}};
+  for(let i=0;i<R.FLEX;i++)flex(["RB","WR","TE"]);
+  for(let i=0;i<(R.SUPERFLEX||0);i++)flex(["QB","RB","WR","TE"]);
+  return {starters,bench:arr.filter(x=>!used.has(x))};
+}
+// For each top candidate: rollout the rest of the draft, then simulate the SEASON (sampling boom/bust
+// with team-offense correlation, weekly matchups + playoff bracket) → rank by championship equity.
+function runSim(nIters){
+  const T=state.settings.teams, myI=myIdx(), R=state.settings.roster;
+  const startPick=currentPick();
+  if(teamForPick(startPick)!==myI) return {error:"not_my_pick",nextMine:myNextPick(startPick)};
+  const {levels}=replacementLevels();
+  const drafted=draftedIds();
+  const pool=state.players.filter(p=>["QB","RB","WR","TE"].includes(p.pos)&&!drafted.has(p.id));
+  if(pool.length<T) return {error:"empty"};
+  const meta={}; pool.forEach(p=>meta[p.id]={pos:p.pos,vorp:vorp(p,levels),adp:adpOf(p),pts:pts(p)});
+  const adpArr=pool.map(p=>({id:p.id,pos:p.pos,adp:meta[p.id].adp})).sort((a,b)=>a.adp-b.adp);
+  const vorpArr=pool.map(p=>({id:p.id,pos:p.pos,vorp:meta[p.id].vorp})).sort((a,b)=>b.vorp-a.vorp);
+  const baseCount=[...Array(T)].map(()=>({QB:0,RB:0,WR:0,TE:0,skill:0}));
+  const baseRos=[...Array(T)].map(()=>[]);
+  state.picks.forEach(pk=>{const p=state.players[pk.playerId];baseRos[pk.teamIdx].push(pk.playerId);if(baseCount[pk.teamIdx][p.pos]!==undefined){baseCount[pk.teamIdx][p.pos]++;baseCount[pk.teamIdx].skill++;}});
+  const startersSkill=R.QB+R.RB+R.WR+R.TE+R.FLEX+(R.SUPERFLEX||0);
+  const target=startersSkill+Math.min(R.BENCH||0,5);
+  const oppCap={QB:R.QB+(R.SUPERFLEX||0)+1,RB:R.RB+R.FLEX+(R.SUPERFLEX||0)+2,WR:R.WR+R.FLEX+(R.SUPERFLEX||0)+2,TE:R.TE+2};
+  const endPick=T*Object.values(R).reduce((a,b)=>a+b,0);
+  const cands=vorpArr.slice(0,Math.min(10,vorpArr.length)).map(x=>x.id);
+  const sched=roundRobin(T);
+  const nPlayoff=T>=10?6:(T>=6?4:2);
+  // precompute per-player weekly matchup multipliers (real schedule × DvP), weeks 1-17 (0=bye)
+  const MM={}; for(const p of state.players){if(p.pos==="QB"||p.pos==="RB"||p.pos==="WR"||p.pos==="TE"){const a=new Array(18);for(let w=1;w<=17;w++)a[w]=weeklyMultOf(p,w);MM[p.id]=a;}}
+  const req={QB:R.QB,RB:R.RB,WR:R.WR,TE:R.TE};
+  // marginal value of a pick to MY lineup: an empty starter slot is worth the player's full points (else it scores 0)
+  function myVal(id,cnt){const pos=meta[id].pos;
+    if(cnt[pos]<req[pos])return meta[id].pts;
+    const fx=["RB","WR","TE"].reduce((s,p)=>s+Math.max(0,cnt[p]-req[p]),0);
+    if(["RB","WR","TE"].includes(pos)&&fx<R.FLEX)return meta[id].pts*0.92;
+    const sf=Math.max(0,fx-R.FLEX)+Math.max(0,cnt.QB-req.QB);
+    if((R.SUPERFLEX||0)>0&&sf<(R.SUPERFLEX||0))return meta[id].pts*0.9;
+    return meta[id].vorp*0.5;}
+  function bestMyPick(taken,cnt){
+    const cons=[]; let seen=0;
+    for(const pr of vorpArr){if(taken.has(pr.id))continue;cons.push(pr.id);if(++seen>=24)break;}
+    ["QB","RB","WR","TE"].forEach(pos=>{if(cnt[pos]<req[pos]){for(const pr of vorpArr){if(pr.pos===pos&&!taken.has(pr.id)){cons.push(pr.id);break;}}}});
+    let bId=-1,bV=-1e18;for(const id of cons){const v=myVal(id,cnt);if(v>bV){bV=v;bId=id;}}
+    return bId;}
+  function draftRollout(forceId){
+    const taken=new Set(drafted), tc=baseCount.map(c=>({...c})), ros=baseRos.map(a=>a.slice());
+    let ah=0; while(ah<adpArr.length&&taken.has(adpArr[ah].id))ah++;
+    for(let pick=startPick;pick<endPick;pick++){
+      const tm=teamForPick(pick);
+      if(tc[tm].skill>=target)continue;
+      let id=-1;
+      if(pick===startPick)id=forceId;
+      else if(tm===myI){id=bestMyPick(taken,tc[myI]);}
+      else{let best=1e18,cnt=0;for(let i=ah;i<adpArr.length&&cnt<16;i++){const pr=adpArr[i];if(taken.has(pr.id))continue;if(tc[tm][pr.pos]>=oppCap[pr.pos])continue;cnt++;const nz=pr.adp*(1+gauss()*0.11)+gauss()*2;if(nz<best){best=nz;id=pr.id;}}}
+      if(id<0)continue;
+      taken.add(id);const pos=state.players[id].pos;tc[tm][pos]++;tc[tm].skill++;ros[tm].push(id);
+      while(ah<adpArr.length&&taken.has(adpArr[ah].id))ah++;
+    }
+    return ros;
+  }
+  function seasonSim(ros){
+    const off={}, teamStart=new Array(T), teamBench=new Array(T);
+    for(let t=0;t<T;t++){
+      const arr=ros[t].filter(id=>MM[id]).map(id=>{const p=state.players[id],d=p.dist,bp=pts(p);
+        const sd=d?(d.c-d.f)/2.08:0.18, nfl=p.team; if(off[nfl]===undefined)off[nfl]=gauss()*0.11;
+        const isPass=(p.pos==="QB"||p.pos==="WR"||p.pos==="TE"), tot=bp*Math.max(0.12,1+gauss()*sd*0.9+off[nfl]*(isPass?0.5:0.15));
+        return {id,pos:p.pos,tot,per:tot/17};});
+      const fl=fillSampledLineup(arr,R); teamStart[t]=fl.starters; teamBench[t]=fl.bench;
+    }
+    // weekly team score: each starter's per-game × that week's matchup multiplier (0 on bye → sub best bench)
+    const wk=(t,w)=>{let s=0,byeN=0;
+      for(const st of teamStart[t]){const c=st.per*MM[st.id][w]; if(c>0)s+=c; else byeN++;}
+      if(byeN>0){const bw=teamBench[t].map(b=>b.per*MM[b.id][w]).filter(x=>x>0).sort((a,b)=>b-a);for(let i=0;i<byeN&&i<bw.length;i++)s+=bw[i];}
+      return s*(1+gauss()*0.06);};
+    const wins=new Array(T).fill(0), pf=new Array(T).fill(0);
+    sched.forEach((week,wi)=>{const w=wi+1;week.forEach(([a,b])=>{const sa=wk(a,w),sb=wk(b,w);pf[a]+=sa;pf[b]+=sb;if(sa>=sb)wins[a]++;else wins[b]++;});});
+    const seeds=[...Array(T).keys()].sort((x,y)=>(wins[y]-wins[x])||(pf[y]-pf[x])).slice(0,nPlayoff);
+    const m=(a,b,w)=>wk(a,w)>=wk(b,w)?a:b; let champ;
+    if(seeds.length>=6){const r1a=m(seeds[2],seeds[5],15),r1b=m(seeds[3],seeds[4],15);champ=m(m(seeds[0],r1b,16),m(seeds[1],r1a,16),17);}
+    else if(seeds.length>=4){champ=m(m(seeds[0],seeds[3],15),m(seeds[1],seeds[2],15),16);}
+    else champ=m(seeds[0],seeds[1]||seeds[0],15);
+    return {champ,myPlayoffs:seeds.includes(myI),myPf:pf[myI],myWins:wins[myI]};
+  }
+  const results=cands.map(id=>{
+    let titles=0,playoffs=0,pfSum=0,winsSum=0;
+    for(let k=0;k<nIters;k++){const o=seasonSim(draftRollout(id));if(o.champ===myI)titles++;if(o.myPlayoffs)playoffs++;pfSum+=o.myPf;winsSum+=o.myWins;}
+    return {id,title:titles/nIters,playoff:playoffs/nIters,pf:pfSum/nIters,wins:winsSum/nIters};
+  });
+  results.sort((a,b)=>(b.title-a.title)||(b.playoff-a.playoff)||(b.pf-a.pf));
+  return {results};
+}
+
+/* ============================= RENDER ============================= */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function fmt(n){return (Math.round(n*10)/10).toFixed(1);}
+function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show");clearTimeout(f._t);f._t=setTimeout(()=>f.classList.remove("show"),1600);}
+
+function renderAll(){applyFormatUI();renderClock();syncPickTimer();renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();renderTeamTab();renderMatchups();renderBacktest();renderDynasty();renderPlayersTab();renderReplBox();save();}
+
+function renderClock(){
+  if(state.settings.auction){
+    const b=myBudget(), el=$("#clockBanner");
+    el.className="clock you";
+    el.innerHTML=`<div style="flex:1"><div class="eyebrow">Auction · ${state.picks.length} players bought league-wide</div>
+      <div class="big">💰 $${b.rem} left · max bid $${b.maxBid}</div>
+      <div class="meta">You've bought ${b.count} · ${b.open} roster spots open · $${b.open>0?Math.floor(b.rem/b.open):0}/slot avg left</div></div>
+      ${state.picks.length?`<button class="ghost" id="undoBtn">↶ Undo last buy</button>`:""}`;
+    const u=$("#undoBtn");if(u)u.onclick=()=>{state.picks.pop();SIMCACHE={key:null};renderAll();flash("Buy undone");};
+    return;
+  }
+  const p=currentPick(), T=state.settings.teams;
+  const tIdx=teamForPick(p), round=Math.floor(p/T)+1, inRound=(p%T)+1;
+  const isMe=tIdx===myIdx();
+  const total=T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  const done=p>=total;
+  const el=$("#clockBanner");
+  el.className="clock"+(isMe&&!done?" you":"");
+  const mockBadge=state.ui.mock?` · <span style="color:var(--accent);font-weight:700">🤖 Mock</span>`:"";
+  el.innerHTML=`<div style="flex:1">
+     <div class="eyebrow">${done?"Draft complete":`Pick ${p+1} · Round ${round}.${String(inRound).padStart(2,"0")}`} · ${Math.min(state.picks.length,total)}/${total} made${mockBadge}</div>
+     <div class="big">${done?"✅ Draft complete":(isMe?"🎯 You're on the clock":(state.ui.mock?"🤖 ":"")+"Team "+(tIdx+1)+" picking")}</div>
+   </div>
+   ${state.picks.length?`<button class="ghost" id="undoBtn">↶ Undo${state.ui.mock?" my pick":""}</button>`:""}`;
+  const u=$("#undoBtn");if(u)u.onclick=()=>{
+    if(state.ui.mock){while(state.picks.length){const last=state.picks.pop();if(last.teamIdx===myIdx())break;}}
+    else state.picks.pop();
+    SIMCACHE={key:null};renderAll();flash("Pick undone");
+  };
+}
+
+function renderRecs(){
+  const rm=$("#recMode");
+  if(state.settings.auction){ if(rm)rm.style.display="none"; return renderHeurRecs(); }
+  if(rm)rm.style.display="";
+  $$("#recMode button").forEach(b=>b.classList.toggle("on",b.dataset.m===(state.ui.simMode?"sim":"heur")));
+  if(state.ui.simMode)return renderSimRecs();
+  return renderHeurRecs();
+}
+function fireSim(){
+  const key=simKey(), N=state.ui.simN||600;
+  SIMCACHE={key:null,running:true}; renderSimRecs();
+  setTimeout(()=>{const t0=performance.now();const r=runSim(N);SIMCACHE={key,results:r.results||null,error:r.error,sims:N,ms:Math.round(performance.now()-t0),running:false};renderSimRecs();},30);
+}
+function renderSimRecs(){
+  const isMe=teamForPick(currentPick())===myIdx(), key=simKey();
+  const myR=Math.ceil((currentPick()+1)/state.settings.teams), N=state.ui.simN||600;
+  const auto=state.ui.simAuto!==false;
+  const note=`<div class="note" style="margin-bottom:10px">🎲 <b>Championship mode.</b> Plays out your draft and full season <b>${N}×</b>, then ranks each pick by your <b>chance to win the title</b>.</div>`;
+  const simSel=`<div class="toolbar" style="margin-bottom:8px"><span class="meta">sims:</span><div class="seg" id="simN" style="transform:scale(.85);transform-origin:left">${[80,250,600].map(n=>`<button data-n="${n}" class="${N===n?'on':''}">${n}</button>`).join("")}</div><button class="fbtn ${auto?'on':''}" id="simAutoBtn" title="Auto-run the instant you're on the clock">Auto ⟳</button></div>`;
+  const wire=()=>{$$("#simN button").forEach(b=>b.onclick=()=>{state.ui.simN=+b.dataset.n;SIMCACHE={key:null};renderSimRecs();});const ab=$("#simAutoBtn");if(ab)ab.onclick=()=>{state.ui.simAuto=!(state.ui.simAuto!==false);renderSimRecs();};};
+  if(!isMe){
+    const np=myNextPick(currentPick());$("#recCtx").textContent=`Simulator · optimizes your pick`;
+    $("#recList").innerHTML=note+`<div class="emptystate">The simulator optimizes <b>your</b> pick. You're up at pick <b>${np+1}</b> (${np-currentPick()} selections away) — log opponents' picks with “Mark taken”, then Simulate when you're on the clock.</div>`;
+    return;
+  }
+  $("#recCtx").textContent=`R${myR} · simulator`;
+  if(SIMCACHE.running){$("#recList").innerHTML=note+simSel+`<div class="emptystate">Simulating ${N}× across the rest of the draft…</div>`;wire();return;}
+  if(SIMCACHE.key!==key||!SIMCACHE.results){
+    const draftVisible=!document.getElementById("tab-draft").classList.contains("hide");
+    if(auto&&draftVisible){fireSim();return;}
+    $("#recList").innerHTML=note+simSel+`<button class="draftbtn" id="runSimBtn">▶ Run ${N} simulations</button>`;wire();
+    $("#runSimBtn").onclick=()=>fireSim();
+    return;
+  }
+  const res=SIMCACHE.results;
+  if(!res||!res.length){$("#recList").innerHTML=note+simSel+`<div class="emptystate">No skill players left to simulate.</div>`;wire();return;}
+  const best=res[0].title, top=res.slice(0,6);
+  $("#recList").innerHTML=note+simSel+`<div class="pickcounter" style="margin-bottom:8px">Ranked by your chance to win it all (${SIMCACHE.sims} season sims each)</div>`+
+    top.map((r,i)=>{const pl=state.players[r.id];
+      const line=i===0?`Best shot at the championship of any pick right now.`:`A bit less likely to win it all than the top pick.`;
+      return `<div class="rec ${pl.pos}${i===0?' top':''}"><div class="rank-badge">#${i+1}</div>
+        <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span>${injChip(pl)}</div>
+        <div class="cardmeta">${pl.team} · bye ${pl.bye||"—"} · <b>${Math.round(pts(pl))}</b> proj pts · <b>${(r.title*100).toFixed(0)}%</b> to win title · ${Math.round(r.playoff*100)}% make playoffs</div>
+        <div class="why">${line}</div>
+        <button class="draftbtn" data-draft="${r.id}">Draft to my team</button></div>`;
+    }).join("")+`<button class="draftbtn alt" id="reSimBtn" style="margin-top:2px">↻ Re-run</button>`;
+  wire();
+  $$("#recList [data-draft]").forEach(b=>b.onclick=()=>doDraft(+b.dataset.draft));
+  $("#reSimBtn").onclick=()=>fireSim();
+}
+const POSWORD={QB:"quarterback",RB:"running back",WR:"receiver",TE:"tight end",K:"kicker",DST:"defense"};
+function valueTier(v){
+  if(v>=110)return{label:"Elite",cls:"elite"};
+  if(v>=65)return{label:"Great",cls:"great"};
+  if(v>=30)return{label:"Good",cls:"good"};
+  if(v>=10)return{label:"Startable",cls:"ok"};
+  return{label:"Depth",cls:"depth"};
+}
+function renderHeurRecs(){
+  const {list,picksUntilNext,myRound}=recommendations();
+  const auct=state.settings.auction, actx=auct?auctionCtx():null, bud=auct?myBudget():null;
+  $("#recCtx").textContent=auct?`💰 $${bud.rem} left · max bid $${bud.maxBid} · ${bud.open} slots open`:`Round ${myRound} · your next pick in ${picksUntilNext}`;
+  const top=list.slice(0,6);
+  const isMe=teamForPick(currentPick())===myIdx();
+  $("#recList").innerHTML = top.map((r,i)=>{
+    const pos=r.pl.pos, P=POSWORD[pos]||pos, tier=valueTier(r.v);
+    let line;
+    if(auct){const val=actx.val(r.pl); line=val<=bud.maxBid?`Best value left — worth about <b>$${val}</b>, and you can afford him.`:`Great player, but ~$${val} is over your max bid ($${bud.maxBid}).`;}
+    else if(r.needTag==="starter need")line=`You still need a ${P} — and he's ${i===0?"the best one":"one of the best"} on the board.`;
+    else if(r.needTag==="flex fit")line=`Great pickup for your open FLEX spot.`;
+    else if(r.needTag==="superflex fit")line=`Fills your SUPERFLEX — grabbing a QB here is a big edge.`;
+    else if(r.needTag==="wait")line=`You can wait on ${P} — just here as best-available.`;
+    else line=i===0?`Best player left on the board.`:`Strong value if you want the best available.`;
+    const warn=[];
+    if(!auct&&r.runRisk)warn.push(`<span class="chip warn">⏳ Grab now — likely gone by your next pick</span>`);
+    const metaExtra=auct?` · <b>$${actx.val(r.pl)}</b> value`:"";
+    return `<div class="rec ${pos}${i===0?" top":""}">
+      <div class="rank-badge">#${i+1}</div>
+      <div class="r1"><span class="pos ${pos}">${pos}</span><span class="nm">${r.pl.name}</span>${injChip(r.pl)}</div>
+      <div class="cardmeta">${r.pl.team} · bye ${r.pl.bye||"—"} · <b>${Math.round(pts(r.pl))}</b> proj pts${metaExtra} · <span class="tier ${tier.cls}">${tier.label}</span></div>
+      <div class="why">${line}</div>
+      ${warn.length?`<div class="r2" style="margin-top:7px">${warn.join("")}</div>`:""}
+      <button class="draftbtn ${(auct||isMe)?"":"alt"}" data-${auct?'buy':'draft'}="${r.pl.id}">${auct?`Buy${state.ui.auctPrice?` for $${state.ui.auctPrice}`:` ($${actx.val(r.pl)})`}`:(isMe?"Draft to my team":"Mark taken")}</button>
+    </div>`;
+  }).join("") || `<div class="emptystate">No players available.</div>`;
+  $$("#recList [data-draft]").forEach(b=>b.onclick=()=>doDraft(+b.dataset.draft));
+  $$("#recList [data-buy]").forEach(b=>b.onclick=()=>{const id=+b.dataset.buy;const price=(state.ui.auctPrice!==''&&state.ui.auctPrice!=null)?+state.ui.auctPrice:actx.val(state.players[id]);doBuy(id,state.ui.auctTeam!=null?state.ui.auctTeam:myIdx(),price);state.ui.auctPrice='';});
+}
+function buildWhy(r,pun,myRound){
+  const parts=[];
+  if(r.needTag==="starter need")parts.push(`Fills an open <b>${r.pl.pos}</b> starting slot.`);
+  else if(r.needTag==="flex fit")parts.push(`Best value for your open FLEX.`);
+  else if(r.needTag==="superflex fit")parts.push(`Fills your open SUPERFLEX — in this format a QB here is premium.`);
+  else parts.push(`Bench value / best-player-available.`);
+  const bt=btCell(myRound,r.pl.pos);
+  if(bt)parts.push(`Historically (2014–24, ${state.settings.teams}-team${isSF()?' SF':''}), Round&nbsp;${myRound} ${r.pl.pos}s returned a startable season <b>${Math.round(bt.hit*100)}%</b> of the time (avg ${Math.round(bt.avg)} PPR pts, n=${bt.n}).`);
+  parts.push(`+${fmt(r.v)} ${isDyno()?'dynasty value':'pts'} over replacement.`);
+  if(isDyno()){
+    const a=r.pl.age||27, m=ageMult(r.pl.pos,a);
+    if(r.pl.pos!=="K"&&r.pl.pos!=="DST"){
+      if(m>=0.95&&a<=25)parts.push(`Age <b>${a}</b> — years of ascending production ahead; a multi-year cornerstone.`);
+      else if(m<0.72)parts.push(`Age <b>${a}</b> — a win-now asset; value fades fast, so only if you're contending.`);
+      else if(m<0.9)parts.push(`Age <b>${a}</b> — solid now but past peak; weigh the shrinking window.`);
+    }
+  }
+  if(r.runRisk)parts.push(`Only <b>${r.startableLeft}</b> startable ${r.pl.pos} left and ~${pun} picks until you're back — likely gone.`);
+  else if(r.cliff>8)parts.push(`Sharp drop-off (${fmt(r.cliff)}) to the next ${r.pl.pos}.`);
+  return parts.join(" ");
+}
+
+function renderAvail(){
+  const {levels}=replacementLevels();
+  const drafted=draftedIds();
+  const u=state.ui;
+  let rows=state.players.map(pl=>({pl,proj:pts(pl),vorp:vorp(pl,levels),age:pl.age||0,drafted:drafted.has(pl.id)}));
+  if(u.posFilter!=="ALL")rows=rows.filter(r=>u.posFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.posFilter);
+  if(u.search)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.search.toLowerCase()));
+  if(u.hideDrafted)rows=rows.filter(r=>!r.drafted);
+  const key=u.sort,dir=u.dir;
+  rows.sort((a,b)=>{
+    let av,bv;
+    if(key==="name"){av=a.pl.name;bv=b.pl.name;return dir*av.localeCompare(bv);}
+    if(key==="pos"){av=a.pl.pos;bv=b.pl.pos;return dir*av.localeCompare(bv);}
+    if(key==="adp"){av=adpOf(a.pl);bv=adpOf(b.pl);}
+    else if(key==="rank"){av=a.vorp;bv=b.vorp;}
+    else{av=a[key];bv=b[key];}
+    return dir*(av-bv);
+  });
+  const vh=$("#vorpHead");if(vh)vh.textContent=isDyno()?"DynVORP":"VORP";
+  const auct=state.settings.auction, actx=auct?auctionCtx():null;
+  const ah=$("#adpHead");if(ah)ah.textContent=auct?"$ Val":"ADP";
+  $("#availCount").textContent=auct?`${rows.length} shown · $ values${actx.infl!==1?` · inflation ${actx.infl.toFixed(2)}×`:''}`:`${rows.length} shown · ADP: ${ADP_SRC[state.settings.adpSource||'ffc']} ${isSF()?'SF':'1QB'}`;
+  const abar=$("#auctionBar");
+  if(auct){
+    abar.classList.remove("hide");
+    if(state.ui.auctTeam==null)state.ui.auctTeam=myIdx();
+    abar.innerHTML=`<span class="meta">Sold to</span>
+      <select id="auctTeam">${[...Array(state.settings.teams)].map((_,t)=>`<option value="${t}" ${t===state.ui.auctTeam?'selected':''}>${t===myIdx()?'★ You':'Team '+(t+1)}</option>`).join("")}</select>
+      <span class="meta">for $</span><input id="auctPrice" type="number" min="0" style="width:58px" value="${state.ui.auctPrice||''}" placeholder="auto">
+      <span class="meta">→ click a player's <b>Buy</b>. Blank = suggested value.</span>`;
+    $("#auctTeam").onchange=e=>{state.ui.auctTeam=+e.target.value;};
+    $("#auctPrice").oninput=e=>{state.ui.auctPrice=e.target.value;};
+  } else abar.classList.add("hide");
+  const isMe=teamForPick(currentPick())===myIdx();
+  const priceOf=id=>{const pk=state.picks.find(p=>p.playerId===id);return pk?pk.price:null;};
+  $("#availBody").innerHTML=rows.slice(0,300).map((r,i)=>{
+    const tag=ageTag(r.pl), ageCol=tag?({good:'var(--good)',warn:'var(--warn)',crit:'var(--crit)',info:'var(--ink)'})[tag.cls]:'var(--ink-2)';
+    const lastCol=auct?`$${actx.val(r.pl)}`:(adpOf(r.pl)<900?fmt(adpOf(r.pl)):'—');
+    const btn=r.drafted
+      ? (auct?`<span class="chip">$${priceOf(r.pl.id)??''}</span>`:`<span class="chip">taken</span>`)
+      : (auct?`<button class="mini dr" data-buy="${r.pl.id}">Buy</button>`:`<button class="mini ${isMe?'dr':''}" data-draft="${r.pl.id}">${isMe?'Draft':'Take'}</button>`);
+    return `
+    <tr style="${r.drafted?'opacity:.4':''}">
+      <td class="num meta">${i+1}</td>
+      <td><span class="plname">${r.pl.name}</span> ${injChip(r.pl)}<span class="meta">${r.pl.team}</span>${r.pl.bye?` <span class="bye">bye ${r.pl.bye}</span>`:''}</td>
+      <td><span class="pos ${r.pl.pos}">${r.pl.pos}</span></td>
+      <td class="r num" style="color:${ageCol}">${r.age||'—'}</td>
+      <td class="r num">${fmt(r.proj)}</td>
+      <td class="r num meta" style="font-size:11px">${r.pl.dist?`${fmt(floorOf(r.pl))}–${fmt(ceilOf(r.pl))}`:'—'}</td>
+      <td class="r num" style="color:${r.vorp>0?'var(--good)':'var(--ink-2)'}">${r.vorp>0?'+':''}${fmt(r.vorp)}</td>
+      <td class="r num${auct?'':' meta'}">${lastCol}</td>
+      <td class="r">${btn}</td>
+    </tr>`;}).join("");
+  $$("#availBody [data-draft]").forEach(b=>b.onclick=()=>doDraft(+b.dataset.draft));
+  $$("#availBody [data-buy]").forEach(b=>b.onclick=()=>{const id=+b.dataset.buy;const price=(state.ui.auctPrice!==''&&state.ui.auctPrice!=null)?+state.ui.auctPrice:actx.val(state.players[id]);doBuy(id,state.ui.auctTeam!=null?state.ui.auctTeam:myIdx(),price);state.ui.auctPrice='';});
+}
+
+function renderMyRoster(){
+  const roster=teamRoster(myIdx());
+  const {slots,bench}=fillLineup(roster);
+  const starterPts=slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0);
+  $("#rosterPts").textContent=`${fmt(starterPts)} starter pts`;
+  let html=slots.map(s=>`<div class="slotrow">
+      <span class="slotlab"><span class="pos ${s.slot}">${slotLabel(s.slot)}</span></span>
+      ${s.pl?`<span class="slotname">${s.pl.name}</span>${injChip(s.pl)}<span class="meta">${s.pl.team}</span><span class="bye">${s.pl.bye?'bye '+s.pl.bye:''}</span><span class="num" style="width:44px;text-align:right">${fmt(pts(s.pl))}</span>`
+        :`<span class="slotname empty">— empty —</span>`}
+    </div>`).join("");
+  if(bench.length)html+=`<div style="margin-top:10px" class="eyebrow">Bench</div>`+bench.map(p=>`<div class="slotrow">
+      <span class="slotlab"><span class="pos ${p.pos}">${p.pos}</span></span>
+      <span class="slotname">${p.name}</span><span class="meta">${p.team}</span><span class="num" style="width:44px;text-align:right">${fmt(pts(p))}</span></div>`).join("");
+  if(!roster.length)html=`<div class="emptystate">No players yet. Your picks appear here.</div>`;
+  $("#myRoster").innerHTML=html;
+}
+
+function renderNeed(){
+  const roster=teamRoster(myIdx());
+  const {need,flexNeed,superNeed,have}=positionalNeed(roster);
+  const R=state.settings.roster;
+  const rows=["QB","RB","WR","TE","K","DST"].map(p=>{
+    const req=R[p],hv=have[p]||0;
+    const state2=hv>=req?'good':(req-hv>=req?'crit':'warn');
+    return `<div class="kv"><span><span class="pos ${p}">${p}</span> <span class="meta">${hv}/${req}${p==='RB'||p==='WR'||p==='TE'?' + flex':''}</span></span>
+      <span class="chip ${state2}">${hv>=req?'set':(req-hv)+' needed'}</span></div>`;
+  }).join("");
+  let extra=`<div class="kv"><span><span class="pos FLEX">FLEX</span></span><span class="chip ${flexNeed?'warn':'good'}">${flexNeed?flexNeed+' open':'set'}</span></div>`;
+  if(R.SUPERFLEX>0)extra+=`<div class="kv"><span><span class="pos SUPERFLEX">SF</span></span><span class="chip ${superNeed?'warn':'good'}">${superNeed?superNeed+' open':'set'}</span></div>`;
+  $("#needBox").innerHTML=rows+extra;
+}
+function renderTiers(){
+  const el=$("#tierBox"); if(!el)return;
+  const td=tierData(), rd=runData();
+  el.innerHTML=["QB","RB","WR","TE"].map(pos=>{
+    const d=td[pos]; if(!d||!d.total)return `<div class="kv"><span><span class="pos ${pos}">${pos}</span></span><span class="meta">none left</span></div>`;
+    const cliff=d.n<=2, thin=d.n<=4, run=rd.c[pos]>=3;
+    return `<div class="kv"><span><span class="pos ${pos}">${pos}</span> <span class="meta"><b>${d.n}</b> ${d.tier} left · ${d.total} total</span></span>
+      <span style="display:flex;gap:4px">${run?'<span class="chip warn">🔥 run</span>':''}${cliff?'<span class="chip crit">⚠ last few</span>':thin?'<span class="chip warn">thin</span>':''}</span></div>`;
+  }).join("");
+  const cliffs=["RB","WR","QB","TE"].filter(p=>td[p]&&td[p].total&&td[p].n<=2);
+  const runs=["RB","WR","QB","TE"].filter(p=>rd.c[p]>=3);
+  let note="";
+  if(cliffs.length)note+=`Only a couple <b>${cliffs.map(p=>td[p].tier+" "+p).join(", ")}</b> left — grab now or drop a tier. `;
+  if(runs.length)note+=`🔥 <b>${runs.join(", ")}</b> ${runs.length>1?"are":"is"} getting drafted fast.`;
+  el.innerHTML+=`<div class="note" style="margin-top:8px">${note||"Tiers are deep — no need to reach yet."}</div>`;
+}
+
+/* ---- MY TEAM tab ---- */
+function renderTeamTab(){
+  const roster=teamRoster(myIdx());
+  // construction: position points bar chart vs league avg
+  const {levels}=replacementLevels();
+  const posPts={};ALLPOS.forEach(p=>posPts[p]=roster.filter(x=>x.pos===p).reduce((s,x)=>s+pts(x),0));
+  const max=Math.max(1,...Object.values(posPts));
+  const cvar={QB:'--qb',RB:'--rb',WR:'--wr',TE:'--te',K:'--k',DST:'--dst'};
+  $("#construction").innerHTML = roster.length? ALLPOS.map(p=>`
+    <div class="barrow"><span class="lab"><span class="pos ${p}">${p}</span></span>
+      <div class="bar"><i style="width:${Math.round(posPts[p]/max*100)}%;background:var(${cvar[p]})"></i></div>
+      <span class="num" style="width:52px;text-align:right">${fmt(posPts[p])}</span></div>`).join("")
+    + `<div class="note" style="margin-top:12px">${constructionVerdict(roster)}</div>`
+    : `<div class="emptystate">Draft players to see your roster shape.</div>`;
+
+  // bye coverage
+  const byWeek={};roster.forEach(p=>{if(p.bye){(byWeek[p.bye]=byWeek[p.bye]||[]).push(p);}});
+  const weeks=Object.keys(byWeek).map(Number).sort((a,b)=>a-b);
+  $("#byeBox").innerHTML = roster.length? (weeks.map(w=>{
+    const list=byWeek[w], starters=list.filter(p=>isLikelyStarter(p,roster));
+    const risk=starters.length>=2;
+    return `<div class="kv"><span><b class="num">Wk ${w}</b> <span class="meta">${list.map(p=>p.name.split(' ').slice(-1)).join(', ')}</span></span>
+      <span class="chip ${risk?'crit':list.length>=3?'warn':'good'}">${risk?starters.length+' starters out':list.length+' out'}</span></div>`;
+  }).join("") + `<div class="note" style="margin-top:12px">${byeVerdict(weeks,byWeek,roster)}</div>`)
+   : `<div class="emptystate">No bye conflicts yet.</div>`;
+
+  // stacks
+  const byTeam={};roster.forEach(p=>{(byTeam[p.team]=byTeam[p.team]||[]).push(p);});
+  const stacks=Object.entries(byTeam).filter(([t,ps])=>ps.length>=2&&ps.some(p=>p.pos==='QB')&&ps.some(p=>['WR','TE'].includes(p.pos)));
+  const oppExposure=Object.entries(byTeam).filter(([t,ps])=>ps.length>=2);
+  $("#stackBox").innerHTML = stacks.length?
+    stacks.map(([t,ps])=>`<div class="kv"><span><span class="chip good">stack</span> <b>${t}</b> — ${ps.map(p=>`${p.name} (${p.pos})`).join(' + ')}</span><span class="chip info">correlated ceiling</span></div>`).join("")
+    : `<div class="note">No QB + pass-catcher stacks yet. Stacking your QB with his WR/TE raises your weekly ceiling — when the offense pops, you win twice.</div>`;
+
+  // all teams board
+  const T=state.settings.teams;
+  let board="";
+  for(let i=0;i<T;i++){
+    const r=teamRoster(i);
+    board+=`<div class="teamcard ${i===myIdx()?'me':''}">
+      <h4>${i===myIdx()?'★ You':'Team '+(i+1)} <span class="num meta">${r.length}</span></h4>
+      ${r.length?r.map(p=>`<div class="pl"><span class="pos ${p.pos}" style="min-width:26px;font-size:9px">${p.pos}</span>${p.name}</div>`).join(''):'<div class="pl">—</div>'}
+    </div>`;
+  }
+  $("#allTeams").innerHTML=board;
+}
+function isLikelyStarter(pl,roster){
+  const {slots}=fillLineup(roster);return slots.some(s=>s.pl&&s.pl.id===pl.id);
+}
+function constructionVerdict(roster){
+  const {need,flexNeed}=positionalNeed(roster);
+  const gaps=Object.entries(need).filter(([,n])=>n>0).map(([p])=>p);
+  const rb=roster.filter(p=>p.pos==='RB').length, wr=roster.filter(p=>p.pos==='WR').length;
+  let msg=[];
+  if(gaps.length)msg.push(`Still need a starter at <b>${gaps.join(', ')}</b>${flexNeed?' + FLEX':''}.`);
+  else msg.push(`Starting lineup is complete — swing for upside and bye insurance on the bench.`);
+  if(rb<3&&roster.length>6)msg.push(`Only ${rb} RB — thin if one gets hurt; RB scarcity bites hardest.`);
+  if(wr<3&&roster.length>6)msg.push(`Only ${wr} WR — build depth for bye weeks.`);
+  return msg.join(' ');
+}
+function byeVerdict(weeks,byWeek,roster){
+  const bad=weeks.filter(w=>byWeek[w].filter(p=>isLikelyStarter(p,roster)).length>=2);
+  if(bad.length)return `⚠ Week ${bad.join(', ')} stacks multiple starters on bye — you may be forced to start a bench player below replacement. Diversify bye weeks on your next picks.`;
+  return `Bye weeks are well spread — no week forces two starters out at once.`;
+}
+
+/* ---- MATCHUPS tab ---- */
+function roundRobin(T){
+  // circle method; returns array of weeks, each an array of [a,b] pairs
+  const teams=[...Array(T).keys()];
+  if(T%2)teams.push(-1);
+  const n=teams.length, rounds=[];
+  let arr=teams.slice();
+  for(let r=0;r<Math.max(14,n-1);r++){
+    const pairs=[];
+    for(let i=0;i<n/2;i++){const a=arr[i],b=arr[n-1-i];if(a!==-1&&b!==-1)pairs.push([a,b]);}
+    rounds.push(pairs);
+    arr=[arr[0],...arr.slice(2),arr[1]]; // rotate
+  }
+  return rounds.slice(0,14);
+}
+function weeklyScore(roster,week){
+  // optimal lineup using each player's season pts / 17, zeroed on bye
+  const R=state.settings.roster;
+  const active=roster.filter(p=>p.bye!==week);
+  const {slots}=fillLineup(active);
+  return slots.reduce((s,x)=>s+(x.pl?pts(x.pl)/17:0),0);
+}
+function renderMatchups(){
+  const T=state.settings.teams;
+  const rosters=[...Array(T).keys()].map(teamRoster);
+  const totalRostered=state.picks.length;
+  const done=Math.round(totalRostered/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0))*100);
+  $("#matchNote").innerHTML=`Projections use each team's <b>current</b> drafted roster (${done}% of the draft complete) and set an optimal weekly lineup, scoring season pace ÷ 17 with players on bye zeroed out. The picture sharpens as more picks come in.`;
+  const sched=roundRobin(T);
+  // standings
+  const recs=[...Array(T).keys()].map(()=>({w:0,l:0,pf:0,g:0}));
+  sched.forEach(week=>week.forEach(([a,b])=>{
+    // find actual week index
+  }));
+  sched.forEach((week,wi)=>{
+    const wk=wi+1;
+    week.forEach(([a,b])=>{
+      const sa=weeklyScore(rosters[a],wk),sb=weeklyScore(rosters[b],wk);
+      recs[a].pf+=sa;recs[a].g++;recs[b].pf+=sb;recs[b].g++;
+      if(sa>=sb){recs[a].w++;recs[b].l++;}else{recs[b].w++;recs[a].l++;}
+    });
+  });
+  const order=[...Array(T).keys()].sort((x,y)=>(recs[y].w-recs[x].w)||(recs[y].pf-recs[x].pf));
+  $("#standingsBody").innerHTML=order.map((i,rank)=>{
+    const rr=recs[i], rp=rosters[i].reduce((s,p)=>s+pts(p),0);
+    return `<tr style="${i===myIdx()?'background:var(--accent-soft)':''}">
+      <td>${i===myIdx()?'★ ':''}${i===myIdx()?'You':'Team '+(i+1)}</td>
+      <td class="r num">${rr.w}-${rr.l}</td>
+      <td class="r num">${rr.g?fmt(rr.pf/rr.g):'—'}</td>
+      <td class="r num meta">${fmt(rp)}</td></tr>`;
+  }).join("");
+  // my schedule
+  const me=myIdx();
+  let myHtml="";
+  sched.forEach((week,wi)=>{
+    const wk=wi+1;
+    const m=week.find(p=>p.includes(me));
+    if(!m){myHtml+=`<div class="matchup"><span class="num meta">Wk ${wk}</span><span class="meta">— bye —</span></div>`;return;}
+    const opp=m[0]===me?m[1]:m[0];
+    const sm=weeklyScore(rosters[me],wk),so=weeklyScore(rosters[opp],wk);
+    const win=sm>=so;
+    myHtml+=`<div class="matchup">
+      <span class="num meta" style="width:44px">Wk ${wk}</span>
+      <span class="wl ${win?'W':'L'}">${win?'W':'L'}</span>
+      <span style="flex:1">vs ${opp===myIdx()?'You':'Team '+(opp+1)}</span>
+      <span class="num" style="color:${win?'var(--good)':'var(--crit)'}">${fmt(sm)}</span>
+      <span class="meta num">–</span>
+      <span class="num meta">${fmt(so)}</span></div>`;
+  });
+  $("#myScheduleBox").innerHTML=myHtml;
+}
+
+/* ---- PROJECTIONS tab ---- */
+function renderPlayersTab(){
+  const {levels}=replacementLevels();
+  const u=state.ui;
+  let rows=state.players.map(pl=>({pl,proj:pts(pl)}));
+  if(u.pposFilter!=="ALL")rows=rows.filter(r=>u.pposFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.pposFilter);
+  if(u.psearch)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.psearch.toLowerCase()));
+  const key=u.psort,dir=u.pdir;
+  rows.sort((a,b)=>{
+    if(key==="name"||key==="pos"||key==="team")return dir*(a.pl[key]).localeCompare(b.pl[key]);
+    if(key==="proj")return dir*(a.proj-b.proj);
+    return dir*((a.pl[key]||0)-(b.pl[key]||0));
+  });
+  $("#playersBody").innerHTML=rows.map((r,i)=>`
+    <tr><td class="num meta">${i+1}</td>
+      <td class="plname">${r.pl.name} ${injChip(r.pl)}${r.pl.override!=null&&r.pl.override!==""?' <span class="chip info">edited</span>':''}</td>
+      <td><span class="pos ${r.pl.pos}">${r.pl.pos}</span></td>
+      <td class="meta">${r.pl.team}</td>
+      <td class="r"><input class="editcell num" style="width:44px" type="number" value="${r.pl.age||''}" data-age="${r.pl.id}"></td>
+      <td class="r"><input class="editcell num" style="width:44px" type="number" value="${r.pl.bye||''}" data-bye="${r.pl.id}"></td>
+      <td class="r num meta">${fmt(r.pl.adp)}</td>
+      <td class="r"><input class="editcell num" type="number" step="0.1" value="${fmt(r.proj)}" data-proj="${r.pl.id}"></td>
+      <td class="r num meta">${r.pl.dist?fmt(floorOf(r.pl)):'—'}</td>
+      <td class="r num meta">${r.pl.dist?fmt(ceilOf(r.pl)):'—'}</td>
+      <td class="r num" style="color:${r.pl.dist&&r.pl.dist.boom>=.1?'var(--good)':'var(--ink-2)'}">${r.pl.dist?Math.round(r.pl.dist.boom*100)+'%':'—'}</td>
+      <td class="r num" style="color:${r.pl.dist&&r.pl.dist.bust>=.22?'var(--warn)':'var(--ink-2)'}">${r.pl.dist?Math.round(r.pl.dist.bust*100)+'%':'—'}</td>
+      ${(()=>{const sk=["QB","RB","WR","TE"].includes(r.pl.pos);const ss=sk?sosOf(r.pl,1,14):0,po=sk?sosOf(r.pl,15,17):0;
+        const c=v=>v>=1.04?'var(--good)':v<=0.96?'var(--crit)':'var(--ink-2)';
+        return `<td class="r num" style="color:${sk?c(ss):''}">${sk?ss.toFixed(2):'—'}</td><td class="r num" style="color:${sk?c(po):''}">${sk?po.toFixed(2):'—'}</td>`;})()}
+      <td class="r num meta" style="font-size:11px">${r.pl.cons?`${Math.round(r.pl.cons.e||0)||'–'}/${Math.round(r.pl.cons.k||0)||'–'}`:'—'}</td>
+    </tr>`).join("");
+  $$("#playersBody [data-proj]").forEach(inp=>inp.onchange=()=>{
+    const id=+inp.dataset.proj;state.players[id].override=inp.value===""?null:+inp.value;renderAll();flash("Projection updated");
+  });
+  $$("#playersBody [data-bye]").forEach(inp=>inp.onchange=()=>{
+    const id=+inp.dataset.bye;state.players[id].bye=inp.value===""?0:+inp.value;renderAll();
+  });
+  $$("#playersBody [data-age]").forEach(inp=>inp.onchange=()=>{
+    const id=+inp.dataset.age;state.players[id].age=inp.value===""?0:+inp.value;renderAll();
+  });
+}
+
+function renderReplBox(){
+  const {levels,base}=replacementLevels();
+  $("#replBox").innerHTML=ALLPOS.map(p=>`<div class="kv"><span><span class="pos ${p}">${p}</span> <span class="meta">last starter ≈ #${base[p]}</span></span><b>${fmt(levels[p])} ${isDyno()?'val':'pts'}</b></div>`).join("");
+}
+
+/* ---- BACKTEST tab ---- */
+function pct(x){return Math.round(x*100)+"%";}
+function btCard(t,big,body){return `<div class="rec" style="margin:0"><div class="eyebrow">${t}</div><div style="font-size:16px;font-weight:800;margin:3px 0">${big}</div><div class="why" style="margin-top:4px">${body}</div></div>`;}
+function renderBacktest(){
+  const D=window.__FFDATA__; if(!D)return;
+  const bt=D.BACKTEST[btKey()]||{}, teams=state.settings.teams, sf=isSF(), POS=["QB","RB","WR","TE"];
+  $("#btLeague").textContent=`${teams}-team ${sf?'Superflex':'1QB'}`;
+  $("#btCtx").textContent=`${D.META.drafts.toLocaleString()} live 2026 drafts · ${D.META.hist}`;
+  $("#btNote").innerHTML=`Real data, no estimates. For 11 seasons we joined each player's <b>actual ADP</b> (Fantasy Football Calculator${sf?', superflex/2QB board':''}) to their <b>actual end-of-season fantasy points</b> (nflverse), bucketed by the round they'd go in a ${teams}-team draft, and measured how often the pick returned a startable season. Change team count or toggle Superflex in <span class="link" id="btToSetup">League Setup</span> to re-cut it live.`;
+  const rows=Object.keys(bt).map(Number).sort((a,b)=>a-b), maxR=Math.min(Math.max(...rows,1),14);
+  const r1=bt["1"]||{}, ins=[];
+  if(r1.WR&&r1.RB)ins.push(btCard("Round 1: WR is the safer anchor",`WR ${pct(r1.WR.hit)} vs RB ${pct(r1.RB.hit)}`,`First-round WRs returned a startable season ${pct(r1.WR.hit)} of the time vs ${pct(r1.RB.hit)} for RBs — WR the steadier anchor, RB the higher-variance swing.`));
+  const s=D.META.sfShift;
+  ins.push(btCard("Superflex pulls QBs up ~2 rounds",`ADP ${s[1]} vs ${s[0]}`,`Top-12 QBs go at overall ADP ~${s[1]} in superflex vs ~${s[0]} in 1QB. ${sf?"You're in superflex — treat the elite QBs as first-round assets.":"You're in 1QB — you can wait on QB and let value fall to you."}`));
+  let pocket=null;
+  rows.forEach(rn=>POS.forEach(p=>{const c=bt[rn]&&bt[rn][p];if(c&&rn>=3&&c.hit>=0.68&&(!pocket||c.hit>pocket.hit))pocket={rn,p,...c};}));
+  if(pocket)ins.push(btCard("Best mid-round value pocket",`R${pocket.rn} ${pocket.p} · ${pct(pocket.hit)} hit`,`A ${pocket.p} taken in Round ${pocket.rn} still hit ${pct(pocket.hit)} of the time (avg ${Math.round(pocket.avg)} pts) — the strongest bang-for-ADP in the middle rounds for this format.`));
+  $("#btInsights").innerHTML=ins.join("");
+  let head=`<thead><tr><th></th>${POS.map(p=>`<th><span class="pos ${p}">${p}</span></th>`).join("")}</tr></thead>`, body="<tbody>";
+  for(let rn=1;rn<=maxR;rn++){
+    body+=`<tr><td class="rndlab">R${rn}</td>`;
+    POS.forEach(p=>{const c=(bt[String(rn)]||{})[p];
+      if(!c){body+=`<td><div class="btcell empty">–</div></td>`;return;}
+      const col=c.hit>=0.7?'var(--good)':c.hit>=0.5?'var(--warn)':'var(--crit)';
+      body+=`<td><div class="btcell" style="background:color-mix(in srgb,${col} 20%,transparent);color:${col}">${Math.round(c.hit*100)}%<small>${Math.round(c.avg)}pp · n${c.n}</small></div></td>`;});
+    body+="</tr>";
+  }
+  $("#btTable").innerHTML=head+body+"</tbody>";
+  let best="";
+  for(let rn=1;rn<=maxR;rn++){
+    const cells=POS.map(p=>({p,c:(bt[String(rn)]||{})[p]})).filter(x=>x.c).sort((a,b)=>b.c.hit-a.c.hit);
+    if(!cells.length)continue;const top=cells[0];
+    best+=`<div class="kv"><span class="rndlab" style="width:36px">R${rn}</span>
+      <span style="flex:1"><span class="pos ${top.p}">${top.p}</span> <span class="meta">top hit ${pct(top.c.hit)} · ${Math.round(top.c.avg)} avg pts</span></span>
+      <span class="meta">${cells.slice(1).map(x=>x.p+' '+pct(x.c.hit)).join(' · ')}</span></div>`;
+  }
+  $("#btBest").innerHTML=best;
+  const link=$("#btToSetup");if(link)link.onclick=()=>showTab("setup");
+  renderCalib();
+  // --- slot value + best opening ---
+  const sv=D.SLOTVAL&&D.SLOTVAL[btKey()];
+  if(sv){
+    const mn=Math.min(...sv),mx=Math.max(...sv),mySlot=Math.min(state.settings.slot,sv.length);
+    const spread=((mx-mn)/mn*100).toFixed(1);
+    $("#slotCtx").textContent=`${teams}-team ${sf?'SF':'1QB'} · avg starter pts, 11 seasons`;
+    $("#slotChart").innerHTML=sv.map((v,i)=>{const h=(v-mn)/(mx-mn+1e-9),me=i+1===mySlot;
+      return `<div class="barrow"><span class="lab" style="width:56px">Slot ${i+1}${me?' ★':''}</span>
+        <div class="bar" style="height:13px"><i style="width:${Math.round(25+h*70)}%;background:${me?'var(--accent)':'var(--info)'}"></i></div>
+        <span class="num" style="width:48px;text-align:right;${me?'color:var(--accent);font-weight:700':''}">${Math.round(v)}</span></div>`;}).join("");
+    $("#slotNote").innerHTML=`Across 11 seasons of simulated ${teams}-team drafts (everyone drafting by real ADP, scored on actual points), the gap between the best and worst slot was just <b>${spread}%</b> (${Math.round(mn)}–${Math.round(mx)} starter pts). <b>Where you pick barely matters — how you pick does.</b> That's exactly why the Simulate mode optimizes every pick rather than trusting your slot. (Bars are scaled to exaggerate a small real spread.)`;
+    const op=D.OPENING&&D.OPENING[btKey()]&&D.OPENING[btKey()][String(mySlot-1)];
+    if(op){const bestPos=["RB","WR","QB","TE"].filter(p=>op[p]).reduce((a,b)=>op[b]>op[a]?b:a);
+      $("#slotBest").innerHTML=`<div class="eyebrow" style="margin-bottom:6px">Best opening pick from your slot (${mySlot}) — historically</div>`+
+        ["RB","WR","QB","TE"].filter(p=>op[p]!=null).sort((a,b)=>op[b]-op[a]).map(p=>`<div class="kv"><span><span class="pos ${p}">${p}</span>${p===bestPos?' <span class="chip good">best opener</span>':''}</span><b class="num">${Math.round(op[p])} pts</b></div>`).join("");
+    } else $("#slotBest").innerHTML="";
+  }
+}
+
+function renderCalib(){
+  const D=window.__FFDATA__; if(!D||!D.CALIB){const b=$("#calibBox");if(b)b.innerHTML="";return;}
+  const c=D.CALIB, box=$("#calibBox"); if(!box)return;
+  $("#calibCtx").textContent=`${c.nSeason} player-seasons · ${c.nWeekly.toLocaleString()} player-weeks · ${c.years}`;
+  const cvar={QB:"--qb",RB:"--rb",WR:"--wr",TE:"--te"};
+  const posbars=["WR","RB","QB","TE"].map(p=>`<div class="barrow"><span class="lab"><span class="pos ${p}">${p}</span></span><div class="bar"><i style="width:${Math.round(c.pos[p].corr*100)}%;background:var(${cvar[p]})"></i></div><span class="num" style="width:44px;text-align:right">${c.pos[p].corr.toFixed(2)}</span></div>`).join("");
+  const dvpImp=(c.dvp.none-c.dvp.tuned)/c.dvp.none*100;
+  box.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
+      <div class="rec" style="margin:0"><div class="eyebrow">Season accuracy</div><div style="font-size:30px;font-weight:800">${c.seasonCorr.toFixed(2)}</div><div class="why">correlation of projected vs. actual season points — on par with paid industry projections.</div></div>
+      <div class="rec" style="margin:0"><div class="eyebrow">Bias</div><div style="font-size:30px;font-weight:800">${c.ratio.p50.toFixed(2)}×</div><div class="why">median actual ÷ projected. ~1.0 = unbiased, neither high nor low.</div></div>
+      <div class="rec" style="margin:0"><div class="eyebrow">Boom/bust bands</div><div style="font-size:30px;font-weight:800;color:var(--good)">✓</div><div class="why">actual spread (p15–p85 = ${c.ratio.p15}×–${c.ratio.p85}×) matches the floor/ceiling ranges shown on players.</div></div>
+    </div>
+    <h3 class="eyebrow" style="margin-bottom:8px">Projection accuracy by position (correlation with actual)</h3>
+    ${posbars}
+    <div class="note" style="margin-top:14px"><b>Honest read on matchups:</b> the calibration proves defense-vs-position adjustment is a <b>small</b> signal — it cuts weekly error only <b>${dvpImp.toFixed(1)}%</b> (MAE ${c.dvp.none.toFixed(2)}→${c.dvp.tuned.toFixed(2)}), and at full strength it actually <b>hurts</b> (${c.dvp.full.toFixed(2)}) because prior-year defense is a noisy predictor. So the schedule adjustment is tuned to a gentle <b>${c.dvp.shrink}</b> shrink — a real nudge (it matters most for playoff-week matchups), not the difference-maker many tools sell. The season projections and boom/bust bands carry the weight.</div>
+    <div class="note" style="margin-top:10px">Method: walk-forward, <b>out-of-sample</b> — each season is projected by a model fit only on the <i>other</i> years, then compared to what actually happened (nflverse). No peeking at the season it's grading.</div>`;
+}
+
+/* ---- DYNASTY tab ---- */
+function renderDynasty(){
+  const roster=teamRoster(myIdx());
+  const skill=roster.filter(p=>['QB','RB','WR','TE'].includes(p.pos));
+  const box=$("#ageProfile");
+  if(!skill.length){box.innerHTML=`<div class="emptystate">Draft some players to see your age profile.</div>`;$("#ageProfileHd").textContent="";}
+  else{
+    const tv=skill.reduce((s,p)=>s+Math.max(1,valueOf(p)),0);
+    const wAge=skill.reduce((s,p)=>s+(p.age||27)*Math.max(1,valueOf(p)),0)/tv;
+    const wMult=skill.reduce((s,p)=>s+ageMult(p.pos,p.age||27)*Math.max(1,valueOf(p)),0)/tv;
+    const youth=Math.round(wMult*100);
+    $("#ageProfileHd").textContent=`value-weighted age ${fmt(wAge)}`;
+    const cvar={QB:'--qb',RB:'--rb',WR:'--wr',TE:'--te'};
+    const posRows=['QB','RB','WR','TE'].map(pos=>{
+      const ps=roster.filter(p=>p.pos===pos);if(!ps.length)return '';
+      const avg=ps.reduce((s,p)=>s+(p.age||0),0)/ps.length, m=ageMult(pos,avg);
+      return `<div class="barrow"><span class="lab"><span class="pos ${pos}">${pos}</span></span>
+        <div class="bar"><i style="width:${Math.round(Math.min(1,m)*100)}%;background:var(${cvar[pos]})"></i></div>
+        <span class="num" style="width:70px;text-align:right">${fmt(avg)} yrs</span></div>`;
+    }).join('');
+    box.innerHTML=`<div style="display:flex;gap:22px;align-items:baseline;margin-bottom:14px">
+        <div><div class="eyebrow">Youth rating</div><div style="font-size:32px;font-weight:800;color:${youth>=80?'var(--good)':youth>=60?'var(--warn)':'var(--crit)'}">${youth}<span style="font-size:14px;color:var(--ink-2)">/100</span></div></div>
+        <div><div class="eyebrow">Weighted age</div><div style="font-size:32px;font-weight:800" class="num">${fmt(wAge)}</div></div>
+      </div>${posRows}
+      <div class="note" style="margin-top:12px">${ageVerdict(wAge,youth)}</div>`;
+  }
+  $("#curveBox").innerHTML=curveSVG();
+  const tierCls={elite:'crit',high:'warn',mid:'info',swing:'',dart:'',future:'good'};
+  $("#rookieBox").innerHTML=ROOKIE_PICKS.map(([lab,val,tier])=>`
+    <div class="teamcard" style="padding:9px">
+      <h4 style="margin-bottom:6px;font-size:11.5px">${lab}</h4>
+      <div class="bar" style="height:7px"><i style="width:${val}%;background:var(--accent)"></i></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><span class="chip ${tierCls[tier]||''}">${tier}</span><span class="num meta">${val}</span></div>
+    </div>`).join('');
+}
+function ageVerdict(age,youth){
+  const w=state.settings.window;
+  if(w==='rebuild')return youth>=75
+    ? `Young core, rebuild window — exactly right. Keep stacking youth and rookie picks; your value compounds as they hit their primes.`
+    : `You're rebuilding but your core is ${fmt(age)} and fading (youth ${youth}/100). Sell aging vets now for picks and ascending youngsters before their value slides further.`;
+  if(w==='contend')return youth<60
+    ? `Win-now roster, win-now window — good fit. Push in: trade future picks for proven production, you don't need the runway.`
+    : `Built to contend AND young (youth ${youth}/100) — a rare, enviable spot. You can win now and later; only move youth when a deal clearly upgrades this season.`;
+  return youth>=70
+    ? `Balanced and young (youth ${youth}/100) — you keep optionality to pivot either direction as the season unfolds.`
+    : `Balanced window but an aging core (youth ${youth}/100, avg ${fmt(age)}). Work youth in on the margins so you don't fall off a cliff in a year or two.`;
+}
+function curveSVG(){
+  const W=340,H=180,pl=26,pr=10,pt=30,pb=26, x0=pl,x1=W-pr,y0=H-pb,y1=pt, aMin=21,aMax=38;
+  const X=a=>x0+(a-aMin)/(aMax-aMin)*(x1-x0), Y=m=>y0-m*(y0-y1);
+  const grid=[0,.25,.5,.75,1].map(m=>`<line x1="${x0}" y1="${Y(m)}" x2="${x1}" y2="${Y(m)}" stroke="var(--line)"/><text x="${x0-4}" y="${Y(m)+3}" text-anchor="end" font-size="8" fill="var(--ink-2)">${m*100|0}</text>`).join('');
+  const xlab=[22,26,30,34,38].map(a=>`<text x="${X(a)}" y="${H-9}" text-anchor="middle" font-size="8" fill="var(--ink-2)">${a}</text>`).join('');
+  const cvar={QB:'--qb',RB:'--rb',WR:'--wr',TE:'--te'};
+  const lines=['RB','WR','TE','QB'].map(pos=>{
+    let ps=[];for(let a=aMin;a<=aMax;a++)ps.push(`${X(a).toFixed(1)},${Y(Math.min(1,ageMult(pos,a))).toFixed(1)}`);
+    return `<polyline points="${ps.join(' ')}" fill="none" stroke-width="2" style="stroke:var(${cvar[pos]})"/>`;
+  }).join('');
+  const legend=['RB','WR','TE','QB'].map((pos,i)=>`<g transform="translate(${x0+i*52},8)"><rect width="9" height="9" rx="2" style="fill:var(${cvar[pos]})"/><text x="13" y="8" font-size="9" fill="var(--ink-2)">${pos}</text></g>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:210px">${legend}${grid}${xlab}${lines}</svg>`;
+}
+function applyFormatUI(){
+  const dyn=isDyno();
+  $("#dynastyTabBtn").classList.toggle("hide",!dyn);
+  $("#windowField").classList.toggle("hide",!dyn);
+  $("#dynNote").classList.toggle("hide",!dyn);
+  $$("#s_format button").forEach(b=>b.classList.toggle("on",b.dataset.v===state.settings.format));
+  $$("#s_window button").forEach(b=>b.classList.toggle("on",b.dataset.v===state.settings.window));
+  const bb=$("#bbNote");if(bb)bb.classList.toggle("hide",!state.settings.bestball);
+  $$("#s_bestball button").forEach(b=>b.classList.toggle("on",+b.dataset.v===(state.settings.bestball?1:0)));
+}
+
+/* ============================= ACTIONS ============================= */
+/* ---- Mock draft: CPU opponents auto-pick by realistic (noisy) ADP ---- */
+function cpuPickFor(t){
+  const R=state.settings.roster, taken=draftedIds();
+  const cnt={QB:0,RB:0,WR:0,TE:0,K:0,DST:0}; teamRoster(t).forEach(p=>cnt[p.pos]++);
+  const skillCnt=cnt.QB+cnt.RB+cnt.WR+cnt.TE;
+  const rosterSize=Object.values(R).reduce((a,b)=>a+b,0);
+  const skillCap=rosterSize-(R.K||0)-(R.DST||0);
+  const onlyKD=skillCnt>=skillCap;
+  const posCap={QB:R.QB+(R.SUPERFLEX||0)+1,RB:R.RB+R.FLEX+(R.SUPERFLEX||0)+2,WR:R.WR+R.FLEX+(R.SUPERFLEX||0)+2,TE:R.TE+2,K:R.K||1,DST:R.DST||1};
+  let best=null,bestScore=1e18;
+  for(const p of state.players){
+    if(taken.has(p.id))continue;
+    const kd=(p.pos==="K"||p.pos==="DST");
+    if(onlyKD?!kd:kd)continue;
+    if((cnt[p.pos]||0)>=(posCap[p.pos]||99))continue;
+    const nz=adpOf(p)*(1+gauss()*0.11)+gauss()*2;
+    if(nz<bestScore){bestScore=nz;best=p;}
+  }
+  if(!best){for(const p of state.players){if(!taken.has(p.id)){best=p;break;}}}
+  return best?best.id:-1;
+}
+function advanceOpponents(){
+  const total=state.settings.teams*Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  let guard=0;
+  while(currentPick()<total&&teamForPick(currentPick())!==myIdx()&&guard++<total+5){
+    const tm=teamForPick(currentPick()), id=cpuPickFor(tm);
+    if(id<0)break;
+    state.picks.push({playerId:id,teamIdx:tm});
+  }
+}
+/* ---- Pick clock: per-pick countdown on your turn, autodraft on expiry ---- */
+let PICKTIMER={id:null,pick:-1,deadline:0,paused:false,rem:0};
+function stopPickTimer(){if(PICKTIMER.id){clearInterval(PICKTIMER.id);PICKTIMER.id=null;}PICKTIMER.pick=-1;PICKTIMER.paused=false;const el=$("#pickTimer");if(el)el.classList.add("hide");}
+function syncPickTimer(){
+  if(state.settings.auction){stopPickTimer();return;}
+  const clock=state.settings.pickClock||0, p=currentPick();
+  const total=state.settings.teams*Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  const isMe=teamForPick(p)===myIdx()&&p<total;
+  if(!clock||!isMe){stopPickTimer();return;}
+  if(PICKTIMER.pick===p&&(PICKTIMER.id||PICKTIMER.paused))return; // running or paused for this pick
+  if(PICKTIMER.id)clearInterval(PICKTIMER.id);
+  PICKTIMER.pick=p; PICKTIMER.paused=false; PICKTIMER.deadline=Date.now()+clock*1000;
+  $("#pickTimer").classList.remove("hide");
+  tickPickTimer(); PICKTIMER.id=setInterval(tickPickTimer,250);
+}
+function tickPickTimer(){
+  const remMs=PICKTIMER.deadline-Date.now(), rem=Math.max(0,remMs/1000);
+  drawTimer(rem);
+  if(remMs<=0){clearInterval(PICKTIMER.id);PICKTIMER.id=null;autoPickExpire();}
+}
+function drawTimer(rem){
+  const el=$("#pickTimer"); if(!el)return;
+  const clock=state.settings.pickClock||0, mm=Math.floor(rem/60), ss=Math.floor(rem%60);
+  if(!el.querySelector(".tbig")){
+    el.innerHTML=`<div class="tlabel"></div><div class="tbig"></div><div class="tbar"><i></i></div><button class="mini" id="pauseBtn" style="margin-top:8px;width:100%">⏸ Pause</button>`;
+    el.querySelector("#pauseBtn").onclick=pauseToggle;
+  }
+  el.className=`timerbox ${PICKTIMER.paused?'paused':(rem<=5?'crit':rem<=10?'warn':'')}`;
+  el.querySelector(".tlabel").textContent=`🎯 Your pick — ${PICKTIMER.paused?'paused':'on the clock'}`;
+  el.querySelector(".tbig").textContent=`${mm}:${String(ss).padStart(2,"0")}`;
+  el.querySelector(".tbar i").style.width=(clock?Math.round(rem/clock*100):0)+"%";
+  el.querySelector("#pauseBtn").textContent=PICKTIMER.paused?"▶ Resume":"⏸ Pause";
+}
+function pauseToggle(){
+  if(PICKTIMER.paused){
+    PICKTIMER.paused=false; PICKTIMER.deadline=Date.now()+PICKTIMER.rem*1000;
+    tickPickTimer(); PICKTIMER.id=setInterval(tickPickTimer,250);
+  }else{
+    PICKTIMER.rem=Math.max(0,(PICKTIMER.deadline-Date.now())/1000);
+    if(PICKTIMER.id){clearInterval(PICKTIMER.id);PICKTIMER.id=null;}
+    PICKTIMER.paused=true; drawTimer(PICKTIMER.rem);
+  }
+}
+function autoPickExpire(){
+  let id=-1;
+  if(state.ui.simMode&&SIMCACHE.results&&SIMCACHE.key===simKey()&&SIMCACHE.results.length)id=SIMCACHE.results[0].id;
+  if(id<0){const r=recommendations();if(r.list&&r.list[0])id=r.list[0].pl.id;}
+  if(id<0){const d=draftedIds();const a=state.players.find(p=>!d.has(p.id));if(a)id=a.id;}
+  if(id>=0){const pl=state.players[id];doDraft(id);flash(`⏱ Time! Auto-drafted ${pl.name}`);}
+}
+/* ---- Auction: dollar values, budgets, inflation ---- */
+function auctionCtx(){
+  const s=state.settings, lv=replacementLevels().levels;
+  const total=s.teams*(s.budget||200), rosterSize=Object.values(s.roster).reduce((a,b)=>a+b,0);
+  const pool=Math.max(1,total-s.teams*rosterSize);
+  let totalPV=0; state.players.forEach(p=>totalPV+=Math.max(0,vorp(p,lv))); totalPV=totalPV||1;
+  const drafted=draftedIds();
+  let spent=0; state.picks.forEach(pk=>spent+=(pk.price||0));
+  let remVal=0; state.players.forEach(p=>{if(!drafted.has(p.id))remVal+=Math.max(1,1+Math.max(0,vorp(p,lv))/totalPV*pool);});
+  const infl=remVal>0?Math.max(0.6,Math.min(1.8,(total-spent)/remVal)):1;
+  const base=p=>Math.max(1,1+Math.max(0,vorp(p,lv))/totalPV*pool);
+  return {base:p=>Math.round(base(p)), val:p=>Math.max(1,Math.round(base(p)*infl)), infl};
+}
+function myBudget(){
+  const s=state.settings, myI=myIdx(), rosterSize=Object.values(s.roster).reduce((a,b)=>a+b,0);
+  let spent=0,count=0; state.picks.forEach(pk=>{if(pk.teamIdx===myI){spent+=(pk.price||0);count++;}});
+  const rem=(s.budget||200)-spent, open=rosterSize-count;
+  return {rem,spent,open,count,maxBid:Math.max(open>0?1:0,rem-Math.max(0,open-1))};
+}
+function teamSpent(t){let s=0,c=0;state.picks.forEach(pk=>{if(pk.teamIdx===t){s+=(pk.price||0);c++;}});return {spent:s,count:c,rem:(state.settings.budget||200)-s};}
+function doBuy(id,teamIdx,price){
+  if(draftedIds().has(id))return;
+  state.picks.push({playerId:id,teamIdx,price:Math.max(0,Math.round(price||0))});
+  const pl=state.players[id];
+  flash(`${pl.name} → ${teamIdx===myIdx()?"you":"Team "+(teamIdx+1)} for $${Math.round(price||0)}`);
+  renderAll();
+}
+function doDraft(id){
+  if(draftedIds().has(id))return;
+  const tIdx=teamForPick(currentPick());
+  state.picks.push({playerId:id,teamIdx:tIdx});
+  const pl=state.players[id];
+  flash(`${pl.name} → ${tIdx===myIdx()?'your team':'Team '+(tIdx+1)}`);
+  if(state.ui.mock)advanceOpponents();
+  renderAll();
+}
+
+/* ---- filters / sorting wiring ---- */
+function buildPosFilters(containerId,key,rerender){
+  const opts=["ALL",...ALLPOS,"FLEX"];
+  $(containerId).innerHTML=opts.map(o=>`<button class="fbtn ${state.ui[key]===o?'on':''}" data-f="${o}">${o}</button>`).join("");
+  $$(containerId+" [data-f]").forEach(b=>b.onclick=()=>{state.ui[key]=b.dataset.f;rerender();buildPosFilters(containerId,key,rerender);});
+}
+
+/* ---- setup wiring ---- */
+function loadSetupInputs(){
+  const s=state.settings;
+  $("#s_teams").value=s.teams;$("#s_slot").value=s.slot;$("#s_slot").max=s.teams;
+  $$("#s_snake button").forEach(b=>b.classList.toggle("on",+b.dataset.v===s.snake));
+  $$("#s_adp button").forEach(b=>b.classList.toggle("on",b.dataset.v===(s.adpSource||"ffc")));
+  $("#adpCustomBtn").classList.toggle("hide",!state.players.some(p=>p.adpCustom!=null));
+  $$("#s_auction button").forEach(b=>b.classList.toggle("on",+b.dataset.v===(s.auction?1:0)));
+  $("#s_budget").value=s.budget||200; $("#budgetField").classList.toggle("hide",!s.auction);
+  Object.keys(DEF_ROSTER).forEach(k=>$("#r_"+k).value=s.roster[k]);
+  Object.keys(DEF_SCORING).forEach(k=>$("#sc_"+k).value=s.scoring[k]);
+  $$("#s_ppr button").forEach(b=>b.classList.toggle("on",+b.dataset.v===s.scoring.rec));
+  const pc=s.pickClock||0;
+  $$("#s_clock button").forEach(b=>b.classList.toggle("on",+b.dataset.v===pc));
+  $("#s_clockCustom").value=pc||"";
+  applyFormatUI();
+}
+function wireSetup(){
+  $("#s_teams").oninput=e=>{state.settings.teams=Math.max(4,Math.min(16,+e.target.value||12));$("#s_slot").max=state.settings.teams;renderAll();};
+  $("#s_slot").oninput=e=>{state.settings.slot=Math.max(1,Math.min(state.settings.teams,+e.target.value||1));renderAll();};
+  $$("#s_snake button").forEach(b=>b.onclick=()=>{state.settings.snake=+b.dataset.v;loadSetupInputs();renderAll();});
+  $$("#s_adp button").forEach(b=>b.onclick=()=>{state.settings.adpSource=b.dataset.v;SIMCACHE={key:null};loadSetupInputs();renderAll();flash("ADP source: "+ADP_SRC[b.dataset.v]);});
+  $("#adpPasteToggle").onclick=()=>$("#adpPasteBox").classList.toggle("hide");
+  $("#adpPasteApply").onclick=()=>{
+    const parsed=parseCustomADP($("#adpPasteText").value);
+    let n=0;state.players.forEach(p=>{const pn=nrm(p.name);const hit=parsed.find(x=>x.k===pn||x.k.startsWith(pn+" ")||pn.startsWith(x.k+" "));if(hit){p.adpCustom=hit.adp;n++;}});
+    if(n>0)state.settings.adpSource="custom";
+    const st=$("#adpPasteStatus");st.textContent=parsed.length?`✓ Matched ${n} of ${parsed.length} pasted players — now using Custom ADP`:"Couldn't read any lines — use “Name  ADP”, one per line";
+    st.style.color=n>0?"var(--good)":"var(--warn)";SIMCACHE={key:null};loadSetupInputs();renderAll();};
+  $$("#s_format button").forEach(b=>b.onclick=()=>{state.settings.format=b.dataset.v;if(!isDyno()&&$("#tab-dynasty").offsetParent!==null)showTab("draft");loadSetupInputs();renderAll();flash(isDyno()?"Dynasty mode on":"Redraft mode on");});
+  $$("#s_window button").forEach(b=>b.onclick=()=>{state.settings.window=b.dataset.v;loadSetupInputs();renderAll();});
+  $$("#s_bestball button").forEach(b=>b.onclick=()=>{state.settings.bestball=(b.dataset.v==="1");SIMCACHE={key:null};loadSetupInputs();renderAll();flash(state.settings.bestball?"Best ball on — valuing ceiling":"Best ball off");});
+  $$("#s_auction button").forEach(b=>b.onclick=()=>{state.settings.auction=(b.dataset.v==="1");if(state.settings.auction&&state.ui.auctTeam==null)state.ui.auctTeam=myIdx();SIMCACHE={key:null};loadSetupInputs();renderAll();flash(state.settings.auction?"Auction mode on":"Auction mode off");});
+  $("#s_budget").oninput=e=>{state.settings.budget=Math.max(1,+e.target.value||200);renderAll();};
+  Object.keys(DEF_ROSTER).forEach(k=>$("#r_"+k).oninput=e=>{state.settings.roster[k]=Math.max(0,+e.target.value||0);renderAll();});
+  Object.keys(DEF_SCORING).forEach(k=>$("#sc_"+k).oninput=e=>{state.settings.scoring[k]=+e.target.value||0;if(k==='rec')loadSetupInputs();renderAll();});
+  $$("#s_ppr button").forEach(b=>b.onclick=()=>{state.settings.scoring.rec=+b.dataset.v;loadSetupInputs();renderAll();});
+  $$("#s_clock button").forEach(b=>b.onclick=()=>{state.settings.pickClock=+b.dataset.v;loadSetupInputs();renderAll();});
+  $("#s_clockCustom").oninput=e=>{state.settings.pickClock=Math.max(0,+e.target.value||0);$$("#s_clock button").forEach(b=>b.classList.toggle("on",+b.dataset.v===state.settings.pickClock));renderAll();};
+}
+
+/* ---- tabs ---- */
+function showTab(name){
+  $$(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===name));
+  ["draft","team","matchups","backtest","dynasty","players","setup"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==name));
+}
+
+/* ---- theme ---- */
+function initTheme(){
+  const cur=document.documentElement.getAttribute("data-theme");
+  $("#themeBtn").onclick=()=>{
+    const now=document.documentElement.getAttribute("data-theme");
+    const next=now==="dark"?"light":now==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
+    document.documentElement.setAttribute("data-theme",next);
+  };
+}
+
+/* ---- export / import ---- */
+function doExport(){
+  const blob=new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="draft-warroom.json";a.click();flash("Draft saved to file");
+}
+function doImport(file){
+  const r=new FileReader();r.onload=()=>{try{const p=JSON.parse(r.result);if(p.players){state=p;boot();flash("Draft loaded");}}catch(e){flash("Invalid file");}};r.readAsText(file);
+}
+
+/* ============================= BOOT ============================= */
+function wireHeaderTable(){
+  $$("#availTable th[data-sort]").forEach(th=>th.onclick=()=>{
+    const k=th.dataset.sort;if(state.ui.sort===k)state.ui.dir*=-1;else{state.ui.sort=k;state.ui.dir=(k==="name"||k==="pos")?1:-1;}renderAvail();
+  });
+  $$("#tab-players th[data-psort]").forEach(th=>th.onclick=()=>{
+    const k=th.dataset.psort;if(state.ui.psort===k)state.ui.pdir*=-1;else{state.ui.psort=k;state.ui.pdir=(k==="name"||k==="pos"||k==="team")?1:-1;}renderPlayersTab();
+  });
+}
+function boot(){
+  loadSetupInputs();
+  buildPosFilters("#posFilters","posFilter",renderAvail);
+  buildPosFilters("#pposFilters","pposFilter",renderPlayersTab);
+  $("#hideDrafted").classList.toggle("on",state.ui.hideDrafted);
+  $("#mockBtn").classList.toggle("mockon",!!state.ui.mock);
+  renderAll();
+}
+function init(){
+  state=load();
+  $$("#tabs .tab").forEach(t=>t.onclick=()=>showTab(t.dataset.tab));
+  $("#search").oninput=e=>{state.ui.search=e.target.value;renderAvail();};
+  $("#psearch").oninput=e=>{state.ui.psearch=e.target.value;renderPlayersTab();};
+  $("#hideDrafted").onclick=()=>{state.ui.hideDrafted=!state.ui.hideDrafted;$("#hideDrafted").classList.toggle("on",state.ui.hideDrafted);renderAvail();};
+  $$("#recMode button").forEach(b=>b.onclick=()=>{state.ui.simMode=(b.dataset.m==="sim");SIMCACHE={key:null};renderRecs();});
+  wireHeaderTable();wireSetup();initTheme();
+  $("#exportBtn").onclick=doExport;
+  $("#importBtn").onclick=()=>$("#fileIn").click();
+  $("#fileIn").onchange=e=>{if(e.target.files[0])doImport(e.target.files[0]);};
+  let resetArmed=false;
+  $("#resetBtn").onclick=()=>{
+    if(!resetArmed){resetArmed=true;$("#resetBtn").textContent="⟳ Confirm reset?";setTimeout(()=>{resetArmed=false;$("#resetBtn").textContent="⟳ Reset draft";},3000);return;}
+    resetArmed=false;$("#resetBtn").textContent="⟳ Reset draft";
+    state.picks=[];SIMCACHE={key:null};if(state.ui.mock)advanceOpponents();renderAll();flash("Draft reset");
+  };
+  $("#mockBtn").onclick=()=>{
+    state.ui.mock=!state.ui.mock;$("#mockBtn").classList.toggle("mockon",state.ui.mock);
+    SIMCACHE={key:null};if(state.ui.mock)advanceOpponents();renderAll();
+    flash(state.ui.mock?"Mock draft ON — opponents auto-pick to your turn":"Mock draft OFF");
+  };
+  boot();
+}
+init();
+</script>
