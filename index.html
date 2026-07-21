@@ -907,14 +907,25 @@ function positionalNeed(roster){
 }
 
 /* ---- recommendation engine ---- */
-// how many of a position are realistically useful (startable slots + flex + sensible bench)
-function usefulCap(pos){
+// Research-based roster construction targets, scaled to your roster size.
+// Redraft PPR (4for4 / DraftSharks / FantasyPros): ~2 QB, 4-6 RB, 4-6 WR, 1-2 TE, 1 K, 1 DST.
+// Superflex (FantasyPoints / PFN): 2-3 QB — you must never end with fewer than 2.
+// Best ball (Establish The Run / Fantasy Footballers): 2-3 QB, 5-7 RB, 6-8 WR, 2-3 TE, no K/DST.
+function rosterTargets(){
   const R=state.settings.roster;
-  let base=(R[pos]||0);
-  if(pos==="QB") base+=(R.SUPERFLEX||0);
-  const flexAllow=FLEX_POS.includes(pos)?1:0;
-  const buf={RB:2,WR:2,QB:1,TE:0,K:0,DST:0}[pos]||0;
-  return base+flexAllow+buf;
+  const sf=(R.SUPERFLEX||0)>0, bb=!!state.settings.bestball;
+  const req={QB:R.QB||0,RB:R.RB||0,WR:R.WR||0,TE:R.TE||0,K:R.K||0,DST:R.DST||0};
+  const totalSlots=Object.values(R).reduce((a,b)=>a+b,0);
+  // 1QB: stream the position — 1 starter, a backup only as a late luxury. Superflex: 3.
+  const t ={QB:sf?3:(bb?2:1), RB:bb?6:5, WR:bb?7:6, TE:bb?3:2, K:req.K?1:0, DST:req.DST?1:0};
+  const mx={QB:sf?4:(bb?3:2), RB:bb?7:6, WR:bb?8:7, TE:bb?3:2, K:req.K?1:0, DST:req.DST?1:0};
+  // fit targets to the real roster size, never below required starters (or 2 QB in superflex)
+  const floorOf=p=>Math.max(req[p]||0,(p==="QB"&&sf)?2:(req[p]?1:0));
+  const trim=["WR","RB","TE","QB"]; let sum=Object.values(t).reduce((a,b)=>a+b,0), i=0;
+  while(sum>totalSlots&&i<80){ const p=trim[i%trim.length]; if(t[p]>floorOf(p)){t[p]--;sum--;} i++; }
+  const grow=["WR","RB"]; i=0;
+  while(sum<totalSlots&&i<80){ const p=grow[i%grow.length]; if(t[p]<mx[p]){t[p]++;sum++;} i++; }
+  return {t,mx,req,sf,bb};
 }
 function recommendations(){
   const {levels}=replacementLevels();
@@ -927,23 +938,35 @@ function recommendations(){
   const myRound=Math.ceil((currentPick()+1)/state.settings.teams);
   // core (skill-position) starting slots still open — K/DST stay parked until these are ~filled
   const coreNeed=need.QB+need.RB+need.WR+need.TE+flexNeed+superNeed;
+  // roster construction: you MUST be able to field a legal lineup, so unfilled starting slots
+  // get more urgent as your remaining picks run out.
+  const TG=rosterTargets();
+  const haveByPos={}; mine.forEach(p=>haveByPos[p.pos]=(haveByPos[p.pos]||0)+1);
+  const rosterSize=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  const picksLeft=Math.max(0,rosterSize-mine.length);
+  const emptyReq=coreNeed+(need.K||0)+(need.DST||0);
+  const slack=picksLeft-emptyReq;
+  const urgency = slack<=0?6 : slack<=1?3.5 : slack<=3?2.0 : slack<=5?1.4 : 1;
 
   // available startable (vorp>0) per position, sorted
   const byPos={};ALLPOS.forEach(p=>byPos[p]=avail.filter(x=>x.pos===p).sort((a,b)=>vorp(b,levels)-vorp(a,levels)));
 
   const scored=avail.map(pl=>{
     const v=vorp(pl,levels);
-    // need multiplier
-    let needMult=0.75, needTag="depth";
-    const sfLeague=(state.settings.roster.SUPERFLEX||0)>0;
-    if(need[pl.pos]>0){needMult=1.35;needTag="starter need";
-      if(pl.pos==="QB"&&sfLeague){needMult=1.9;needTag="premium QB";}}   // QBs scarce+critical in superflex
-    else if(FLEX_POS.includes(pl.pos)&&flexNeed>0){needMult=1.12;needTag="flex fit";}
-    else if(SUPER_POS.includes(pl.pos)&&superNeed>0){needMult=(pl.pos==="QB"?1.7:1.12);needTag=(pl.pos==="QB"?"superflex QB":"superflex fit");}
-    // positional saturation: extra bodies at an already-filled position add little real lineup value
-    const haveAtPos=mine.filter(x=>x.pos===pl.pos).length;
-    let satPen=0;
-    if(haveAtPos>=usefulCap(pl.pos)){ needMult=Math.min(needMult,0.2); needTag="roster full"; satPen=45*(haveAtPos-usefulCap(pl.pos)+1); }
+    // roster construction: required starters first, then depth toward target, then hard cap
+    const haveAtPos=haveByPos[pl.pos]||0;
+    const tgtAt=TG.t[pl.pos]||0, maxAt=TG.mx[pl.pos]||0;
+    let needMult=0.75, needTag="depth", satPen=0, hardFull=false;
+    const qbShort=TG.sf&&(haveByPos.QB||0)<2;   // superflex: two starting QBs is mandatory, not optional
+    const mustStart=need[pl.pos]>0||(pl.pos==="QB"&&qbShort);
+    // cap check FIRST — at the cap a player can't crack your lineup even as a flex body
+    if(!mustStart&&haveAtPos>=maxAt){ needMult=0.1; needTag="roster full"; satPen=90*(haveAtPos-maxAt+1); hardFull=true; }
+    else if(mustStart){ needMult=1.6*urgency; needTag="starter need";
+      if(TG.sf&&pl.pos==="QB"){needMult*=1.2;needTag="premium QB";} }   // QBs scarce+critical in superflex
+    else if(FLEX_POS.includes(pl.pos)&&flexNeed>0){ needMult=1.15*Math.min(urgency,2.5); needTag="flex fit"; }
+    else if(SUPER_POS.includes(pl.pos)&&superNeed>0){ needMult=(pl.pos==="QB"?1.6:1.15)*Math.min(urgency,2.5); needTag=(pl.pos==="QB"?"superflex QB":"superflex fit"); }
+    else if(haveAtPos<tgtAt){ needMult=0.85; needTag="depth"; }
+    else { needMult=0.3; needTag="roster full"; satPen=30; }
     // scarcity: how many startable left at pos, and cliff to next available
     const pool=byPos[pl.pos];
     const myRank=pool.findIndex(x=>x.id===pl.id);
@@ -953,10 +976,16 @@ function recommendations(){
     // run risk: rough estimate of how many at this pos vanish before my next turn
     const goneEst=Math.round(picksUntilNext*posDemandShare(pl.pos));
     const runRisk = startableLeft>0 && goneEst>=myRank+1 && v>0;
-    let score=v*needMult + Math.min(cliff,25)*0.5 - satPen;
-    if(v<=0)score-=40; // never recommend below replacement as a "need"
+    // Need must always HELP a player. Multiplying a NEGATIVE (below-replacement) value by a big
+    // need multiplier made needed players score worse — that's what starved WR/QB late in drafts.
+    const posV=Math.max(0,v), negV=Math.min(0,v);
+    const isNeed=/starter need|premium QB|flex fit|superflex/.test(needTag);
+    let score=posV*needMult + negV/Math.max(needMult,0.4) + Math.min(cliff,25)*0.5 - satPen;
+    if(v<=0&&!isNeed)score-=40; // don't chase below-replacement depth you don't need
+    if(hardFull)score=-900-satPen; // a 2nd K / 4th TE can never crack your lineup — never recommend it
     // K/DST: park them until skill-position starters are filled (real draft behavior)
-    if((pl.pos==="K"||pl.pos==="DST")&&coreNeed>0){score=v*0.15-60-satPen;needMult=0.15;needTag="wait";}
+    // K/DST: park them while you still have picks to spare, but urgency above forces them in at the end
+    if((pl.pos==="K"||pl.pos==="DST")&&need[pl.pos]>0&&slack>2){score=v*0.15-60;needMult=0.15;needTag="wait";}
     const adp=adpOf(pl), adpDelta=adp-(currentPick()+1); // >0 = ADP later than now (value); <0 = reach
     return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,myRank,adp,adpDelta};
   });
