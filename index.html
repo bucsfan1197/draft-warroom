@@ -2421,7 +2421,8 @@ function wireSetup(){
 /* ---- tabs ---- */
 function showTab(name){
   $$(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===name));
-  ["draft","team","matchups","backtest","dynasty","players","setup"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==name));
+  // derive from the DOM so a new tab can never be silently left out of this list
+  $$("section[id^='tab-']").forEach(s=>s.classList.toggle("hide",s.id!=="tab-"+name));
 }
 
 /* ---- theme ---- */
