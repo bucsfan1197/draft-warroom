@@ -19,7 +19,10 @@ REFRESH_HOURS = 6            # how often to re-pull + push
 GIT_PUSH  = True            # set False to just write data.js locally without pushing
 # ----------------------------
 
-def log(*a): print(time.strftime("[%H:%M:%S]"), *a, flush=True)
+def log(*a):
+    msg=time.strftime("[%H:%M:%S] ")+" ".join(str(x) for x in a)
+    try: print(msg, flush=True)
+    except UnicodeEncodeError: print(msg.encode("ascii","replace").decode("ascii"), flush=True)
 def norm(n):
     n=str(n).lower(); n=re.sub(r"[.'`]","",n); n=re.sub(r"\b(jr|sr|ii|iii|iv|v)\b","",n)
     n=re.sub(r"[^a-z ]"," ",n); return re.sub(r"\s+"," ",n).strip()
@@ -130,6 +133,28 @@ def pull_yahoo():
     log(f"  Yahoo: {len(out)}")
     return out
 
+def pull_sleeper_adp():
+    # Sleeper ADP lives in the PUBLIC season-projections payload (no auth).
+    # stats.adp_ppr (1QB), adp_2qb (superflex), adp_dynasty_ppr (dynasty). 999 = undrafted.
+    out={}
+    try:
+        d=getj(f"https://api.sleeper.com/projections/nfl/{SEASON}?season_type=regular", timeout=60)
+        for it in d:
+            st=it.get("stats") or {}
+            ppr=st.get("adp_ppr")
+            if ppr is None or ppr>=900: continue
+            pl=it.get("player") or {}
+            nm=((pl.get("first_name") or "")+" "+(pl.get("last_name") or "")).strip()
+            if not nm: continue
+            e={"ppr":round(float(ppr),1)}
+            for src,dst in (("adp_2qb","sf"),("adp_dynasty_ppr","dyn"),("adp_dynasty_2qb","dynSf")):
+                v=st.get(src)
+                if v is not None and v<900: e[dst]=round(float(v),1)
+            out[norm(nm)]=e
+        log(f"  Sleeper ADP: {len(out)}")
+    except Exception as ex: log("  Sleeper ADP fail:",ex)
+    return out
+
 # ---------- build ----------
 def build_stats(pos, C, templ):
     if pos in ("K","DST"): return {"p": round(C,1)}
@@ -163,7 +188,7 @@ def build_data():
     BYE=byes_from_sched(base["SCHED"])
     log("Pulling live sources…")
     ffc=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
-    espn_proj,espn_adp=pull_espn(); yah=pull_yahoo()
+    espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -213,6 +238,11 @@ def build_data():
             if ea.get("sf"): p["adpEsf"]=ea["sf"]
         ya=yah.get(k)
         if ya is not None: p["adpY"]=ya
+        sa=sadp.get(k)
+        if sa:
+            p["adpS"]=sa["ppr"]
+            if sa.get("sf"): p["adpSsf"]=sa["sf"]
+            if sa.get("dyn"): p["adpSdyn"]=sa["dyn"]
         players.append(p); pid+=1
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
@@ -237,7 +267,7 @@ def git_push():
         subprocess.run(["git","-C",HERE,"add","data.js"],check=True)
         subprocess.run(["git","-C",HERE,"commit","-m",f"data update {time.strftime('%Y-%m-%d %H:%M')}"],check=True)
         subprocess.run(["git","-C",HERE,"push"],check=True)
-        log("git: pushed ✓ — your live site will update in ~1 min")
+        log("git: pushed OK - your live site will update in ~1 min")
     except Exception as ex:
         log("git push failed (is the repo set up? see README):",ex)
 
