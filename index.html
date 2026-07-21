@@ -704,7 +704,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:10},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:11},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -726,13 +726,13 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==10){
+  if(D&&D.PLAYERS&&st.settings._projv!==11){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
     st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
     D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf});});
-    st.settings._projv=10;
+    st.settings._projv=11;
   }
   return st;
 }
@@ -965,7 +965,9 @@ function recommendations(){
     const qbShort=TG.sf&&(haveByPos.QB||0)<2;   // superflex: two starting QBs is mandatory, not optional
     const mustStart=need[pl.pos]>0||(pl.pos==="QB"&&qbShort);
     // cap check FIRST — at the cap a player can't crack your lineup even as a flex body
-    if(!mustStart&&haveAtPos>=maxAt){ needMult=0.1; needTag="roster full"; satPen=90*(haveAtPos-maxAt+1); hardFull=true; }
+    if(!mustStart&&haveAtPos>=maxAt){ needMult=0.1; needTag="roster full";
+      // a 2nd K/DST is pure dead weight (you only ever start one) — rank it below ANY skill body
+      satPen=((pl.pos==="K"||pl.pos==="DST")?400:90)*(haveAtPos-maxAt+1); hardFull=true; }
     else if(mustStart){ needMult=1.6*urgency; needTag="starter need";
       if(TG.sf&&pl.pos==="QB"){needMult*=1.2;needTag="premium QB";} }   // QBs scarce+critical in superflex
     else if(FLEX_POS.includes(pl.pos)&&flexNeed>0){ needMult=1.15*Math.min(urgency,2.5); needTag="flex fit"; }
