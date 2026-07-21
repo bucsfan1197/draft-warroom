@@ -907,6 +907,15 @@ function positionalNeed(roster){
 }
 
 /* ---- recommendation engine ---- */
+// how many of a position are realistically useful (startable slots + flex + sensible bench)
+function usefulCap(pos){
+  const R=state.settings.roster;
+  let base=(R[pos]||0);
+  if(pos==="QB") base+=(R.SUPERFLEX||0);
+  const flexAllow=FLEX_POS.includes(pos)?1:0;
+  const buf={RB:2,WR:2,QB:1,TE:0,K:0,DST:0}[pos]||0;
+  return base+flexAllow+buf;
+}
 function recommendations(){
   const {levels}=replacementLevels();
   const drafted=draftedIds();
@@ -926,10 +935,15 @@ function recommendations(){
     const v=vorp(pl,levels);
     // need multiplier
     let needMult=0.75, needTag="depth";
-    if(need[pl.pos]>0){needMult=1.35;needTag="starter need";}
+    const sfLeague=(state.settings.roster.SUPERFLEX||0)>0;
+    if(need[pl.pos]>0){needMult=1.35;needTag="starter need";
+      if(pl.pos==="QB"&&sfLeague){needMult=1.9;needTag="premium QB";}}   // QBs scarce+critical in superflex
     else if(FLEX_POS.includes(pl.pos)&&flexNeed>0){needMult=1.12;needTag="flex fit";}
-    else if(SUPER_POS.includes(pl.pos)&&superNeed>0){needMult=1.12;needTag="superflex fit";}
-    // roster-full damping for K/DST/QB you already have enough of
+    else if(SUPER_POS.includes(pl.pos)&&superNeed>0){needMult=(pl.pos==="QB"?1.7:1.12);needTag=(pl.pos==="QB"?"superflex QB":"superflex fit");}
+    // positional saturation: extra bodies at an already-filled position add little real lineup value
+    const haveAtPos=mine.filter(x=>x.pos===pl.pos).length;
+    let satPen=0;
+    if(haveAtPos>=usefulCap(pl.pos)){ needMult=Math.min(needMult,0.2); needTag="roster full"; satPen=45*(haveAtPos-usefulCap(pl.pos)+1); }
     // scarcity: how many startable left at pos, and cliff to next available
     const pool=byPos[pl.pos];
     const myRank=pool.findIndex(x=>x.id===pl.id);
@@ -939,10 +953,10 @@ function recommendations(){
     // run risk: rough estimate of how many at this pos vanish before my next turn
     const goneEst=Math.round(picksUntilNext*posDemandShare(pl.pos));
     const runRisk = startableLeft>0 && goneEst>=myRank+1 && v>0;
-    let score=v*needMult + Math.min(cliff,25)*0.5;
+    let score=v*needMult + Math.min(cliff,25)*0.5 - satPen;
     if(v<=0)score-=40; // never recommend below replacement as a "need"
     // K/DST: park them until skill-position starters are filled (real draft behavior)
-    if((pl.pos==="K"||pl.pos==="DST")&&coreNeed>0){score=v*0.15-60;needMult=0.15;needTag="wait";}
+    if((pl.pos==="K"||pl.pos==="DST")&&coreNeed>0){score=v*0.15-60-satPen;needMult=0.15;needTag="wait";}
     const adp=adpOf(pl), adpDelta=adp-(currentPick()+1); // >0 = ADP later than now (value); <0 = reach
     return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,myRank,adp,adpDelta};
   });
