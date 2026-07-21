@@ -239,6 +239,7 @@
       <button class="tab" data-tab="matchups">Matchups</button>
       <button class="tab" data-tab="backtest">Backtest</button>
       <button class="tab hide" data-tab="dynasty" id="dynastyTabBtn">Dynasty</button>
+      <button class="tab" data-tab="season">In-Season</button>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
@@ -395,6 +396,22 @@
   </section>
 
   <!-- DYNASTY TAB -->
+  <!-- IN-SEASON TAB -->
+  <section id="tab-season" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Start / Sit</h2><span id="seasonCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="field" style="max-width:200px;margin-bottom:12px"><label>Week</label>
+          <select id="seasonWeek"></select></div>
+        <div id="startSit"></div>
+      </div>
+    </div>
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
+      <div class="panel"><div class="hd"><h2>Waiver targets</h2></div><div class="bd" id="waiverBox"></div></div>
+      <div class="panel"><div class="hd"><h2>Trade value board</h2></div><div class="bd" id="tradeBox"></div></div>
+    </div>
+  </section>
+
   <section id="tab-dynasty" class="hide">
     <div class="grid-draft" style="grid-template-columns:1fr 1fr">
       <div class="panel">
@@ -1492,7 +1509,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function fmt(n){return (Math.round(n*10)/10).toFixed(1);}
 function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show");clearTimeout(f._t);f._t=setTimeout(()=>f.classList.remove("show"),1600);}
 
-function renderAll(){applyFormatUI();renderClock();syncPickTimer();renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();renderTeamTab();renderMatchups();renderBacktest();renderDynasty();renderPlayersTab();renderReplBox();save();}
+function renderAll(){applyFormatUI();renderClock();syncPickTimer();renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();renderTeamTab();renderInSeason();renderMatchups();renderBacktest();renderDynasty();renderPlayersTab();renderReplBox();save();}
 
 function renderClock(){
   if(state.settings.auction){
@@ -1752,6 +1769,82 @@ function renderTiers(){
   if(cliffs.length)note+=cliffs.map(p=>`<b>${p}</b> falls off a cliff after the next ${info[p].n} (−${Math.round(info[p].drop)} pts to the tier below)`).join("; ")+". ";
   if(runs.length)note+=`🔥 <b>${runs.join(", ")}</b> ${runs.length>1?"are":"is"} getting drafted fast.`;
   el.innerHTML+=`<div class="note" style="margin-top:8px">${note||"Tiers are deep — no need to reach yet."}</div>`;
+}
+
+/* ===================== IN-SEASON: start/sit, waivers, trade value =====================
+   Draft day is one day; the season is 17 weeks. Reuses the same matchup-adjusted weekly
+   projections the championship simulator runs on. */
+function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w); }
+function weeklyLineup(roster,w){
+  const R=state.settings.roster;
+  const score=p=>wkPts(p,w);
+  const byPos={};ALLPOS.forEach(pos=>byPos[pos]=roster.filter(x=>x.pos===pos).slice().sort((a,b)=>score(b)-score(a)));
+  const used=new Set(),slots=[];
+  const take=pos=>{for(const pl of (byPos[pos]||[])){if(!used.has(pl.id)){used.add(pl.id);return pl;}}return null;};
+  [["QB",R.QB],["RB",R.RB],["WR",R.WR],["TE",R.TE]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
+  const fillBest=(pool,label,n)=>{for(let i=0;i<(n||0);i++){
+    let best=null;pool.forEach(pos=>{for(const pl of (byPos[pos]||[])){if(!used.has(pl.id)){if(!best||score(pl)>score(best.pl))best={pl};break;}}});
+    if(best){used.add(best.pl.id);slots.push({slot:label,pl:best.pl});}else slots.push({slot:label,pl:null});}};
+  fillBest(FLEX_POS,"FLEX",R.FLEX); fillBest(SUPER_POS,"SUPERFLEX",R.SUPERFLEX);
+  [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
+  return {slots,bench:roster.filter(x=>!used.has(x.id)).sort((a,b)=>score(b)-score(a))};
+}
+function renderInSeason(){
+  const sel=$("#seasonWeek"); if(!sel)return;
+  if(!sel.options.length){
+    sel.innerHTML=Array.from({length:18},(_,i)=>`<option value="${i+1}">Week ${i+1}</option>`).join("");
+    sel.value=String(state.ui.seasonWeek||1);
+    sel.onchange=()=>{state.ui.seasonWeek=+sel.value;renderInSeason();save();};
+  }
+  const w=+sel.value||1;
+  const roster=teamRoster(myIdx());
+  const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=`week ${w} · matchup-adjusted`;
+  const ss=$("#startSit");
+  if(!roster.length){ ss.innerHTML=`<div class="emptystate">Draft or sync a roster first — then this becomes your weekly start/sit sheet.</div>`;
+    $("#waiverBox").innerHTML="";$("#tradeBox").innerHTML="";return; }
+  const L=weeklyLineup(roster,w);
+  const total=L.slots.reduce((a,s)=>a+(s.pl?wkPts(s.pl,w):0),0);
+  ss.innerHTML=`<div class="kv"><span class="meta">Projected total</span><span><b>${fmt(total)}</b> pts</span></div>`
+   + L.slots.map(s=>{
+      const p=s.pl;
+      if(!p)return `<div class="kv"><span><b class="num">${slotLabel(s.slot)}</b></span><span class="chip crit">empty</span></div>`;
+      const bye=p.bye===w;
+      return `<div class="kv"><span><b class="num">${slotLabel(s.slot)}</b> <span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span>
+        <span>${bye?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b>`}</span></div>`;}).join("")
+   + (L.bench.length?`<h3 class="eyebrow" style="margin:14px 0 6px">Bench</h3>`+L.bench.slice(0,8).map(p=>
+      `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span><span class="meta">${p.bye===w?"BYE":wkPts(p,w).toFixed(1)}</span></div>`).join(""):"");
+  // sit/start advice: bench player out-projecting a starter
+  const worstStarter=L.slots.filter(s=>s.pl&&s.pl.bye!==w).sort((a,b)=>wkPts(a.pl,w)-wkPts(b.pl,w))[0];
+  const bestBench=L.bench.filter(p=>p.bye!==w)[0];
+  const byes=L.slots.filter(s=>s.pl&&s.pl.bye===w).length;
+  let advice=[];
+  if(byes)advice.push(`<b>${byes}</b> starter${byes>1?"s are":" is"} on bye — fill from your bench or waivers.`);
+  if(worstStarter&&bestBench&&wkPts(bestBench,w)>wkPts(worstStarter.pl,w)+0.5)
+    advice.push(`Consider <b>${bestBench.name}</b> over <b>${worstStarter.pl.name}</b> at ${slotLabel(worstStarter.slot)} (+${(wkPts(bestBench,w)-wkPts(worstStarter.pl,w)).toFixed(1)} pts).`);
+  ss.innerHTML+=`<div class="note" style="margin-top:12px">${advice.join(" ")||"✅ This is your optimal lineup for week "+w+"."}</div>`;
+
+  // ---- waiver targets: biggest upgrade over your CURRENT worst starter at that position ----
+  const drafted=draftedIds();
+  const mineByPos={};roster.forEach(p=>{(mineByPos[p.pos]=mineByPos[p.pos]||[]).push(p);});
+  const worstAt=pos=>{const a=(mineByPos[pos]||[]).slice().sort((x,y)=>pts(x)-pts(y));return a.length?pts(a[0]):0;};
+  const cands=state.players.filter(p=>!drafted.has(p.id)&&["QB","RB","WR","TE"].includes(p.pos))
+    .map(p=>({p,up:pts(p)-worstAt(p.pos)})).filter(x=>x.up>0).sort((a,b)=>b.up-a.up).slice(0,10);
+  $("#waiverBox").innerHTML=cands.length?cands.map(x=>
+    `<div class="kv"><span><span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name}${injChip(x.p)} <span class="meta">${x.p.team}</span></span>
+      <span class="chip good">+${Math.round(x.up)} over your worst ${x.p.pos}</span></div>`).join("")
+    +`<div class="note" style="margin-top:10px">Ranked by upgrade over the weakest player you actually roster at that spot — not a generic replacement level.</div>`
+    :`<div class="emptystate">Nothing on the wire beats your roster.</div>`;
+
+  // ---- trade value board ----
+  const dyn=state.settings.format==="dynasty";
+  const val=p=>dyn?dynValue(p):pts(p);
+  const mine=roster.slice().sort((a,b)=>val(b)-val(a));
+  const avail=state.players.filter(p=>!drafted.has(p.id)).sort((a,b)=>val(b)-val(a)).slice(0,6);
+  $("#tradeBox").innerHTML=`<h3 class="eyebrow" style="margin-bottom:6px">Your roster${dyn?" (dynasty value)":""}</h3>`
+    +mine.slice(0,10).map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
+    +`<h3 class="eyebrow" style="margin:12px 0 6px">Best available</h3>`
+    +avail.map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
+    +`<div class="note" style="margin-top:10px">Compare the numbers on both sides of a trade. ${dyn?"Dynasty values are age-adjusted over a 4-year window.":"Redraft values are this season's projected points."}</div>`;
 }
 
 /* ---- MY TEAM tab ---- */
