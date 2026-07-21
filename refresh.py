@@ -39,17 +39,19 @@ def std(t): return ALIAS.get(t,t)
 
 # ---------- live pulls ----------
 def pull_ffc():
-    out={}
+    out={}; drafts=0
     for fmt in ("ppr","2qb"):
         try:
             d=getj(f"https://fantasyfootballcalculator.com/api/v1/adp/{fmt}?teams=12&year={SEASON}")
+            if fmt=="ppr": drafts=(d.get("meta") or {}).get("total_drafts",0)
             for p in d.get("players",[]):
-                k=norm(p["name"]); e=out.setdefault(k,{"name":p["name"],"pos":p["position"],"team":std(p.get("team",""))})
+                pos={"DEF":"DST","PK":"K","D/ST":"DST"}.get(p["position"],p["position"])  # FFC uses DEF/PK; tool expects DST/K
+                k=norm(p["name"]); e=out.setdefault(k,{"name":p["name"],"pos":pos,"team":std(p.get("team",""))})
                 e["adp" if fmt=="ppr" else "adpSf"]=round(float(p["adp"]),1)
         except Exception as ex: log("  FFC",fmt,"fail:",ex)
     for v in out.values(): v.setdefault("adp",v.get("adpSf",999)); v.setdefault("adpSf",v.get("adp",999))
     log(f"  FFC: {len(out)} players")
-    return out
+    return out, drafts
 
 def pull_sleeper_players():
     out={}
@@ -187,7 +189,7 @@ def build_data():
     FACT=base["DIST_FACTORS"]; BANDW=base.get("BANDW",8); TEMPL=base["STAT_TEMPLATE"]
     BYE=byes_from_sched(base["SCHED"])
     log("Pulling live sources…")
-    ffc=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
+    ffc,ffc_drafts=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
     espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
@@ -246,9 +248,15 @@ def build_data():
             if sa.get("dynSf"): p["adpSdynSf"]=sa["dynSf"]
         players.append(p); pid+=1
 
+    # superflex QB-shift insight: mean overall ADP of top-12 QBs, 1QB (adp) vs SF (adpSf)
+    qbs=sorted([p for p in players if p["pos"]=="QB"], key=lambda x:x["adp"])[:12]
+    sfShift=[round(sum(q["adp"] for q in qbs)/len(qbs),1),
+             round(sum(q.get("adpSf",q["adp"]) for q in qbs)/len(qbs),1)] if qbs else [65.0,20.0]
+
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],
-         "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)"}}
+         "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
+                 "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift}}
     log(f"Built {len(players)} players "
         f"({sum(1 for p in players if p.get('cons'))} w/ consensus, "
         f"{sum(1 for p in players if p.get('inj'))} injuries)")

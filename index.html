@@ -1539,12 +1539,12 @@ function renderBacktest(){
   const D=window.__FFDATA__; if(!D)return;
   const bt=D.BACKTEST[btKey()]||{}, teams=state.settings.teams, sf=isSF(), POS=["QB","RB","WR","TE"];
   $("#btLeague").textContent=`${teams}-team ${sf?'Superflex':'1QB'}`;
-  $("#btCtx").textContent=`${D.META.drafts.toLocaleString()} live 2026 drafts · ${D.META.hist}`;
+  $("#btCtx").textContent=`${(D.META.drafts||0).toLocaleString()} live 2026 drafts · ${D.META.hist||"11 seasons (2014-24)"}`;
   $("#btNote").innerHTML=`Real data, no estimates. For 11 seasons we joined each player's <b>actual ADP</b> (Fantasy Football Calculator${sf?', superflex/2QB board':''}) to their <b>actual end-of-season fantasy points</b> (nflverse), bucketed by the round they'd go in a ${teams}-team draft, and measured how often the pick returned a startable season. Change team count or toggle Superflex in <span class="link" id="btToSetup">League Setup</span> to re-cut it live.`;
   const rows=Object.keys(bt).map(Number).sort((a,b)=>a-b), maxR=Math.min(Math.max(...rows,1),14);
   const r1=bt["1"]||{}, ins=[];
   if(r1.WR&&r1.RB)ins.push(btCard("Round 1: WR is the safer anchor",`WR ${pct(r1.WR.hit)} vs RB ${pct(r1.RB.hit)}`,`First-round WRs returned a startable season ${pct(r1.WR.hit)} of the time vs ${pct(r1.RB.hit)} for RBs — WR the steadier anchor, RB the higher-variance swing.`));
-  const s=D.META.sfShift;
+  const s=D.META.sfShift||[65,20];
   ins.push(btCard("Superflex pulls QBs up ~2 rounds",`ADP ${s[1]} vs ${s[0]}`,`Top-12 QBs go at overall ADP ~${s[1]} in superflex vs ~${s[0]} in 1QB. ${sf?"You're in superflex — treat the elite QBs as first-round assets.":"You're in 1QB — you can wait on QB and let value fall to you."}`));
   let pocket=null;
   rows.forEach(rn=>POS.forEach(p=>{const c=bt[rn]&&bt[rn][p];if(c&&rn>=3&&c.hit>=0.68&&(!pocket||c.hit>pocket.hit))pocket={rn,p,...c};}));
