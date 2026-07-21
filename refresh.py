@@ -243,6 +243,7 @@ def build_data():
             p["adpS"]=sa["ppr"]
             if sa.get("sf"): p["adpSsf"]=sa["sf"]
             if sa.get("dyn"): p["adpSdyn"]=sa["dyn"]
+            if sa.get("dynSf"): p["adpSdynSf"]=sa["dynSf"]
         players.append(p); pid+=1
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],

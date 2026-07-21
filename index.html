@@ -698,13 +698,13 @@ function buildPlayers(){
     return D.PLAYERS.map((e,i)=>({id:i,name:e.name,pos:e.pos,team:e.team,bye:e.bye||TEAM_BYE[e.team]||0,
       stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,
       dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,
-      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn}));
+      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf}));
   }
   return RAW.map((r,i)=>{const [name,pos,team,,stats]=r;return {id:i,name,pos,team,bye:TEAM_BYE[team]||0,stats:{...stats},adp:i+1,adpSf:i+1,override:null,age:AGE[name]??27};});
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:9},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:10},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -726,13 +726,13 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==9){
+  if(D&&D.PLAYERS&&st.settings._projv!==10){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
-    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
-    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn});});
-    st.settings._projv=9;
+    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
+    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf});});
+    st.settings._projv=10;
   }
   return st;
 }
@@ -796,7 +796,10 @@ function adpOf(pl){
   if(src==="custom") v = (pl.adpCustom!=null?pl.adpCustom:null);
   else if(src==="espn") v = sf ? (pl.adpEsf!=null?pl.adpEsf:null) : (pl.adpE!=null?pl.adpE:null);
   else if(src==="yahoo"&&!sf) v = (pl.adpY!=null?pl.adpY:null); // Yahoo = 1QB only; SF falls back to FFC
-  else if(src==="sleeper"){ const dyn=state.settings.format==="dynasty"; v = (!sf&&dyn) ? (pl.adpSdyn!=null?pl.adpSdyn:(pl.adpS!=null?pl.adpS:null)) : (sf ? (pl.adpSsf!=null?pl.adpSsf:null) : (pl.adpS!=null?pl.adpS:null)); }
+  else if(src==="sleeper"){ const dyn=state.settings.format==="dynasty";
+    if(dyn&&sf) v = (pl.adpSdynSf!=null?pl.adpSdynSf:(pl.adpSsf!=null?pl.adpSsf:(pl.adpSdyn!=null?pl.adpSdyn:null)));
+    else if(dyn) v = (pl.adpSdyn!=null?pl.adpSdyn:(pl.adpS!=null?pl.adpS:null));
+    else v = sf ? (pl.adpSsf!=null?pl.adpSsf:null) : (pl.adpS!=null?pl.adpS:null); }
   if(v==null) v = sf ? (pl.adpSf!=null?pl.adpSf:pl.adp) : pl.adp; // FFC (default + fallback)
   return v!=null?v:999;
 }
