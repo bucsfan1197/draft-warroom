@@ -1600,7 +1600,9 @@ function renderTeamReport(){
   const L=fillLineup(mine);
   const filled=L.slots.filter(s=>s.pl);
   const sgn=n=>(n>=0?"+":"")+Math.round(n);
-  const scored=filled.map(s=>({slot:s.slot,pl:s.pl,edge:pts(s.pl)-(levels[s.pl.pos]||0)}));
+  // must use the same value scale as the replacement levels (valueOf), not raw pts —
+  // in dynasty/best-ball those scales differ and the comparison goes nonsensical.
+  const scored=filled.map(s=>({slot:s.slot,pl:s.pl,edge:vorp(s.pl,levels)}));
   scored.sort((a,b)=>a.edge-b.edge);
   const weak=scored[0], strong=scored[scored.length-1];
   const empty=L.slots.filter(s=>!s.pl).map(s=>slotLabel(s.slot));
