@@ -136,6 +136,26 @@ def pull_yahoo():
     log(f"  Yahoo: {len(out)}")
     return out
 
+def pull_fantasypros_ecr():
+    # Expert Consensus Rank (aggregate of 100+ analysts), from FantasyPros' public rankings pages.
+    # Personal use, one request per source per refresh cycle.
+    out={}
+    pages=[("ecr","ppr-cheatsheets"),("ecrSf","superflex-cheatsheets"),("ecrDyn","dynasty-overall")]
+    for key,slug in pages:
+        try:
+            t=get(f"https://www.fantasypros.com/nfl/rankings/{slug}.php").decode("utf-8","replace")
+            m=re.search(r'var\s+ecrData\s*=\s*(\{.*?\});',t,re.S)
+            if not m: log(f"  FantasyPros {key}: no data block"); continue
+            n=0
+            for p in json.loads(m.group(1)).get("players",[]):
+                nm=p.get("player_name"); rk=p.get("rank_ecr")
+                if not nm or not rk: continue
+                out.setdefault(norm(nm),{})[key]=int(rk); n+=1
+            time.sleep(0.4)
+        except Exception as ex: log(f"  FantasyPros {key} fail:",ex)
+    log(f"  FantasyPros ECR: {len(out)}")
+    return out
+
 def pull_sleeper_adp():
     # Sleeper ADP lives in the PUBLIC season-projections payload (no auth).
     # stats.adp_ppr (1QB), adp_2qb (superflex), adp_dynasty_ppr (dynasty). 999 = undrafted.
@@ -191,7 +211,7 @@ def build_data():
     BYE=byes_from_sched(base["SCHED"])
     log("Pulling live sources…")
     ffc,ffc_drafts=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
-    espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp()
+    espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp(); fpe=pull_fantasypros_ecr()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -247,40 +267,70 @@ def build_data():
             if sa.get("sf"): p["adpSsf"]=sa["sf"]
             if sa.get("dyn"): p["adpSdyn"]=sa["dyn"]
             if sa.get("dynSf"): p["adpSdynSf"]=sa["dynSf"]
+        fe=fpe.get(k)
+        if fe:
+            for kk in ("ecr","ecrSf","ecrDyn"):
+                if fe.get(kk): p[kk]=fe[kk]
         players.append(p); pid+=1
 
-    # ---- expand the pool beyond FFC's ~230 so deep leagues don't run out of players ----
-    # 12 teams x 18-man best ball = 216 picks; dynasty rosters go deeper still.
-    POOL_TARGET=420
+    # ---- expand the pool so NO league size/format can ever run out of players ----
+    # FFC only lists ~230. Deep formats need far more: 12x18 best ball = 216 picks,
+    # dynasty startups (12-14 teams x 25-30 spots) can exceed 400. We include every player
+    # carrying ANY signal from ANY site: an ADP (FFC/Sleeper/ESPN/Yahoo) or a real projection.
+    POOL_TARGET=900
     posCount={}
     for p in players: posCount[p["pos"]]=posCount.get(p["pos"],0)+1
     cand=[]
     for k,info in slp.items():
         if k in ffc: continue
         pos=info.get("pos")
-        if pos not in ("QB","RB","WR","TE"): continue
+        if pos not in ("QB","RB","WR","TE","K"): continue
         c=cons(pos,k)
-        if not c or not c.get("s"): continue
-        cand.append((c["s"],k,info,pos,c))
+        seasonPts=(c or {}).get("s")
+        sa=sadp.get(k); ea=espn_adp.get((pos,k)); ya=yah.get(k)
+        hasAdp=bool(sa) or bool(ea and ea.get("s")) or (ya is not None)
+        if seasonPts is None and not hasAdp: continue          # no signal anywhere -> skip
+        if not hasAdp and (seasonPts or 0)<5: continue          # projected ~nothing and undrafted
+        cand.append(((seasonPts or 0)+(500 if hasAdp else 0), seasonPts, k, info, pos, c, sa, ea, ya))
     cand.sort(key=lambda x:-x[0])
-    for seasonPts,k,info,pos,c in cand:
+    for _,seasonPts,k,info,pos,c,sa,ea,ya in cand:
         if len(players)>=POOL_TARGET: break
         team=std(info.get("team") or "FA")
         posCount[pos]=posCount.get(pos,0)+1
-        sa=sadp.get(k)
-        adp=sa["ppr"] if sa else round(300+len(players)*0.2,1)   # depth guys slot after the drafted pool
+        adp=sa["ppr"] if sa else (ea.get("s") if (ea and ea.get("s")) else (ya if ya is not None else round(300+len(players)*0.2,1)))
         p={"id":pid,"name":info["name"],"pos":pos,"team":team,"bye":BYE.get(team,0),
            "adp":adp,"adpSf":(sa.get("sf") if sa else adp),"override":None,"age":info.get("age") or 25,
-           "stats":build_stats(pos,seasonPts,TEMPL),"cons":{"s":c["s"],"e":c["e"],"k":c["k"]},"wk":c["wk"]}
+           "stats":build_stats(pos,(seasonPts if seasonPts else 20),TEMPL)}
+        if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         fa=dist_for(pos,posCount[pos],FACT,BANDW)
         if fa: p["dist"]={"f":fa["f"],"c":fa["c"],"bust":fa["bust"],"boom":fa["boom"]}
         if info.get("inj"): p["inj"]=info["inj"]
         if info.get("depth") is not None: p["depth"]=info["depth"]
+        if ea:
+            if ea.get("s"): p["adpE"]=ea["s"]
+            if ea.get("sf"): p["adpEsf"]=ea["sf"]
+        if ya is not None: p["adpY"]=ya
         if sa:
             p["adpS"]=sa["ppr"]
             if sa.get("sf"): p["adpSsf"]=sa["sf"]
             if sa.get("dyn"): p["adpSdyn"]=sa["dyn"]
             if sa.get("dynSf"): p["adpSdynSf"]=sa["dynSf"]
+        fe=fpe.get(k)
+        if fe:
+            for kk in ("ecr","ecrSf","ecrDyn"):
+                if fe.get(kk): p[kk]=fe[kk]
+        players.append(p); pid+=1
+    # every NFL defense (FFC lists only ~22 of 32)
+    haveDST={p["team"] for p in players if p["pos"]=="DST"}
+    for team in sorted(base["SCHED"].keys()):
+        if team in haveDST: continue
+        c=cons("DST",team)
+        seasonPts=(c or {}).get("s") or 120
+        posCount["DST"]=posCount.get("DST",0)+1
+        p={"id":pid,"name":team+" Defense","pos":"DST","team":team,"bye":BYE.get(team,0),
+           "adp":round(300+len(players)*0.2,1),"adpSf":round(300+len(players)*0.2,1),
+           "override":None,"age":27,"stats":{"p":round(seasonPts,1)}}
+        if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         players.append(p); pid+=1
     log(f"  pool expanded to {len(players)} players")
 

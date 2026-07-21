@@ -1,3 +1,7 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e9f6e">
+<meta name="description" content="Fantasy football draft optimizer: live Sleeper sync, championship-equity simulator, multi-source ADP.">
 <title>Draft War Room — Fantasy Football Draft Optimizer</title>
 <style>
   :root{
@@ -63,6 +67,33 @@
   /* Layout */
   .grid-draft{display:grid;grid-template-columns:340px 1fr 300px;gap:16px;align-items:start;margin-top:18px}
   @media(max-width:1150px){.grid-draft{grid-template-columns:1fr}}
+  .syncrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .syncrow input{flex:1;min-width:200px}
+  .syncrow #syncBtn{width:auto;padding:9px 20px}
+  /* grid children default to min-width:auto and refuse to shrink — this is what blows out narrow screens */
+  .grid-draft>*{min-width:0}
+  /* ---- phone / draft-day-in-your-hand layout ---- */
+  @media(max-width:760px){
+    .wrap{padding:0 10px 40px}
+    .grid-draft{grid-template-columns:1fr!important;gap:12px}
+    .sticky-col{position:static}                 /* sticky wastes vertical room on a phone */
+    .clock{flex-wrap:wrap;gap:8px;padding:12px}
+    .clock .big{font-size:19px}
+    .tblwrap,.bd{max-width:100%}
+    table{display:block;overflow-x:auto;white-space:nowrap}  /* wide boards scroll themselves, not the page */
+    .rec,.kv,.note{overflow-wrap:anywhere}
+    .form-grid{grid-template-columns:1fr!important}
+    .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+    .tabs::-webkit-scrollbar{display:none}
+    .tab{white-space:nowrap;padding:9px 12px}
+    button,.draftbtn,.fbtn,.seg button{min-height:42px}   /* thumb-sized tap targets */
+    input,select,textarea{font-size:16px}                  /* stops iOS zoom-on-focus */
+    .syncrow input,.syncrow #syncBtn{min-width:100%;width:100%}
+    table{font-size:12px}
+    th,td{padding:7px 6px}
+    .rec{padding:14px}
+    .rec .nm{font-size:16px}
+  }
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
   .panel .hd{padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
   .panel .hd h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)}
@@ -286,6 +317,10 @@
 
   <!-- MY TEAM TAB -->
   <section id="tab-team" class="hide">
+    <div class="panel" style="margin-bottom:16px">
+      <div class="hd"><h2>Team report card</h2></div>
+      <div class="bd" id="teamReport"></div>
+    </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr">
       <div class="panel">
         <div class="hd"><h2>Roster construction</h2></div>
@@ -432,14 +467,22 @@
               <div class="seg" id="s_snake"><button data-v="1" class="on">Snake</button><button data-v="0">Linear</button></div>
             </div>
             <div class="field"><label>ADP source (match your draft site)</label>
-              <div class="seg" id="s_adp"><button data-v="ffc" class="on">FFC</button><button data-v="espn">ESPN</button><button data-v="yahoo">Yahoo</button><button data-v="sleeper">Sleeper</button><button data-v="custom" id="adpCustomBtn" class="hide">Custom</button></div>
+              <div class="seg" id="s_adp"><button data-v="ffc" class="on">FFC</button><button data-v="espn">ESPN</button><button data-v="yahoo">Yahoo</button><button data-v="sleeper">Sleeper</button><button data-v="ecr">Experts</button><button data-v="custom" id="adpCustomBtn" class="hide">Custom</button></div>
+            </div>
+            <div class="field" style="grid-column:1/-1"><label>🔴 Sleeper live draft sync — auto-imports every pick</label>
+              <div class="syncrow">
+                <input type="text" id="syncDraftId" placeholder="Paste your Sleeper draft link or ID">
+                <input type="text" id="syncUser" placeholder="Sleeper username (optional — finds your slot)">
+                <button class="draftbtn" id="syncBtn">Connect</button>
+              </div>
+              <div id="syncStatus" class="meta" style="margin-top:6px">Not connected — you're entering picks manually.</div>
             </div>
             <div class="field"><label>Auction draft</label>
               <div class="seg" id="s_auction"><button data-v="0" class="on">Off</button><button data-v="1">On</button></div>
             </div>
             <div class="field" id="budgetField"><label>Budget ($ per team)</label><input type="number" id="s_budget" min="1" step="5"></div>
           </div>
-          <div class="note" style="margin-top:10px"><b>ESPN</b> = live ESPN ADP (+ superflex board); <b>Yahoo</b> = Yahoo ADP (1QB); <b>FFC</b> = Fantasy Football Calculator consensus (1QB + true superflex). <b>Sleeper has no public ADP feed</b> — but you can <b>paste it in</b> below (from a Sleeper mock or any list) and it becomes a “Custom” source.</div>
+          <div class="note" style="margin-top:10px"><b>ESPN</b> = live ESPN ADP (+ superflex board); <b>Yahoo</b> = Yahoo ADP (1QB); <b>FFC</b> = Fantasy Football Calculator consensus (1QB + true superflex). <b>Sleeper</b> = live Sleeper ADP (1QB, superflex and dynasty). You can also <b>paste any list</b> below to use as a “Custom” source.</div>
           <button class="ghost" id="adpPasteToggle" style="margin-top:8px;font-size:12px">＋ Paste custom ADP (Sleeper, etc.)</button>
           <div id="adpPasteBox" class="hide" style="margin-top:8px">
             <textarea id="adpPasteText" placeholder="One player per line — name then ADP. Rank prefixes and team codes are ignored, e.g.&#10;1. Ja'Marr Chase CIN  2.9&#10;Bijan Robinson  1.4&#10;Josh Allen  18.7" style="width:100%;height:130px;font-family:var(--mono);font-size:12px;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px"></textarea>
@@ -698,13 +741,13 @@ function buildPlayers(){
     return D.PLAYERS.map((e,i)=>({id:i,name:e.name,pos:e.pos,team:e.team,bye:e.bye||TEAM_BYE[e.team]||0,
       stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,
       dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,
-      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf}));
+      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn}));
   }
   return RAW.map((r,i)=>{const [name,pos,team,,stats]=r;return {id:i,name,pos,team,bye:TEAM_BYE[team]||0,stats:{...stats},adp:i+1,adpSf:i+1,override:null,age:AGE[name]??27};});
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:11},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,_projv:12},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -726,13 +769,13 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==11){
+  if(D&&D.PLAYERS&&st.settings._projv!==12){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
-    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
-    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf});});
-    st.settings._projv=11;
+    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.ecr=e.ecr;p.ecrSf=e.ecrSf;p.ecrDyn=e.ecrDyn;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
+    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn});});
+    st.settings._projv=12;
   }
   return st;
 }
@@ -796,6 +839,9 @@ function adpOf(pl){
   if(src==="custom") v = (pl.adpCustom!=null?pl.adpCustom:null);
   else if(src==="espn") v = sf ? (pl.adpEsf!=null?pl.adpEsf:null) : (pl.adpE!=null?pl.adpE:null);
   else if(src==="yahoo"&&!sf) v = (pl.adpY!=null?pl.adpY:null); // Yahoo = 1QB only; SF falls back to FFC
+  else if(src==="ecr"){ const dyn=state.settings.format==="dynasty";
+    v = dyn ? (pl.ecrDyn!=null?pl.ecrDyn:(pl.ecr!=null?pl.ecr:null))
+            : (sf ? (pl.ecrSf!=null?pl.ecrSf:null) : (pl.ecr!=null?pl.ecr:null)); }
   else if(src==="sleeper"){ const dyn=state.settings.format==="dynasty";
     if(dyn&&sf) v = (pl.adpSdynSf!=null?pl.adpSdynSf:(pl.adpSsf!=null?pl.adpSsf:(pl.adpSdyn!=null?pl.adpSdyn:null)));
     else if(dyn) v = (pl.adpSdyn!=null?pl.adpSdyn:(pl.adpS!=null?pl.adpS:null));
@@ -803,7 +849,7 @@ function adpOf(pl){
   if(v==null) v = sf ? (pl.adpSf!=null?pl.adpSf:pl.adp) : pl.adp; // FFC (default + fallback)
   return v!=null?v:999;
 }
-const ADP_SRC={ffc:"FFC",espn:"ESPN",yahoo:"Yahoo",sleeper:"Sleeper",custom:"Custom"};
+const ADP_SRC={ffc:"FFC",espn:"ESPN",yahoo:"Yahoo",sleeper:"Sleeper",ecr:"Experts (ECR)",custom:"Custom"};
 function parseCustomADP(text){
   const lines=(text||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
   const POS=/^(QB|RB|WR|TE|K|PK|DEF|DST|D\/ST|FLEX)$/i, isNum=l=>/^-?\d+(\.\d+)?$/.test(l);
@@ -867,7 +913,7 @@ function myNextPick(after){
   return start;
 }
 function draftedIds(){return new Set(state.picks.map(p=>p.playerId));}
-function teamRoster(idx){return state.picks.filter(p=>p.teamIdx===idx).map(p=>state.players[p.playerId]);}
+function teamRoster(idx){return state.picks.filter(p=>p.teamIdx===idx).map(p=>state.players[p.playerId]).filter(Boolean);}
 
 /* ---- roster slotting: fills starting lineup optimally ---- */
 function fillLineup(roster){
@@ -983,18 +1029,22 @@ function recommendations(){
     // run risk: rough estimate of how many at this pos vanish before my next turn
     const goneEst=Math.round(picksUntilNext*posDemandShare(pl.pos));
     const runRisk = startableLeft>0 && goneEst>=myRank+1 && v>0;
+    // probability he's still on the board when you pick again (from ADP spread)
+    const pLast = pAvailAt(pl, nextPick+1);
     // Need must always HELP a player. Multiplying a NEGATIVE (below-replacement) value by a big
     // need multiplier made needed players score worse — that's what starved WR/QB late in drafts.
     const posV=Math.max(0,v), negV=Math.min(0,v);
     const isNeed=/starter need|premium QB|flex fit|superflex/.test(needTag);
-    let score=posV*needMult + negV/Math.max(needMult,0.4) + Math.min(cliff,25)*0.5 - satPen;
+    // scarcity urgency: a player who won't survive the round trip is worth more NOW than one who will
+    const urgentBonus = Math.min(posV,60)*0.25*(1-pLast);
+    let score=posV*needMult + negV/Math.max(needMult,0.4) + Math.min(cliff,25)*0.5 + urgentBonus - satPen;
     if(v<=0&&!isNeed)score-=40; // don't chase below-replacement depth you don't need
     if(hardFull)score=-900-satPen; // a 2nd K / 4th TE can never crack your lineup — never recommend it
     // K/DST: park them until skill-position starters are filled (real draft behavior)
     // K/DST: park them while you still have picks to spare, but urgency above forces them in at the end
     if((pl.pos==="K"||pl.pos==="DST")&&need[pl.pos]>0&&slack>2){score=v*0.15-60;needMult=0.15;needTag="wait";}
     const adp=adpOf(pl), adpDelta=adp-(currentPick()+1); // >0 = ADP later than now (value); <0 = reach
-    return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,myRank,adp,adpDelta};
+    return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,pLast,myRank,adp,adpDelta};
   });
   scored.sort((a,b)=>b.score-a.score);
   return {list:scored,levels,picksUntilNext,need,flexNeed,superNeed,myRound};
@@ -1014,7 +1064,126 @@ function tierData(){
   });
   return out;
 }
-function runData(){const last=state.picks.slice(-8),c={QB:0,RB:0,WR:0,TE:0};last.forEach(pk=>{const p=state.players[pk.playerId];if(c[p.pos]!==undefined)c[p.pos]++;});return {c,n:last.length};}
+function runData(){const last=state.picks.slice(-8),c={QB:0,RB:0,WR:0,TE:0};last.forEach(pk=>{const p=state.players[pk.playerId];if(p&&c[p.pos]!==undefined)c[p.pos]++;});return {c,n:last.length};}
+
+/* ---- "will he last?" — probability a player survives to a given overall pick ---- */
+function erf(x){const s=x<0?-1:1;x=Math.abs(x);
+  const a1=.254829592,a2=-.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=.3275911;
+  const t=1/(1+p*x), y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
+function normCdf(z){return .5*(1+erf(z/Math.SQRT2));}
+// Draft position behaves ~Normal(ADP, sd); sd widens deeper in the draft (later picks are noisier).
+function pAvailAt(pl,pickNo){
+  const adp=adpOf(pl); if(adp==null||adp>=900)return 1;
+  const sd=Math.max(5,adp*0.28);
+  return Math.max(0,Math.min(1,1-normCdf((pickNo-adp)/sd)));
+}
+function availLabel(p){
+  if(p>=.75)return {t:"✅ Safe to wait",cls:"ok"};
+  if(p>=.45)return {t:"⚖️ Could go either way",cls:"warn"};
+  if(p>=.20)return {t:"⏳ Probably gone",cls:"warn"};
+  return {t:"🔥 Won't last",cls:"crit"};
+}
+
+/* ---- statistical tiers: cluster a position by value, break where the drop is unusually large ---- */
+function statTiers(pos,lv){
+  const drafted=draftedIds();
+  const arr=state.players.filter(p=>p.pos===pos&&!drafted.has(p.id)).sort((a,b)=>valueOf(b)-valueOf(a));
+  if(arr.length<4)return arr.map(p=>({p,tier:1}));
+  const top=arr.slice(0,40);
+  const gaps=[];for(let i=1;i<top.length;i++)gaps.push(valueOf(top[i-1])-valueOf(top[i]));
+  const mean=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+  const sd=Math.sqrt(gaps.reduce((a,b)=>a+(b-mean)*(b-mean),0)/gaps.length)||1;
+  const thresh=mean+sd; // a "cliff" = gap more than 1 sd above the typical gap
+  let tier=1;const out=[{p:top[0],tier:1}];
+  for(let i=1;i<top.length;i++){ if(gaps[i-1]>thresh&&tier<9)tier++; out.push({p:top[i],tier}); }
+  return out;
+}
+
+/* ===================== SLEEPER LIVE DRAFT SYNC (public API, no auth) ===================== */
+const SYNC={id:null,timer:null,sig:null,applied:0};
+const TEAM_FIX={LA:"LAR",STL:"LAR",SD:"LAC",OAK:"LV",WSH:"WAS",JAC:"JAX"};
+function stdTeam(t){t=String(t||"").toUpperCase();return TEAM_FIX[t]||t;}
+function parseDraftId(s){const m=String(s||"").match(/(\d{8,})/);return m?m[1]:null;}
+function syncStatus(txt,color){const el=$("#syncStatus");if(el){el.innerHTML=txt;el.style.color=color||"";}}
+function matchSleeperPlayer(p){
+  const md=p.metadata||{};
+  const pos=md.position==="DEF"?"DST":md.position;
+  if(pos==="DST"){const tm=stdTeam(md.team||p.player_id);
+    return state.players.find(x=>x.pos==="DST"&&stdTeam(x.team)===tm)||null;}
+  const key=nrm(((md.first_name||"")+" "+(md.last_name||"")).trim());
+  if(!key)return null;
+  return state.players.find(x=>nrm(x.name)===key)
+      || state.players.find(x=>x.pos===pos&&nrm(x.name)===key)
+      || state.players.find(x=>x.pos===pos&&nrm(x.name).startsWith(key+" "))
+      || state.players.find(x=>nrm(x.name).startsWith(key+" "))||null;
+}
+function applySleeperRoster(s){
+  if(!s)return;const R=state.settings.roster,n=(v,d)=>(v==null?d:v);
+  R.QB=n(s.slots_qb,R.QB);R.RB=n(s.slots_rb,R.RB);R.WR=n(s.slots_wr,R.WR);R.TE=n(s.slots_te,R.TE);
+  const flex=(s.slots_flex||0)+(s.slots_wr_rb_flex||0)+(s.slots_wr_te_flex||0)+(s.slots_rb_te_flex||0);
+  if(flex||s.slots_flex!=null)R.FLEX=flex;
+  R.SUPERFLEX=s.slots_super_flex||0;
+  R.K=n(s.slots_k,R.K);R.DST=n(s.slots_def,R.DST);R.BENCH=n(s.slots_bn,R.BENCH);
+}
+async function sleeperConnect(){
+  const id=parseDraftId($("#syncDraftId").value);
+  const user=($("#syncUser").value||"").trim();
+  if(!id){syncStatus("Paste a Sleeper draft link or ID (the long number).","var(--crit)");return;}
+  syncStatus("Connecting…");
+  try{
+    const d=await (await fetch(`https://api.sleeper.app/v1/draft/${id}`)).json();
+    if(!d||!d.draft_id){syncStatus("Draft not found — double-check the link.","var(--crit)");return;}
+    if(d.settings&&d.settings.teams)state.settings.teams=d.settings.teams;
+    state.settings.snake=(d.type==="linear")?0:1;
+    applySleeperRoster(d.settings);
+    let slotMsg="";
+    if(user){
+      try{
+        const u=await (await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(user)}`)).json();
+        const slot=(u&&u.user_id&&d.draft_order)?d.draft_order[u.user_id]:null;
+        if(slot){state.settings.slot=slot;slotMsg=` · you're slot ${slot}`;}
+        else slotMsg=" · couldn't find your slot (set it above)";
+      }catch(e){slotMsg=" · username lookup failed";}
+    }
+    SYNC.id=id;SYNC.sig=null;
+    if(state.ui.mock)state.ui.mock=false;      // live picks replace the mock CPU
+    try{localStorage.setItem("ffwr_syncid",id);localStorage.setItem("ffwr_syncuser",user);}catch(e){}
+    $("#syncBtn").textContent="Disconnect";
+    loadSetupInputs();
+    await syncTick(true,slotMsg);
+    if(SYNC.timer)clearInterval(SYNC.timer);
+    SYNC.timer=setInterval(()=>syncTick(false,slotMsg),3000);
+  }catch(e){syncStatus("Couldn't reach Sleeper — check your connection.","var(--crit)");}
+}
+function sleeperDisconnect(){
+  if(SYNC.timer)clearInterval(SYNC.timer);
+  SYNC.timer=null;SYNC.id=null;SYNC.sig=null;
+  try{localStorage.removeItem("ffwr_syncid");}catch(e){}
+  const b=$("#syncBtn");if(b)b.textContent="Connect";
+  syncStatus("Disconnected — you're entering picks manually.");
+}
+async function syncTick(first,slotMsg){
+  if(!SYNC.id)return;
+  try{
+    const picks=await (await fetch(`https://api.sleeper.app/v1/draft/${SYNC.id}/picks`)).json();
+    if(!Array.isArray(picks))return;
+    const sorted=picks.slice().sort((a,b)=>(a.pick_no||0)-(b.pick_no||0));
+    const next=[];let miss=0;
+    sorted.forEach(p=>{
+      const pl=matchSleeperPlayer(p);
+      if(!pl)miss++;   // player outside our pool — keep a placeholder so pick order stays aligned
+      next.push({playerId:pl?pl.id:null,teamIdx:Math.max(0,(p.draft_slot||1)-1)});
+    });
+    const sig=next.map(x=>x.playerId+":"+x.teamIdx).join(",");
+    if(sig!==SYNC.sig||first){
+      SYNC.sig=sig;state.picks=next;SIMCACHE={key:null};renderAll();
+    }
+    SYNC.applied=next.length;
+    const mine=teamForPick(currentPick())===myIdx();
+    syncStatus(`🟢 <b>Live</b> — ${next.length} picks synced${miss?` · ${miss} unmatched`:""}${slotMsg||""}`
+      +(mine?` · <b style="color:var(--good)">YOU'RE ON THE CLOCK</b>`:""),"");
+  }catch(e){syncStatus("Sync paused — network hiccup, retrying…","var(--warn)");}
+}
 
 /* ===================== MONTE CARLO DRAFT SIMULATOR ===================== */
 let SIMCACHE={key:null,results:null,ms:0,sims:0};
@@ -1071,7 +1240,7 @@ function runSim(nIters){
   const vorpArr=pool.map(p=>({id:p.id,pos:p.pos,vorp:meta[p.id].vorp})).sort((a,b)=>b.vorp-a.vorp);
   const baseCount=[...Array(T)].map(()=>({QB:0,RB:0,WR:0,TE:0,skill:0}));
   const baseRos=[...Array(T)].map(()=>[]);
-  state.picks.forEach(pk=>{const p=state.players[pk.playerId];baseRos[pk.teamIdx].push(pk.playerId);if(baseCount[pk.teamIdx][p.pos]!==undefined){baseCount[pk.teamIdx][p.pos]++;baseCount[pk.teamIdx].skill++;}});
+  state.picks.forEach(pk=>{const p=state.players[pk.playerId];if(!p)return;baseRos[pk.teamIdx].push(pk.playerId);if(baseCount[pk.teamIdx][p.pos]!==undefined){baseCount[pk.teamIdx][p.pos]++;baseCount[pk.teamIdx].skill++;}});
   const startersSkill=R.QB+R.RB+R.WR+R.TE+R.FLEX+(R.SUPERFLEX||0);
   const target=startersSkill+Math.min(R.BENCH||0,5);
   const oppCap={QB:R.QB+(R.SUPERFLEX||0)+1,RB:R.RB+R.FLEX+(R.SUPERFLEX||0)+2,WR:R.WR+R.FLEX+(R.SUPERFLEX||0)+2,TE:R.TE+2};
@@ -1256,7 +1425,10 @@ function renderHeurRecs(){
     else if(r.needTag==="wait")line=`You can wait on ${P} — just here as best-available.`;
     else line=i===0?`Best player left on the board.`:`Strong value if you want the best available.`;
     const warn=[];
-    if(!auct&&r.runRisk)warn.push(`<span class="chip warn">⏳ Grab now — likely gone by your next pick</span>`);
+    if(!auct&&r.pLast!=null&&picksUntilNext>0){
+      const pct=Math.round(r.pLast*100), al=availLabel(r.pLast);
+      warn.push(`<span class="chip ${al.cls}">${al.t} — ${pct}% he's still there at your next pick</span>`);
+    }
     const metaExtra=auct?` · <b>$${actx.val(r.pl)}</b> value`:"";
     return `<div class="rec ${pos}${i===0?" top":""}">
       <div class="rank-badge">#${i+1}</div>
@@ -1382,23 +1554,79 @@ function renderNeed(){
 }
 function renderTiers(){
   const el=$("#tierBox"); if(!el)return;
-  const td=tierData(), rd=runData();
+  const rd=runData(), lv=replacementLevels().levels, info={};
+  ["QB","RB","WR","TE"].forEach(pos=>{
+    const t=statTiers(pos,lv);
+    if(!t.length){info[pos]=null;return;}
+    const top=t[0].tier, inTier=t.filter(x=>x.tier===top);
+    const nextTier=t.find(x=>x.tier===top+1);
+    // how much you lose by waiting until the tier breaks
+    const drop=nextTier?Math.max(0,valueOf(inTier[inTier.length-1].p)-valueOf(nextTier.p)):0;
+    info[pos]={n:inTier.length,tier:top,drop,names:inTier.slice(0,3).map(x=>x.p.name.split(" ").slice(-1)[0])};
+  });
   el.innerHTML=["QB","RB","WR","TE"].map(pos=>{
-    const d=td[pos]; if(!d||!d.total)return `<div class="kv"><span><span class="pos ${pos}">${pos}</span></span><span class="meta">none left</span></div>`;
+    const d=info[pos];
+    if(!d)return `<div class="kv"><span><span class="pos ${pos}">${pos}</span></span><span class="meta">none left</span></div>`;
     const cliff=d.n<=2, thin=d.n<=4, run=rd.c[pos]>=3;
-    return `<div class="kv"><span><span class="pos ${pos}">${pos}</span> <span class="meta"><b>${d.n}</b> ${d.tier} left · ${d.total} total</span></span>
-      <span style="display:flex;gap:4px">${run?'<span class="chip warn">🔥 run</span>':''}${cliff?'<span class="chip crit">⚠ last few</span>':thin?'<span class="chip warn">thin</span>':''}</span></div>`;
+    return `<div class="kv"><span><span class="pos ${pos}">${pos}</span> <span class="meta"><b>${d.n}</b> left in tier ${d.tier} <span style="opacity:.65">(${d.names.join(", ")})</span></span></span>
+      <span style="display:flex;gap:4px">${run?'<span class="chip warn">🔥 run</span>':''}${cliff?'<span class="chip crit">⚠ cliff</span>':thin?'<span class="chip warn">thin</span>':''}</span></div>`;
   }).join("");
-  const cliffs=["RB","WR","QB","TE"].filter(p=>td[p]&&td[p].total&&td[p].n<=2);
+  const cliffs=["RB","WR","QB","TE"].filter(p=>info[p]&&info[p].n<=2&&info[p].drop>12);
   const runs=["RB","WR","QB","TE"].filter(p=>rd.c[p]>=3);
   let note="";
-  if(cliffs.length)note+=`Only a couple <b>${cliffs.map(p=>td[p].tier+" "+p).join(", ")}</b> left — grab now or drop a tier. `;
+  if(cliffs.length)note+=cliffs.map(p=>`<b>${p}</b> falls off a cliff after the next ${info[p].n} (−${Math.round(info[p].drop)} pts to the tier below)`).join("; ")+". ";
   if(runs.length)note+=`🔥 <b>${runs.join(", ")}</b> ${runs.length>1?"are":"is"} getting drafted fast.`;
   el.innerHTML+=`<div class="note" style="margin-top:8px">${note||"Tiers are deep — no need to reach yet."}</div>`;
 }
 
 /* ---- MY TEAM tab ---- */
+/* ---- Team report card: where you actually stand, and what to fix ---- */
+function renderTeamReport(){
+  const el=$("#teamReport"); if(!el)return;
+  const mine=teamRoster(myIdx());
+  if(!mine.length){el.innerHTML=`<div class="emptystate">Draft a few players and your report card appears here.</div>`;return;}
+  const T=state.settings.teams;
+  const lineupPts=r=>{const L=fillLineup(r);return L.slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0);};
+  const myPts=lineupPts(mine);
+  const others=[];for(let i=0;i<T;i++){if(i!==myIdx()){const r=teamRoster(i);if(r.length)others.push(lineupPts(r));}}
+  const avg=others.length?others.reduce((a,b)=>a+b,0)/others.length:myPts;
+  const better=others.filter(x=>x<myPts).length;
+  const rank=others.length?others.length+1-better:1;
+  const pctile=others.length?better/others.length:1;
+  const grade=pctile>=.9?"A":pctile>=.75?"A−":pctile>=.6?"B+":pctile>=.45?"B":pctile>=.3?"C+":pctile>=.15?"C":"D";
+  const gcls=pctile>=.6?"good":pctile>=.3?"warn":"crit";
+  // weakest + strongest starting slot vs positional replacement
+  const {levels}=replacementLevels();
+  const L=fillLineup(mine);
+  const filled=L.slots.filter(s=>s.pl);
+  const sgn=n=>(n>=0?"+":"")+Math.round(n);
+  const scored=filled.map(s=>({slot:s.slot,pl:s.pl,edge:pts(s.pl)-(levels[s.pl.pos]||0)}));
+  scored.sort((a,b)=>a.edge-b.edge);
+  const weak=scored[0], strong=scored[scored.length-1];
+  const empty=L.slots.filter(s=>!s.pl).map(s=>slotLabel(s.slot));
+  // playoff schedule (weeks 15-17) across your starters
+  const sk=filled.filter(s=>["QB","RB","WR","TE"].includes(s.pl.pos));
+  const psos=sk.length?sk.reduce((a,s)=>a+sosOf(s.pl,15,17),0)/sk.length:1;
+  const psosTxt=psos>=1.04?["easy","good"]:psos<=0.96?["tough","crit"]:["average","warn"];
+  // bye pileups among starters
+  const byeCount={};filled.forEach(s=>{if(s.pl.bye)byeCount[s.pl.bye]=(byeCount[s.pl.bye]||0)+1;});
+  const worstBye=Object.entries(byeCount).sort((a,b)=>b[1]-a[1])[0];
+  const todo=[];
+  if(empty.length)todo.push(`Fill your empty <b>${empty.join(", ")}</b> slot${empty.length>1?"s":""}.`);
+  if(weak&&weak.edge<15)todo.push(`Upgrade <b>${slotLabel(weak.slot)}</b> — ${weak.pl.name} is only ${sgn(weak.edge)} vs a waiver-level ${weak.pl.pos}.`);
+  if(worstBye&&worstBye[1]>=3)todo.push(`<b>Week ${worstBye[0]}</b> bye hits ${worstBye[1]} starters — plan a backup.`);
+  if(psos<=0.96)todo.push(`Your starters face a <b>tough weeks 15–17</b> slate — favor easy-playoff players from here.`);
+  el.innerHTML=`
+   <div class="kv"><span><b style="font-size:24px" class="tier ${gcls}">${grade}</b> <span class="meta">projected starting lineup</span></span>
+     <span class="meta"><b>${fmt(myPts)}</b> pts · ${others.length?`#${rank} of ${others.length+1}`:"—"} · ${myPts>=avg?"+":""}${fmt(myPts-avg)} vs league avg</span></div>
+   <div class="kv"><span class="meta">Strongest spot</span><span>${strong?`<b>${slotLabel(strong.slot)}</b> ${strong.pl.name} <span class="meta">(${sgn(strong.edge)} over replacement)</span>`:"—"}</span></div>
+   <div class="kv"><span class="meta">Weakest spot</span><span>${weak?`<b>${slotLabel(weak.slot)}</b> ${weak.pl.name} <span class="meta">(${sgn(weak.edge)} over replacement)</span>`:"—"}</span></div>
+   <div class="kv"><span class="meta">Playoff schedule (wk 15–17)</span><span class="chip ${psosTxt[1]}">${psosTxt[0]} · ${psos.toFixed(2)}×</span></div>
+   <div class="note" style="margin-top:10px">${todo.length?"<b>To do:</b> "+todo.join(" "):"✅ No glaring holes — your lineup is set."}</div>`;
+}
+
 function renderTeamTab(){
+  renderTeamReport();
   const roster=teamRoster(myIdx());
   // construction: position points bar chart vs league avg
   const {levels}=replacementLevels();
@@ -1878,6 +2106,14 @@ function wireSetup(){
   $$("#s_snake button").forEach(b=>b.onclick=()=>{state.settings.snake=+b.dataset.v;loadSetupInputs();renderAll();});
   $$("#s_adp button").forEach(b=>b.onclick=()=>{state.settings.adpSource=b.dataset.v;SIMCACHE={key:null};loadSetupInputs();renderAll();flash("ADP source: "+ADP_SRC[b.dataset.v]);});
   $("#adpPasteToggle").onclick=()=>$("#adpPasteBox").classList.toggle("hide");
+  // Sleeper live sync
+  try{
+    const savedId=localStorage.getItem("ffwr_syncid"), savedUser=localStorage.getItem("ffwr_syncuser");
+    if(savedId&&!$("#syncDraftId").value)$("#syncDraftId").value=savedId;
+    if(savedUser&&!$("#syncUser").value)$("#syncUser").value=savedUser;
+  }catch(e){}
+  $("#syncBtn").onclick=()=>{ SYNC.id?sleeperDisconnect():sleeperConnect(); };
+  $("#syncDraftId").onkeydown=e=>{ if(e.key==="Enter"&&!SYNC.id)sleeperConnect(); };
   $("#adpPasteApply").onclick=()=>{
     const parsed=parseCustomADP($("#adpPasteText").value);
     let n=0;state.players.forEach(p=>{const pn=nrm(p.name);const hit=parsed.find(x=>x.k===pn||x.k.startsWith(pn+" ")||pn.startsWith(x.k+" "));if(hit){p.adpCustom=hit.adp;n++;}});
