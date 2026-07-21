@@ -208,6 +208,7 @@ def byes_from_sched(SCHED):
 def build_data():
     base=json.load(open(os.path.join(HERE,"base.json"),encoding="utf-8"))
     FACT=base["DIST_FACTORS"]; BANDW=base.get("BANDW",8); TEMPL=base["STAT_TEMPLATE"]
+    USAGE=base.get("USAGE",{})
     BYE=byes_from_sched(base["SCHED"])
     log("Pulling live sources…")
     ffc,ffc_drafts=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
@@ -271,6 +272,7 @@ def build_data():
         if fe:
             for kk in ("ecr","ecrSf","ecrDyn"):
                 if fe.get(kk): p[kk]=fe[kk]
+        if USAGE.get(k) is not None: p["usage"]=USAGE[k]
         players.append(p); pid+=1
 
     # ---- expand the pool so NO league size/format can ever run out of players ----
@@ -319,6 +321,7 @@ def build_data():
         if fe:
             for kk in ("ecr","ecrSf","ecrDyn"):
                 if fe.get(kk): p[kk]=fe[kk]
+        if USAGE.get(k) is not None: p["usage"]=USAGE[k]
         players.append(p); pid+=1
     # every NFL defense (FFC lists only ~22 of 32)
     haveDST={p["team"] for p in players if p["pos"]=="DST"}
@@ -342,7 +345,8 @@ def build_data():
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
-                 "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift}}
+                 "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,
+                 "usageEval":base.get("USAGE_EVAL")}}
     log(f"Built {len(players)} players "
         f"({sum(1 for p in players if p.get('cons'))} w/ consensus, "
         f"{sum(1 for p in players if p.get('inj'))} injuries)")
