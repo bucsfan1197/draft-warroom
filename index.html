@@ -265,6 +265,133 @@
   .statgrid .kv{border-bottom:1px dashed var(--line)}
   .pickcounter{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}.timerbox.crit{animation:none!important}}
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     VISUAL REFINEMENT
+     A console you operate under a pick clock, usually in a hurry, often on a
+     phone — so this is information design, not a landing page. Everything below
+     builds on the tokens already here rather than replacing them.
+
+     Tokens are redefined in ALL FOUR theme blocks in the same order as the
+     originals. A single trailing :root would otherwise override the dark media
+     query and silently break dark mode.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  :root{
+    /* Neutrals carry a slight green-slate bias so they read chosen next to the
+       accent, instead of the stock cool grey every dashboard defaults to. */
+    --bg:#f1f4f2; --panel:#ffffff; --panel-2:#e9efea;
+    --ink:#111f19; --ink-2:#5b6b63;
+    --line:#e2e8e4; --line-2:#ccd7d0;
+    /* Elevation in two quiet layers rather than one heavy drop. */
+    --shadow:0 1px 1px rgba(17,31,25,.04),0 8px 22px -10px rgba(17,31,25,.14);
+    --shadow-lg:0 2px 4px rgba(17,31,25,.05),0 18px 40px -16px rgba(17,31,25,.22);
+    --ring:color-mix(in srgb,var(--accent) 45%,transparent);
+    /* The status hues work as fills, but as small bold TEXT on a white ground the
+       stock versions land at 3.4-4.4:1 — under the 4.5 minimum. These are the same
+       hues darkened just enough to be legible; dark mode keeps the bright ones. */
+    --good-ink:#0a7150; --warn-ink:#8a5200; --crit-ink:#b02a2e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0c1210; --panel:#141c19; --panel-2:#1a2420;
+      --ink:#e6ede9; --ink-2:#8fa199;
+      --line:#232f2a; --line-2:#32423b;
+      --shadow:0 1px 1px rgba(0,0,0,.4),0 10px 26px -12px rgba(0,0,0,.6);
+      --shadow-lg:0 2px 6px rgba(0,0,0,.45),0 22px 48px -18px rgba(0,0,0,.7);
+      --good-ink:var(--good); --warn-ink:var(--warn); --crit-ink:var(--crit);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c1210; --panel:#141c19; --panel-2:#1a2420;
+    --ink:#e6ede9; --ink-2:#8fa199;
+    --line:#232f2a; --line-2:#32423b;
+    --shadow:0 1px 1px rgba(0,0,0,.4),0 10px 26px -12px rgba(0,0,0,.6);
+    --shadow-lg:0 2px 6px rgba(0,0,0,.45),0 22px 48px -18px rgba(0,0,0,.7);
+    --good-ink:var(--good); --warn-ink:var(--warn); --crit-ink:var(--crit);
+  }
+  :root[data-theme="light"]{
+    --bg:#f1f4f2; --panel:#ffffff; --panel-2:#e9efea;
+    --ink:#111f19; --ink-2:#5b6b63;
+    --line:#e2e8e4; --line-2:#ccd7d0;
+    --shadow:0 1px 1px rgba(17,31,25,.04),0 8px 22px -10px rgba(17,31,25,.14);
+    --shadow-lg:0 2px 4px rgba(17,31,25,.05),0 18px 40px -16px rgba(17,31,25,.22);
+    --good-ink:#0a7150; --warn-ink:#8a5200; --crit-ink:#b02a2e;
+  }
+
+  /* ---- Type: personality from scale and weight, not a novelty face ---- */
+  h1,h2,h3{text-wrap:balance}
+  .panel .hd h2{font-size:11.5px;letter-spacing:.09em;font-weight:800;color:var(--ink-2)}
+  .eyebrow{letter-spacing:.1em;font-size:10.5px}
+  /* Any figure that sits in a column lines up. */
+  .num,.cardmeta b,.kv b,.tbl td.r,.tbl th.r,.statgrid b,.labrow .v,
+  .rank-badge,.clock .big,input[type="number"]{font-variant-numeric:tabular-nums}
+
+  /* ---- Focus: was invisible, which makes the whole thing unusable by keyboard ---- */
+  a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,
+  textarea:focus-visible,[tabindex]:focus-visible{
+    outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+
+  /* ---- Surfaces ---- */
+  .panel{border-radius:14px;box-shadow:var(--shadow);transition:box-shadow .18s ease,border-color .18s ease}
+  .panel:hover{border-color:var(--line-2)}
+  .panel .hd{padding:12px 16px;background:linear-gradient(180deg,color-mix(in srgb,var(--panel-2) 55%,transparent),transparent)}
+  .panel .bd{padding:15px 16px}
+
+  /* ---- Tabs as a single segmented track, so the active one reads instantly ---- */
+  .tabs{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px}
+  .tab{border:none;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:650;
+       transition:background .15s ease,color .15s ease}
+  .tab:hover{background:color-mix(in srgb,var(--panel) 70%,transparent)}
+  .tab.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow);border:none}
+
+  /* ---- Controls ---- */
+  .ghost,.draftbtn,.seg button{transition:filter .15s ease,border-color .15s ease,background .15s ease}
+  .ghost:hover{border-color:var(--accent);color:var(--ink)}
+  .draftbtn{letter-spacing:.01em}
+  .draftbtn:active{transform:translateY(1px)}
+  .seg{background:var(--panel-2)}
+  .seg button.on{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 60%,transparent)}
+
+  /* ---- Recommendation cards: rank should read before anything else ---- */
+  .rec{border-radius:12px;transition:border-color .18s ease,box-shadow .18s ease}
+  .rec:before{width:3px}
+  .rec.top{box-shadow:0 0 0 1px var(--accent),var(--shadow-lg)}
+  .rec .nm{font-size:15.5px;letter-spacing:-.015em}
+  .rank-badge{font-size:10.5px;font-weight:800;opacity:.75}
+  .rec.top .rank-badge{color:var(--accent);opacity:1}
+
+  /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
+  .clock .big{letter-spacing:-.02em;font-weight:800}
+
+  /* ---- Rows and tables ---- */
+  .kv{border-bottom:1px solid var(--line);padding:6px 0}
+  .kv:last-child{border-bottom:none}
+  .tbl td,.tbl th{border-bottom:1px solid var(--line)}
+  .tbl tbody tr{transition:background .12s ease}
+  .tbl tbody tr:hover{background:color-mix(in srgb,var(--panel-2) 60%,transparent)}
+  .tblwrap{border-radius:10px}
+
+  /* ---- Chips read as state, not decoration ---- */
+  .chip{border-radius:7px;padding:2px 8px;font-weight:700}
+  .chip.good{color:var(--good-ink);background:color-mix(in srgb,var(--good) 12%,transparent);border-color:color-mix(in srgb,var(--good) 30%,transparent)}
+  .chip.warn{color:var(--warn-ink);background:color-mix(in srgb,var(--warn) 12%,transparent);border-color:color-mix(in srgb,var(--warn) 30%,transparent)}
+  .chip.crit{color:var(--crit-ink);background:color-mix(in srgb,var(--crit) 12%,transparent);border-color:color-mix(in srgb,var(--crit) 30%,transparent)}
+  .pos{border-radius:5px;letter-spacing:.04em}
+
+  /* ---- Empty states shouldn't look like something failed ---- */
+  .emptystate{border:1px dashed var(--line-2);border-radius:10px;padding:18px;text-align:center;color:var(--ink-2)}
+
+  /* ---- Notes: quieter ground, easier to skim past when you don't need them ---- */
+  .note{background:color-mix(in srgb,var(--panel-2) 55%,transparent);border:1px solid var(--line);
+        border-radius:9px;padding:10px 12px;line-height:1.55}
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+      transition-duration:.001ms!important;scroll-behavior:auto!important}
+  }
+
 </style>
 
 <header class="top">
@@ -2336,6 +2463,30 @@ function selfTest(){
     // 2b. LAYOUT: does every tab actually fit on screen, with no control clipped or collapsed?
     const lay=[];
     tabs.forEach(t=>{ t.click(); layoutProbe().forEach(i=>lay.push(`${t.textContent.trim()}: ${i}`)); });
+    /* Colour contrast, both themes. Added after a refinement pass quietly pushed the status
+       chips to 3.4:1 on the light ground — legible enough to look fine on my screen, not legible
+       enough for someone reading it on a phone in a bright room. Text has to clear 4.5:1. */
+    const lum=h=>{h=String(h).trim().replace("#","");
+      if(h.length!==6)return null;
+      const v=[0,2,4].map(i=>parseInt(h.substr(i,2),16)/255)
+        .map(x=>x<=.03928?x/12.92:Math.pow((x+.055)/1.055,2.4));
+      return .2126*v[0]+.7152*v[1]+.0722*v[2];};
+    const ratio=(a,b)=>{const x=lum(a),y=lum(b); if(x==null||y==null)return null;
+      return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
+    const wasTheme=document.documentElement.getAttribute("data-theme");
+    const contrastFails=[];
+    ["light","dark"].forEach(t=>{
+      document.documentElement.setAttribute("data-theme",t);
+      const cs=getComputedStyle(document.documentElement), g=n=>cs.getPropertyValue(n);
+      [["body text","--ink","--bg"],["quiet text","--ink-2","--panel"],
+       ["good","--good-ink","--panel"],["warning","--warn-ink","--panel"],["critical","--crit-ink","--panel"]]
+      .forEach(([lbl,fg,bg])=>{const r=ratio(g(fg),g(bg));
+        if(r!=null&&r<4.5)contrastFails.push(`${t} ${lbl} ${r.toFixed(1)}:1`);});
+    });
+    if(wasTheme)document.documentElement.setAttribute("data-theme",wasTheme);
+    else document.documentElement.removeAttribute("data-theme");
+    add("Every colour is readable in both light and dark",contrastFails.length===0,
+        contrastFails.length?contrastFails.join(" · "):"all text clears the 4.5:1 minimum");
     const badVars=cssVarAudit();
     add("Every colour and style is defined",badVars.length===0,badVars.length?badVars.join(", "):"every var(--x) is defined");
     add(`Layout is sound at ${window.innerWidth}px`,lay.length===0,
