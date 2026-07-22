@@ -72,6 +72,28 @@
   .syncrow #syncBtn{width:auto;padding:9px 20px}
   /* grid children default to min-width:auto and refuse to shrink — this is what blows out narrow screens */
   .grid-draft>*{min-width:0}
+  /* `.seg` clips its overflow, so a segmented control with many options loses the last buttons
+     rather than wrapping. These two are the long ones; let them wrap at ANY width, not just on
+     phones. Scoped by id on purpose — making every .seg wrap collapses the short ones. */
+  #s_clock,#s_adp{flex-wrap:wrap;height:auto}
+  /* ---- trade calculator ---- */
+  /* a textarea doesn't fill its box on its own — without this it sits at its default ~20 cols */
+  #labGive,#labGet{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
+    padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);
+    color:var(--ink);resize:vertical;min-height:96px}
+  .labside{margin-top:6px;display:flex;flex-direction:column;gap:3px;min-height:20px}
+  .labrow{display:flex;gap:6px;align-items:center;font-size:12.5px;padding:3px 6px;border-radius:6px;background:var(--panel-2)}
+  .labrow .v{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+  .labrow.bad{background:color-mix(in srgb,var(--crit) 14%,var(--panel-2))}
+  .labrow select{font-size:12px;padding:1px 4px;max-width:180px}
+  .labopts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;font-size:12.5px;color:var(--ink-2)}
+  .labopts label{display:flex;gap:6px;align-items:center}
+  .labopts input[type=number]{width:64px;padding:5px 6px}
+  .labbar{height:14px;border-radius:8px;background:var(--panel-2);overflow:hidden;display:flex;margin:8px 0}
+  .labbar i{display:block;height:100%}
+  .labdecomp{display:flex;flex-direction:column;gap:2px;margin-top:8px}
+  .labdecomp .kv{font-size:12.5px}
+  .labdecomp .num{font-variant-numeric:tabular-nums;font-weight:700}
   /* ---- first-run walkthrough ---- */
   .onbwrap{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);
     display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto}
@@ -87,6 +109,10 @@
     .wrap{padding:0 10px 40px}
     .grid-draft{grid-template-columns:1fr!important;gap:12px}
     .sticky-col{position:static}                 /* sticky wastes vertical room on a phone */
+    /* the calculator's two panes stack on a phone, and 16px stops iOS zooming on focus */
+    #labGive,#labGet{font-size:16px}
+    .labopts{gap:8px}
+    .labopts label{flex:1 1 100%}
     .clock{flex-wrap:wrap;gap:8px;padding:12px}
     .clock .big{font-size:19px}
     .tblwrap,.bd{max-width:100%}
@@ -412,6 +438,34 @@
   <!-- TRADE TAB -->
   <section id="tab-trade" class="hide">
     <div class="panel">
+      <div class="hd"><h2>Trade calculator</h2><span id="labCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="grid-draft" style="grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <h3 class="eyebrow" style="margin-bottom:6px">You give <span id="labGiveN" class="meta"></span></h3>
+            <textarea id="labGive" rows="6" spellcheck="false" placeholder="One per line:&#10;Ja'Marr Chase&#10;2027 1st&#10;2028 early 2nd"></textarea>
+            <div id="labGiveOut" class="labside"></div>
+          </div>
+          <div>
+            <h3 class="eyebrow" style="margin-bottom:6px">You get <span id="labGetN" class="meta"></span></h3>
+            <textarea id="labGet" rows="6" spellcheck="false" placeholder="One per line:&#10;Bijan Robinson&#10;Drake Maye"></textarea>
+            <div id="labGetOut" class="labside"></div>
+          </div>
+        </div>
+        <div class="labopts">
+          <label>Values <span class="seg" id="lab_src">
+            <button data-v="blend" class="on">Blend</button><button data-v="market">Market</button><button data-v="mine">My projections</button></span></label>
+          <label>TE premium <span class="seg" id="lab_tep">
+            <button data-v="0" class="on">Off</button><button data-v="1">TE+</button></span></label>
+          <label>Fair within <input type="number" id="labTol" value="5" min="0" max="40" step="1"> %</label>
+          <label>Future picks <input type="number" id="labPickAdj" value="100" min="20" max="150" step="5"> %</label>
+          <button class="ghost" id="labShare">🔗 Copy link</button>
+          <button class="ghost" id="labClear">Clear</button>
+        </div>
+        <div id="labOut" style="margin-top:12px"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
       <div class="hd"><h2>Trade finder</h2><span id="tradeCtx" class="pickcounter" style="margin-left:auto"></span></div>
       <div class="bd">
         <div class="syncrow">
@@ -874,7 +928,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:15},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:16},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -897,7 +951,7 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==15){
+  if(D&&D.PLAYERS&&st.settings._projv!==16){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
@@ -910,7 +964,7 @@ function migrate(st){
     D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
-    st.settings._projv=15;
+    st.settings._projv=16;
   }
   return st;
 }
@@ -1630,7 +1684,7 @@ const TAB_RENDER={
   dynasty: ()=>renderDynasty(),
   players: ()=>renderPlayersTab(),
   setup:   ()=>renderReplBox(),
-  trade:   ()=>{}                       // trade panels are built on demand by the buttons
+  trade:   ()=>labCompute()             // the finder/evaluator below it build on demand
 };
 let TABDIRTY=Object.keys(TAB_RENDER).reduce((a,k)=>(a[k]=1,a),{});
 function activeTab(){
@@ -2044,6 +2098,33 @@ function selfTest(){
         [23,26,29].every(a=>assetMultiple("RB",a)<assetMultiple("WR",a)),
         `RB below WR at 23/26/29`);
     state.settings.window=wasWin; state.settings.format=wasFmt;
+    // ---- trade calculator ----
+    const mktN=P.filter(x=>x.mkt).length;
+    add("Market trade values loaded",mktN>250,`${mktN} players priced from ${(marketMeta()||{}).sources||"—"}`);
+    const parsePick=parseAssetLine("2027 early 2nd"), parseSlot=parseAssetLine("2028 1.05"),
+          parsePlayer=parseAssetLine("Bijan Robinson");
+    add("Trade lines parse (players, picks, exact slots)",
+        parsePick&&parsePick.kind==="pick"&&parsePick.round===2&&parsePick.tier==="early"
+        &&parseSlot&&parseSlot.round===1&&parseSlot.tier==="mid"
+        &&parsePlayer&&parsePlayer.kind==="player",
+        `"2027 early 2nd" → r2 early · "2028 1.05" → r1 ${parseSlot?parseSlot.tier:"?"}`);
+    const fz=fuzzyPlayers("jamar chase",3)[0];
+    add("Misspelled names still resolve",!!fz&&/chase/i.test(fz.name),fz?`"jamar chase" → ${fz.name}`:"no match");
+    // league type must actually move the numbers
+    const wasSF=state.settings.roster.SUPERFLEX, wasRec=state.settings.scoring.rec, wasTep=state.ui.labTep, wf2=state.settings.format;
+    const qb=P.find(x=>x.pos==="QB"&&x.mkt), te=P.find(x=>x.name==="Trey McBride"&&x.mkt)||P.find(x=>x.pos==="TE"&&x.mkt);
+    const vOf=p=>{LABC={key:null};return labValue({kind:"player",player:p});};
+    state.settings.format="dynasty";
+    state.settings.roster.SUPERFLEX=0; state.ui.labTep=0; const qb1=vOf(qb);
+    state.settings.roster.SUPERFLEX=1;                     const qbSF=vOf(qb);
+    state.settings.roster.SUPERFLEX=0; const teOff=vOf(te);
+    state.ui.labTep=1;                 const teOn=vOf(te);
+    state.settings.roster.SUPERFLEX=wasSF; state.settings.scoring.rec=wasRec; state.ui.labTep=wasTep;
+    state.settings.format=wf2; LABC={key:null};
+    add("Superflex raises quarterback prices",qbSF>qb1*1.05,
+        qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    add("TE premium raises tight end prices",teOn>teOff*1.05,
+        te?`${te.name}: ${Math.round(teOff).toLocaleString()} → ${Math.round(teOn).toLocaleString()}`:"");
     // 3. mock drafts across formats: legal + no cap violations
     showTab("draft");     // drafting happens on the draft tab; hidden tabs render lazily now
     const SEG=(id,v)=>{const b=[...document.getElementById(id).querySelectorAll('button')].find(x=>x.dataset.v===v);if(b)b.click();};
@@ -2420,6 +2501,344 @@ function tradePool(assets,A){
   return players.concat(picks).sort(by);
 }
 const PAIR_CAP=6000;   // lineup evaluations per opponent — a full search stays near a second
+/* ==================== TRADE CALCULATOR ====================
+   Type assets in, get a verdict. Three things every other free calculator is missing:
+   it prices assets for YOUR league's exact settings, it charges for the roster spots a
+   lopsided package actually costs, and — when a league is synced — it says what the trade
+   does to your title odds instead of only whether the numbers balance. */
+
+// Which market series matches this league? Fall back gracefully rather than showing nothing.
+function mktSeriesKey(){
+  const dyn=isDyno(), qb=isSF()?"sf":"1qb", base=dyn?"dyn":"red";
+  const std=(+(state.settings.scoring.rec||0))<0.25;
+  const tep=!!state.ui.labTep;
+  const c=[];
+  if(dyn&&tep) c.push(`dyn_${qb}_tep`);
+  if(std) c.push(`${base}_${qb}_std`);
+  c.push(`${base}_${qb}`, `${base}_1qb`, "dyn_sf", "dyn_1qb");
+  return c;
+}
+function marketOf(pl){
+  const m=pl&&pl.mkt; if(!m)return null;
+  for(const k of mktSeriesKey()) if(m[k]!=null) return m[k];
+  return null;
+}
+function marketMeta(){ return ((window.__FFDATA__||{}).META||{}).market||null; }
+function pickMarketValue(pk){
+  const M=marketMeta(); if(!M||!M.picks)return null;
+  const row=M.picks[`${pk.season}|${pk.round}|${pk.tier||"mid"}`];
+  if(!row)return null;
+  for(const k of mktSeriesKey()) if(row[k]!=null) return row[k];
+  for(const k in row) return row[k];
+  return null;
+}
+/* Rank-anchoring: my projections and the market live on different scales, so blending them
+   raw is meaningless. Instead take MY ordering and read off the market's value at that rank.
+   My opinion about who's better is preserved; the market sets what a rank is worth. */
+let LABC={key:null};
+function labCurves(){
+  const s=state.settings;
+  const key=[s.format,isSF(),s.window,s.bestball,state.ui.labTep,state.ui.seasonWeek,
+             state.players.length,JSON.stringify(s.scoring)].join("|");
+  if(LABC.key===key) return LABC;
+  const V=tradeVal();
+  const anchor=state.players.map(p=>({p,m:marketOf(p),v:V(p)})).filter(x=>x.m!=null&&isFinite(x.v));
+  const curve=anchor.map(x=>x.m).sort((a,b)=>b-a);
+  const myVals=anchor.map(x=>x.v).sort((a,b)=>b-a);
+  LABC={key,curve,myVals,V};
+  return LABC;
+}
+// Put any "my scale" number onto the market scale by matching its rank.
+function myScaled(v){
+  const C=labCurves();
+  if(!C.curve.length) return 0;
+  let lo=0,hi=C.myVals.length;
+  while(lo<hi){const m=(lo+hi)>>1; if(C.myVals[m]>v)lo=m+1; else hi=m;}
+  return C.curve[Math.min(lo,C.curve.length-1)]||0;
+}
+function labSrc(){ return state.ui.labSrc||"blend"; }
+// Value of one asset, on the market's 0-10000 scale, under the chosen source.
+function labValue(a){
+  const src=labSrc();
+  if(a.kind==="pick"){
+    const mkt=pickMarketValue(a);
+    const mine=myScaled(pickValue({season:a.season,round:a.round},labCurves().V));
+    const adj=(a.season>CUR_SEASON()?(+state.ui.labPickAdj||100)/100:1);
+    const v=src==="market"?(mkt!=null?mkt:mine)
+           :src==="mine"?mine
+           :(mkt!=null?(mkt+mine)/2:mine);
+    return v*adj;
+  }
+  const p=a.player; if(!p)return 0;
+  const mkt=marketOf(p), mine=myScaled(labCurves().V(p));
+  if(src==="market") return mkt!=null?mkt:mine;
+  if(src==="mine")   return mine;
+  return mkt!=null?(mkt+mine)/2:mine;
+}
+// What a droppable body is worth — the cost of a roster spot in this league.
+function replacementMarketValue(){
+  const C=labCurves(); if(!C.curve.length)return 0;
+  const R=state.settings.roster||{};
+  const size=Object.values(R).reduce((a,b)=>a+(+b||0),0)||15;
+  const rostered=Math.round((state.settings.teams||12)*size);
+  return C.curve[Math.min(rostered,C.curve.length-1)]||0;
+}
+const ORD_WORD={1:"1st",2:"2nd",3:"3rd",4:"4th",5:"5th"};
+function parseAssetLine(line){
+  const s=String(line||"").trim(); if(!s) return null;
+  const yr=(s.match(/\b(20\d{2})\b/)||[])[1];
+  const slotM=s.match(/\b([1-5])\s*[.\-]\s*(\d{1,2})\b/);
+  const rndM=s.match(/\b([1-5])\s*(?:st|nd|rd|th)\b/i)||s.match(/\bround\s*([1-5])\b/i);
+  const tierM=s.match(/\b(early|mid|late)\b/i);
+  if(yr&&(slotM||rndM)){
+    const round=+(slotM?slotM[1]:rndM[1]);
+    let tier=tierM?tierM[1].toLowerCase():null, slot=slotM?+slotM[2]:null;
+    if(!tier&&slot) tier=slot<=4?"early":slot<=8?"mid":"late";
+    return {kind:"pick",season:+yr,round,tier:tier||"mid",slot,
+            label:`${yr} ${tier?tier+" ":""}${ORD_WORD[round]||round}`,raw:s};
+  }
+  return {kind:"player",query:s,raw:s};
+}
+function fuzzyPlayers(q,limit){
+  const n=nrm(q); if(!n) return [];
+  const out=[];
+  state.players.forEach(p=>{
+    const pn=nrm(p.name); let sc=0;
+    if(pn===n) sc=100;
+    else if(pn.startsWith(n)) sc=90;
+    else if(pn.indexOf(n)>=0) sc=78;
+    else{
+      const qt=n.split(" "), pt=pn.split(" ");
+      if(qt.every(t=>pt.some(x=>x.startsWith(t)))) sc=72;
+      else if(pt[pt.length-1]===qt[qt.length-1]) sc=62;
+    }
+    // tie-break toward the player people actually mean
+    if(sc) out.push({p,sc:sc+Math.min(8,(marketOf(p)||0)/1400)});
+  });
+  out.sort((a,b)=>b.sc-a.sc);
+  return out.slice(0,limit||6).map(x=>x.p);
+}
+function labResolve(text,side){
+  return String(text||"").split("\n").map((line,i)=>{
+    const a=parseAssetLine(line); if(!a) return null;
+    if(a.kind==="pick") return a;
+    const pinned=(state.ui.labPin||{})[side+i];
+    const cands=fuzzyPlayers(a.query,6);
+    let chosen=null;
+    if(pinned!=null) chosen=state.players.find(p=>p.id===pinned)||null;
+    if(!chosen) chosen=cands[0]||null;
+    return {kind:"player",query:a.query,raw:a.raw,player:chosen,cands,idx:i,side};
+  }).filter(Boolean);
+}
+/* Say out loud which league this is being priced for, and be straight about the one thing the
+   market data can't do. Every incumbent hides its assumptions; the most common complaint about
+   all of them is "these values are wrong for my league" — usually because the league wasn't
+   what the chart assumed. */
+function labSettingsLine(){
+  const s=state.settings, rec=+(s.scoring.rec||0);
+  const ppr=rec>=0.9?"full PPR":rec>=0.4?"half PPR":rec>0?`${rec} PPR`:"standard (no PPR)";
+  const R=s.roster||{}, flex=(R.FLEX||0)+(R.SUPERFLEX||0);
+  const bits=[isDyno()?"dynasty":"redraft", isSF()?"superflex":"1QB", ppr,
+              `${s.teams}-team`, `${flex} flex`];
+  if(s.bestball) bits.push("best ball");
+  if(s.auction) bits.push("auction");
+  if(state.ui.labTep) bits.push("TE premium");
+  const src=labSrc();
+  const how=src==="market"?"Live market prices only."
+    :src==="mine"?"This app's own projections only — market prices ignored."
+    :"Half live market price, half this app's projections.";
+  let seriesNote=isDyno()
+    ? "" : " Redraft market prices cover roughly the top 200 players; beyond that this falls back to projections.";
+  // Be explicit when only one source stands behind a number.
+  if(state.ui.labTep&&isDyno())
+    seriesNote+=" <b>TE-premium prices come from KeepTradeCut alone</b> — the other two sources don't publish a TE-premium series, so there's no cross-check on these.";
+  return `Priced for <b>${bits.join(" · ")}</b>. ${how}${seriesNote}
+    <span class="meta">Market prices are quoted for 12-team leagues — the shape barely moves with league size, but a very shallow or very deep league will shade values slightly.</span>`;
+}
+function labRenderSide(list,elId,nId){
+  const el=$(elId); if(!el)return;
+  el.innerHTML=list.map(a=>{
+    if(a.kind==="pick")
+      return `<div class="labrow"><span>🎟 ${a.label}</span><span class="v">${Math.round(labValue(a)).toLocaleString()}</span></div>`;
+    if(!a.player)
+      return `<div class="labrow bad"><span>“${a.raw}” — no match</span><span class="v">0</span></div>`;
+    const alt=a.cands.length>1
+      ? `<select data-side="${a.side}" data-idx="${a.idx}" class="labpick">`
+        +a.cands.map(c=>`<option value="${c.id}"${c.id===a.player.id?" selected":""}>${c.name} · ${c.pos}${c.team?" "+c.team:""}</option>`).join("")
+        +`</select>` : `<span>${a.player.name} <span class="meta">${a.player.pos}${a.player.team?" "+a.player.team:""}</span></span>`;
+    return `<div class="labrow">${alt}<span class="v">${Math.round(labValue(a)).toLocaleString()}</span></div>`;
+  }).join("");
+  const n=$(nId); if(n)n.textContent=list.length?`· ${list.length} piece${list.length>1?"s":""}`:"";
+  el.querySelectorAll("select.labpick").forEach(sel=>{
+    sel.onchange=()=>{ state.ui.labPin=state.ui.labPin||{};
+      state.ui.labPin[sel.dataset.side+sel.dataset.idx]=+sel.value; labCompute(); };
+  });
+}
+/* The verdict, and — more importantly — WHY. Every free calculator prints two numbers and
+   stops; the decomposition below is the part that actually helps you argue the trade. */
+function labCompute(){
+  const out=$("#labOut"); if(!out)return;
+  const give=labResolve($("#labGive").value,"g"), get=labResolve($("#labGet").value,"t");
+  labRenderSide(give,"#labGiveOut","#labGiveN"); labRenderSide(get,"#labGetOut","#labGetN");
+  const meta=marketMeta();
+  const ctx=$("#labCtx");
+  if(ctx) ctx.innerHTML=meta
+    ? `${(meta.players||0).toLocaleString()} players priced · ${meta.sources} · updated ${meta.updated}`
+    : `market values unavailable — using this app's projections`;
+  if(!give.length&&!get.length){
+    out.innerHTML=`<div class="note">Type the players and picks on each side, one per line. Picks understand <b>2027 1st</b>, <b>2028 early 2nd</b>, or an exact slot like <b>2027 1.05</b>. Everything is priced for <b>your league's settings</b> — ${isDyno()?"dynasty":"redraft"}, ${isSF()?"superflex":"1QB"}, ${state.settings.teams}-team.</div>`;
+    return;
+  }
+  const gv=give.reduce((s,a)=>s+labValue(a),0), tv=get.reduce((s,a)=>s+labValue(a),0);
+  // Roster spots are real. Taking three bodies for one means cutting two players you own.
+  const repl=replacementMarketValue();
+  const spots=get.length-give.length;
+  const spotCost=spots>0?spots*repl:0;
+  const spotGain=spots<0?(-spots)*repl*0.5:0;   // freeing spots is worth something, but less
+  const net=(tv+spotGain-spotCost)-gv;
+  const scale=Math.max(gv,tv,1);
+  const tol=Math.max(0,+($("#labTol").value||5))/100;
+  const fair=Math.abs(net)<=tol*scale;
+  const verdict=fair?["FAIR","warn","Inside your fairness band — this comes down to whether you like the players."]
+    :net>0?["YOU WIN","good","You're getting more value than you're giving up."]
+           :["YOU LOSE","crit","You're giving up more value than you're getting back."];
+  const pct=Math.round(Math.abs(net)/scale*100);
+  const gw=Math.round(gv/(gv+tv||1)*100);
+  // how much do the market sources disagree about this trade?
+  const dis=[...give,...get].filter(a=>a.kind==="player"&&a.player&&a.player.mktDis)
+    .map(a=>{const d=a.player.mktDis;for(const k of mktSeriesKey())if(d[k]!=null)return d[k];return null;})
+    .filter(x=>x!=null);
+  const avgDis=dis.length?dis.reduce((a,b)=>a+b,0)/dis.length:null;
+  const rows=[];
+  rows.push(["What you give",-Math.round(gv)]);
+  rows.push(["What you get",Math.round(tv)]);
+  if(spotCost) rows.push([`Roster spots — you take on ${spots} extra ${spots>1?"players":"player"} and have to cut ${spots>1?"them":"someone"}`,-Math.round(spotCost)]);
+  if(spotGain) rows.push([`Roster spots — you free up ${-spots}`,Math.round(spotGain)]);
+  const unmatched=[...give,...get].filter(a=>a.kind==="player"&&!a.player);
+  out.innerHTML=`
+    <div class="rec top">
+      <div class="r1"><span class="nm">${verdict[0]}</span>
+        <span class="chip ${verdict[1]}" style="margin-left:8px">${verdict[2]}</span></div>
+      <div class="labbar"><i style="width:${gw}%;background:var(--crit)"></i><i style="width:${100-gw}%;background:var(--good)"></i></div>
+      <div class="cardmeta"><span>You give <b>${Math.round(gv).toLocaleString()}</b></span>
+        <span>You get <b>${Math.round(tv).toLocaleString()}</b></span>
+        <span>${fair?"within":"off by"} <b>${pct}%</b>${fair?` of your ${Math.round(tol*100)}% band`:""}</span></div>
+      <div class="labdecomp">${rows.map(([k,v])=>
+        `<div class="kv"><span>${k}</span><span class="num" style="color:${v>=0?'var(--good)':'var(--crit)'}">${v>=0?"+":""}${v.toLocaleString()}</span></div>`).join("")}
+        <div class="kv" style="border-top:1px solid var(--line);padding-top:4px;margin-top:2px">
+          <span><b>Net for you</b></span><span class="num" style="color:${net>=0?'var(--good)':'var(--crit)'}">${net>=0?"+":""}${Math.round(net).toLocaleString()}</span></div>
+      </div>
+      ${avgDis!=null?`<div class="note" style="margin-top:8px">${avgDis>=0.45?"⚠️ ":""}The three market sources ${avgDis>=0.45?"<b>disagree sharply</b>":"broadly agree"} about these players (spread ${avgDis.toFixed(2)} sd)${avgDis>=0.45?" — treat this verdict as soft, and check the players individually.":"."}</div>`:""}
+      ${unmatched.length?`<div class="note" style="margin-top:8px">⚠️ Couldn't match: <b>${unmatched.map(u=>u.raw).join(", ")}</b> — check the spelling, or pick from the dropdown.</div>`:""}
+      <div class="note" style="margin-top:8px">${labSettingsLine()}</div>
+    </div>
+    <div id="labExtra"></div>`;
+  labEqualize(net,scale);
+  labTeamImpact(give,get);
+}
+/* "What would balance this?" — the single best feature on any of the incumbents, except
+   theirs suggests from the whole player universe. If your league is synced, this suggests
+   from the assets the two of you ACTUALLY own, which is the difference between a fun number
+   and an offer you can send. */
+function labEqualize(net,scale){
+  const box=$("#labExtra"); if(!box)return;
+  const gap=Math.abs(net);
+  if(gap<scale*0.02){box.innerHTML="";return;}
+  const needSide=net>0?"you give":"you get";     // whoever is short adds
+  let pool=[], from="";
+  const me=TRADE.teams[TRADE.me];
+  if(me&&TRADE.teams.length){
+    // suggest from real rosters: if you're winning, YOU add; else they add
+    const oppIdx=TRADE.teams.findIndex((t,i)=>i!==TRADE.me);
+    const src=net>0?me:(TRADE.teams[+($("#evalOpp")||{}).value]||TRADE.teams[oppIdx]||me);
+    pool=teamAssets(src).map(a=>a.isPick
+      ? {label:a.name,v:labValue({kind:"pick",season:a.season,round:a.round,tier:"mid"})}
+      : {label:`${a.name} (${a.pos})`,v:labValue({kind:"player",player:a})});
+    from=net>0?"from your roster":`from ${src.name}'s roster`;
+  }else{
+    pool=state.players.filter(p=>marketOf(p)!=null)
+      .map(p=>({label:`${p.name} (${p.pos})`,v:labValue({kind:"player",player:p})}));
+    from="from the player pool";
+  }
+  const near=pool.filter(x=>x.v>0).map(x=>({...x,d:Math.abs(x.v-gap)}))
+    .sort((a,b)=>a.d-b.d).slice(0,5);
+  if(!near.length){box.innerHTML="";return;}
+  box.innerHTML=`<div class="panel" style="margin-top:12px"><div class="bd">
+    <h3 class="eyebrow" style="margin-bottom:6px">To even it up — add about ${Math.round(gap).toLocaleString()} to “${needSide}”</h3>
+    ${near.map(x=>`<div class="kv"><span>${x.label}</span><span class="meta">${Math.round(x.v).toLocaleString()}</span></div>`).join("")}
+    <div class="note" style="margin-top:8px">Closest matches ${from}. Anything near this value squares the deal.</div>
+  </div></div>`;
+}
+/* The gap nobody has filled: what the trade does to your SEASON, not just to a value chart.
+   Only possible with a synced league, so it appears when there is one and stays quiet otherwise. */
+function labTeamImpact(give,get){
+  const box=$("#labExtra"); if(!box)return;
+  const me=TRADE.teams[TRADE.me];
+  if(!me||!TRADE.teams.length||!TRADE.slots.length) return;
+  const mine=teamAssets(me);
+  const byId=new Map(mine.filter(a=>!a.isPick).map(p=>[p.id,p]));
+  const giving=give.filter(a=>a.kind==="player"&&a.player&&byId.has(a.player.id)).map(a=>a.player);
+  const getting=get.filter(a=>a.kind==="player"&&a.player).map(a=>a.player);
+  if(!giving.length&&!getting.length) return;      // nothing we can place on your roster
+  const V=tradeVal(), slots=TRADE.slots;
+  const after=mine.filter(a=>!giving.includes(a)).concat(getting);
+  const before=lineupOnSlots(mine.filter(a=>!a.isPick),slots,V);
+  const aft=lineupOnSlots(after.filter(a=>!a.isPick),slots,V);
+  const d=aft.total-before.total;
+  const rosters=TRADE.teams.map((t,i)=>i===TRADE.me?after.filter(a=>!a.isPick):t.players);
+  const b4=simTitle(TRADE.teams.map(t=>t.players),slots,400);
+  const af=simTitle(rosters,slots,400);
+  const nz=oddsNoise(b4,400,af,400), dd=af-b4;
+  const inOut=(arr,other)=>arr.filter(p=>!other.some(q=>q.id===p.id)).map(p=>p.name.split(" ").slice(-1)[0]);
+  box.insertAdjacentHTML("beforeend",`<div class="panel" style="margin-top:12px"><div class="bd">
+    <h3 class="eyebrow" style="margin-bottom:6px">What it does to your actual team</h3>
+    <div class="kv"><span>Starting lineup</span><span class="num" style="color:${d>=0?'var(--good)':'var(--crit)'}">${d>=0?"+":""}${Math.round(d)} ${isDyno()?"dynasty value":"pts"}</span></div>
+    <div class="kv"><span>Title odds <span class="meta">(400 simulated seasons on your real schedule)</span></span>
+      <span class="num">${b4}% → <b style="color:${dd>=0?'var(--good)':'var(--crit)'}">${af}%</b> <span class="meta">±${nz}</span></span></div>
+    <div class="note" style="margin-top:8px">${Math.abs(dd)<nz
+      ? "That swing is inside the simulation's margin of error — this trade doesn't move your season either way."
+      : (dd>0?"A real improvement to your championship odds, not just to the value chart."
+            :"Your value may balance, but this makes your team worse where it counts.")}
+      ${giving.length&&!getting.length?" Note: only the players you're giving are on your roster, so the incoming side isn't scored here.":""}</div>
+  </div></div>`);
+}
+function wireTradeLab(){
+  const g=$("#labGive"), t=$("#labGet"); if(!g||!t)return;
+  let deb=null;
+  const run=()=>{ clearTimeout(deb); deb=setTimeout(()=>{ state.ui.labPin={}; labCompute(); },160); };
+  // typing changes which player each line means, so pinned choices reset with the text
+  g.oninput=run; t.oninput=run;
+  $$("#lab_src button").forEach(b=>b.onclick=()=>{
+    state.ui.labSrc=b.dataset.v;
+    $$("#lab_src button").forEach(x=>x.classList.toggle("on",x===b));
+    labCompute(); save();
+  });
+  $$("#lab_tep button").forEach(b=>b.onclick=()=>{
+    state.ui.labTep=+b.dataset.v;
+    $$("#lab_tep button").forEach(x=>x.classList.toggle("on",x===b));
+    LABC={key:null}; labCompute(); save();
+  });
+  $("#labTol").oninput=()=>labCompute();
+  $("#labPickAdj").oninput=()=>{state.ui.labPickAdj=+$("#labPickAdj").value||100;labCompute();};
+  $("#labClear").onclick=()=>{g.value="";t.value="";state.ui.labPin={};labCompute();};
+  $("#labShare").onclick=()=>{
+    const u=new URL(location.href);
+    u.hash="trade="+encodeURIComponent(JSON.stringify({g:g.value,t:t.value,s:labSrc()}));
+    navigator.clipboard?.writeText(u.toString()).then(()=>flash("Link copied — it reopens this exact trade"),
+                                                      ()=>flash("Couldn't copy the link"));
+  };
+  // restore a shared trade
+  if(location.hash.startsWith("#trade=")){
+    try{
+      const d=JSON.parse(decodeURIComponent(location.hash.slice(7)));
+      g.value=d.g||""; t.value=d.t||"";
+      if(d.s){state.ui.labSrc=d.s;$$("#lab_src button").forEach(x=>x.classList.toggle("on",x.dataset.v===d.s));}
+      showTab("trade");
+    }catch(e){}
+  }
+  if(state.ui.labSrc)$$("#lab_src button").forEach(x=>x.classList.toggle("on",x.dataset.v===state.ui.labSrc));
+  if(state.ui.labPickAdj)$("#labPickAdj").value=state.ui.labPickAdj;
+}
 function findTrades(){
   if(!TRADE.teams.length){tradeStatus("Load your league first.","var(--warn)");return;}
   const t0=performance.now();
@@ -3275,6 +3694,7 @@ function wireSetup(){
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
   $("#selfTestBtn").onclick=()=>selfTest();
   $("#introBtn").onclick=()=>showOnboarding();
+  wireTradeLab();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   $("#tradeFindBtn").onclick=()=>findTrades();

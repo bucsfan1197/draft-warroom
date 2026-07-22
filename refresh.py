@@ -205,6 +205,16 @@ def byes_from_sched(SCHED):
             if opp is None: out[t]=w+1; break
     return out
 
+def pull_market():
+    """Blended free-market trade values (KeepTradeCut + FantasyCalc + DynastyProcess)."""
+    try:
+        import market_values
+        m=market_values.build_market()
+        if m: log(f"  market: {len(m['players'])} players, {len(m['picks'])} pick slots")
+        return m
+    except Exception as ex:
+        log("  market pull failed:",ex); return None
+
 def build_data():
     base=json.load(open(os.path.join(HERE,"base.json"),encoding="utf-8"))
     FACT=base["DIST_FACTORS"]; BANDW=base.get("BANDW",8); TEMPL=base["STAT_TEMPLATE"]
@@ -345,11 +355,30 @@ def build_data():
     sfShift=[round(sum(q["adp"] for q in qbs)/len(qbs),1),
              round(sum(q.get("adpSf",q["adp"]) for q in qbs)/len(qbs),1)] if qbs else [65.0,20.0]
 
+    market=pull_market()
+    if market:
+        # attach per-player market values by sleeper id, else normalised name
+        bysid={str(p["sid"]):p for p in players if p.get("sid")}
+        byname={norm(p["name"]):p for p in players}
+        hit=0
+        for k,r in market["players"].items():
+            tgt=bysid.get(str(r.get("sid") or "")) or byname.get(k)
+            if tgt is not None:
+                tgt["mkt"]=r["v"]
+                if r.get("dis"): tgt["mktDis"]=r["dis"]
+                if r.get("src"): tgt["mktSrc"]=r["src"]
+                hit+=1
+        log(f"  market matched to pool: {hit}/{len(players)}")
+
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,
-                 "usageEval":base.get("USAGE_EVAL")}}
+                 "usageEval":base.get("USAGE_EVAL"),
+                 "market":({"picks":market["picks"],
+                            "sources":"KeepTradeCut + FantasyCalc + DynastyProcess",
+                            "players":len(market["players"]),
+                            "updated":time.strftime("%Y-%m-%d %H:%M")} if market else None)}}
     log(f"Built {len(players)} players "
         f"({sum(1 for p in players if p.get('cons'))} w/ consensus, "
         f"{sum(1 for p in players if p.get('inj'))} injuries)")
