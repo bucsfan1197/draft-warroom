@@ -522,10 +522,14 @@
   .note{background:color-mix(in srgb,var(--panel-2) 55%,transparent);border:1px solid var(--line);
         border-radius:9px;padding:10px 12px;line-height:1.55}
 
-  /* The freshness chip sat inside the tab strip and read like a greyed-out tab. Move it out to
-     sit with the other status controls. */
-  .datachip{margin-left:auto;align-self:center;white-space:nowrap;font-size:11px;
-    padding:3px 9px;border-radius:20px;background:var(--panel-2);border:1px solid var(--line)}
+  /* The freshness chip sat INSIDE the tab strip, wedged between Trades and Projections, where it
+     read as a greyed-out disabled tab. A previous pass restyled it and left this comment claiming
+     it had been moved — it hadn't; the span was still in the <nav>. It now genuinely sits after
+     the spacer with the other status controls, so `margin-left:auto` is gone too: the spacer does
+     the pushing, and leaving both in fought over the same job. */
+  .datachip{align-self:center;white-space:nowrap;font-size:11px;
+    padding:3px 9px;border-radius:20px;background:var(--panel-2);border:1px solid var(--line);
+    color:var(--ink-2)}
   /* ---- Picks so far ---- */
   #pickLog{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
   .logrow{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px}
@@ -570,11 +574,11 @@
       <button class="tab hide" data-tab="cap" id="capTabBtn">Contracts</button>
       <button class="tab" data-tab="season">In-Season</button>
       <button class="tab" data-tab="trade">Trades</button>
-      <span id="dataAge" class="meta datachip"></span>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
     <div class="spacer"></div>
+    <span id="dataAge" class="meta datachip"></span>
     <button class="ghost" id="mockBtn">🤖 Mock draft</button>
     <button class="ghost" id="themeBtn">◐ Theme</button>
     <button class="ghost" id="exportBtn">↧ Save</button>
@@ -2988,6 +2992,14 @@ function selfTest(){
             `${dp.stages.length} windows, every path settled, nobody left to play`);
       }
     }
+    /* The tab strip holds tabs and nothing else. The freshness chip lived in there reading as a
+       greyed-out disabled tab, and survived a pass that restyled it and left a comment claiming
+       it had been moved. Geometry checks never caught it because it fit perfectly. */
+    const strip=document.getElementById("tabs");
+    const intruders=strip?[...strip.children].filter(el=>!el.classList.contains("tab")):[];
+    add("Nothing but tabs in the tab bar",intruders.length===0,
+        intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
+                        :`${strip?strip.children.length:0} tabs, no strays`);
     add("Kickoff times are loaded",kickOn,
         kickOn?`${Object.keys(D.KICK).length} teams — the drift chart can run`
               :"absent, so the drift chart is hidden rather than guessed at");
