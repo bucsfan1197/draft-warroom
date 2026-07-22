@@ -2431,12 +2431,22 @@ function selfTest(){
         BENCH_W_BY_POS.TE>BENCH_W_BY_POS.RB&&BENCH_W_BY_POS.QB<BENCH_W_BY_POS.WR,
         `TE ${BENCH_W_BY_POS.TE} · WR ${BENCH_W_BY_POS.WR} · RB ${BENCH_W_BY_POS.RB} · backup QB ${BENCH_W_BY_POS.QB}`);
     // ---- tiers scale with the league instead of being fixed cut-offs ----
-    const wasT=state.settings.teams;
-    state.settings.teams=12; TIERQ={key:null}; const c12=tierCuts().elite;
-    state.settings.teams=8;  TIERQ={key:null}; const c8=tierCuts().elite;
-    state.settings.teams=wasT; TIERQ={key:null};
-    add("Tier cut-offs follow the league, not a fixed number",c8<c12,
-        `"elite" starts at ${Math.round(c12)} in a 12-team league and ${Math.round(c8)} in an 8-team one`);
+    /* The property quantile tiers actually guarantee is the SHARE, not the raw cut-off. An earlier
+       version asserted the 8-team cut-off must be lower than the 12-team one; that held for a
+       plain redraft roster and failed on a dynasty best-ball IDP one, because fewer teams also
+       raises the replacement level. Which cut-off is bigger depends on roster shape — the share
+       does not, and it's the meaningful claim. */
+    const wasT2=state.settings.teams;
+    const eliteShare=t=>{state.settings.teams=t;TIERQ={key:null};
+      const {levels}=replacementLevels();
+      const pos=state.players.filter(x=>inLeague(x)).map(x=>vorp(x,levels)).filter(v=>v>0);
+      const c=tierCuts();
+      return pos.length?pos.filter(v=>v>=c.elite).length/pos.length:0;};
+    const s12=eliteShare(12), s8=eliteShare(8);
+    state.settings.teams=wasT2; TIERQ={key:null};
+    add("Tiers are a constant share of the startable pool, whatever the league",
+        Math.abs(s12-0.08)<0.04&&Math.abs(s8-0.08)<0.04,
+        `"elite" covers ${(s12*100).toFixed(0)}% of startable players in a 12-team league and ${(s8*100).toFixed(0)}% in an 8-team one`);
     // ---- "will he last?" rests on measured draft spread, not a guess ----
     const wSd=P.filter(x=>x.adpSd>0);
     add("Draft-position spread is measured, not assumed",wSd.length>150,
