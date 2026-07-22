@@ -387,6 +387,27 @@
   .note{background:color-mix(in srgb,var(--panel-2) 55%,transparent);border:1px solid var(--line);
         border-radius:9px;padding:10px 12px;line-height:1.55}
 
+  /* ---- Picks so far ---- */
+  #pickLog{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+  .logrow{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px}
+  .logrow:hover{background:var(--panel-2)}
+  .logrow.mine{background:color-mix(in srgb,var(--accent) 11%,transparent);
+    box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 26%,transparent)}
+  .lognum{color:var(--ink-2);font-size:11px;min-width:34px;font-weight:700}
+  .logname{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .logteam{margin-left:auto;color:var(--ink-2);font-size:11.5px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;max-width:38%}
+  .logrow.mine .logteam{color:var(--accent);font-weight:700}
+  .logsince{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-2);
+    font-weight:700;margin:8px 0 4px;padding-top:8px;border-top:1px solid var(--line)}
+  .boardtbl{font-size:11px;border-collapse:collapse;width:100%}
+  .boardtbl th,.boardtbl td{padding:3px 4px;text-align:center;border:1px solid var(--line);white-space:nowrap}
+  .boardtbl th{color:var(--ink-2);font-size:10px;font-weight:700}
+  .boardtbl td.rnd,.boardtbl th:first-child{color:var(--ink-2);font-weight:700;font-size:10px}
+  .boardtbl .mine{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+  .boardtbl .bpos{min-width:0;padding:0 3px;font-size:9px;margin-right:3px}
+  .boardtbl .bnm{font-weight:650}
+
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
       transition-duration:.001ms!important;scroll-behavior:auto!important}
@@ -471,6 +492,12 @@
 
       <!-- RIGHT: your roster + queue -->
       <div class="sticky-col">
+        <div class="panel" style="margin-bottom:14px">
+          <div class="hd"><h2>Picks so far</h2>
+            <span class="seg" id="logMode" style="margin-left:auto;transform:scale(.85);transform-origin:right">
+              <button data-v="feed" class="on">List</button><button data-v="board">Board</button></span></div>
+          <div class="bd"><div id="pickLog"></div></div>
+        </div>
         <div class="panel">
           <div class="hd"><h2>My roster</h2><span id="rosterPts" class="pickcounter" style="margin-left:auto"></span></div>
           <div class="bd" id="myRoster"></div>
@@ -1833,6 +1860,27 @@ function renderLeagueTendencies(){
     +`<div class="note" style="margin-top:8px">Opponents in mock drafts and the championship simulator now follow these tendencies${state.league.slotToUser?"":" (slots unknown — league-average tendencies applied)"}.</div>`;
 }
 // positional bias multiplier for a given opponent + round
+/* Whose pick is it? Real manager names when a league has been learned or synced, "You" for your
+   own slot, a numbered team otherwise — so the log reads the same whether you're in a live draft
+   or a mock. */
+// "Kenneth Walker III" is Walker, not III — a plain split on spaces gets that wrong, and the
+// board is nothing but last names.
+function lastName(full){
+  const parts=String(full||"").trim().split(/\s+/)
+    .filter(w=>!/^(jr|sr|ii|iii|iv|v)\.?$/i.test(w));
+  return parts.length?parts[parts.length-1]:String(full||"");
+}
+function teamLabel(teamIdx){
+  if(teamIdx===myIdx()) return "You";
+  const L=state.league;
+  if(L&&L.slotToUser&&L.names){
+    const uid=L.slotToUser[String(teamIdx+1)];
+    if(uid&&L.names[uid]) return L.names[uid];
+  }
+  const t=TRADE.teams&&TRADE.teams[teamIdx];
+  if(t&&t.name) return t.name;
+  return "Team "+(teamIdx+1);
+}
 function oppBias(teamIdx,round){
   const L=state.league;
   if(!L||!L.bias||!L.slotToUser)return null;
@@ -2037,7 +2085,7 @@ function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show"
    rest dirty, and showTab draws a dirty tab the moment you open it. The pick clock and header
    stay global because the timer can auto-draft while you're reading another tab. */
 const TAB_RENDER={
-  draft:   ()=>{renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();},
+  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderTiers();},
   team:    ()=>renderTeamTab(),
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
@@ -2306,6 +2354,58 @@ function renderAvail(){
   $$("#availBody [data-buy]").forEach(b=>b.onclick=()=>{const id=+b.dataset.buy;const price=(state.ui.auctPrice!==''&&state.ui.auctPrice!=null)?+state.ui.auctPrice:actx.val(state.players[id]);doBuy(id,state.ui.auctTeam!=null?state.ui.auctTeam:myIdx(),price);state.ui.auctPrice='';});
 }
 
+/* The board every fantasy app has and this one didn't: what's gone, in order, and to whom.
+   Two views because they answer different questions — the list answers "what just happened and
+   what went between my picks", the grid answers "how has each team built". */
+function renderPickLog(){
+  const box=$("#pickLog"); if(!box)return;
+  const T=state.settings.teams||12, picks=state.picks||[];
+  const mode=state.ui.logMode||"feed";
+  $$("#logMode button").forEach(b=>b.classList.toggle("on",(b.dataset.v||"feed")===mode));
+  if(!picks.length){
+    box.innerHTML=`<div class="emptystate">No picks yet. Every selection shows up here as it happens — yours and everyone else's.</div>`;
+    return;
+  }
+  const label=(i)=>{const r=Math.floor(i/T)+1, n=(i%T)+1; return `${r}.${String(n).padStart(2,"0")}`;};
+  if(mode==="board"){
+    // classic wall board: a column per team, a row per round
+    const rounds=Math.ceil(picks.length/T);
+    let h=`<div class="tblwrap"><table class="tbl boardtbl"><thead><tr><th></th>`;
+    for(let t=0;t<T;t++) h+=`<th class="${t===myIdx()?"mine":""}" title="${teamLabel(t)}">${t===myIdx()?"You":t+1}</th>`;
+    h+=`</tr></thead><tbody>`;
+    for(let r=0;r<rounds;r++){
+      h+=`<tr><td class="rnd">R${r+1}</td>`;
+      for(let c=0;c<T;c++){
+        // snake order means even rounds run right to left
+        const inRound=(state.settings.snake&&r%2===1)?(T-1-c):c;
+        const idx=r*T+inRound;
+        const pk=picks[idx], pl=pk?state.players[pk.playerId]:null;
+        h+=`<td class="${c===myIdx()?"mine":""}">${pl
+          ? `<span class="bpos pos ${pl.pos}">${pl.pos}</span><span class="bnm">${lastName(pl.name)}</span>`
+          : (idx<picks.length?"—":"")}</td>`;
+      }
+      h+=`</tr>`;
+    }
+    box.innerHTML=h+`</tbody></table></div>
+      <div class="note" style="margin-top:10px">Every team's draft so far, in snake order. Your column is highlighted.</div>`;
+    return;
+  }
+  // list view, newest first, with a marker for where your last pick was
+  const myLast=[...picks].map((p,i)=>({p,i})).filter(x=>x.p.teamIdx===myIdx()).pop();
+  const rows=[];
+  for(let i=picks.length-1;i>=0;i--){
+    const pk=picks[i], pl=state.players[pk.playerId];
+    const mine=pk.teamIdx===myIdx();
+    if(myLast&&i===myLast.i&&i<picks.length-1)
+      rows.push(`<div class="logsince">${picks.length-1-i} pick${picks.length-1-i===1?"":"s"} since you were up</div>`);
+    rows.push(`<div class="logrow${mine?" mine":""}">
+      <span class="lognum num">${label(i)}</span>
+      ${pl?`<span class="pos ${pl.pos}">${pl.pos}</span><span class="logname">${pl.name}</span>`
+          :`<span class="logname meta">unknown player</span>`}
+      <span class="logteam">${teamLabel(pk.teamIdx)}</span></div>`);
+  }
+  box.innerHTML=rows.join("");
+}
 function renderMyRoster(){
   const roster=teamRoster(myIdx());
   const {slots,bench}=fillLineup(roster);
@@ -5139,6 +5239,7 @@ function wireSetup(){
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
   $("#selfTestBtn").onclick=()=>selfTest();
   $("#introBtn").onclick=()=>showOnboarding();
+  $$("#logMode button").forEach(b=>b.onclick=()=>{state.ui.logMode=b.dataset.v;renderPickLog();save();});
   wireTradeLab(); wireKeepers(); wireCap();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
