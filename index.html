@@ -1062,8 +1062,13 @@ function recommendations(){
     const mustStart=need[pl.pos]>0||(pl.pos==="QB"&&qbShort);
     // cap check FIRST — at the cap a player can't crack your lineup even as a flex body
     if(!mustStart&&haveAtPos>=maxAt){ needMult=0.1; needTag="roster full";
-      // a 2nd K/DST is pure dead weight (you only ever start one) — rank it below ANY skill body
-      satPen=((pl.pos==="K"||pl.pos==="DST")?400:90)*(haveAtPos-maxAt+1); hardFull=true; }
+      // How useless is one MORE at this position? A 2nd K/DST or a 3rd QB in a 1QB league can
+      // never crack the lineup; an extra RB/WR is genuine bye + injury insurance and flex-eligible.
+      // Without this, the endgame (when everything is capped) just took the highest-VORP body — a QB.
+      const overPen=(pl.pos==="K"||pl.pos==="DST")?400
+                   :(pl.pos==="QB")?(TG.sf?120:300)
+                   :(pl.pos==="TE")?200:90;
+      satPen=overPen*(haveAtPos-maxAt+1); hardFull=true; }
     else if(mustStart){ needMult=1.6*urgency; needTag="starter need";
       if(TG.sf&&pl.pos==="QB"){needMult*=1.2;needTag="premium QB";} }   // QBs scarce+critical in superflex
     else if(FLEX_POS.includes(pl.pos)&&flexNeed>0){ needMult=1.15*Math.min(urgency,2.5); needTag="flex fit"; }
