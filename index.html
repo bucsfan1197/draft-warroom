@@ -5239,10 +5239,16 @@ function renderInSeason(){
       ? `<p class="meta" style="margin:0 0 8px">What each backup is worth now, and what he'd be worth if the man ahead of him were out for the rest of the year.
          The gap is the insurance you're actually holding — and it's why a bench player who scores nothing today can be the last man you should cut.</p>`
         +cv.map(x=>`<div class="kv"><span><span class="pos ${x.back.pos}">${x.back.pos}</span> <b>${x.back.name}</b>
-            <span class="needline">behind ${x.star.name} · worth ${x.now.toFixed(1)} now, <b>${x.ifOut.toFixed(1)}</b> if ${lastName(x.star.name)} misses the rest</span></span>
-          <span class="num" style="color:var(--good-ink)">+${x.swing.toFixed(1)}</span></div>`).join("")
-        +`<div class="note" style="margin-top:10px">We stop short of multiplying by the odds of the injury happening: nothing here measures
-          the chance a healthy player gets hurt, and a number invented for that would quietly drive the whole ranking.</div>`
+            <span class="needline">behind ${x.star.name} · worth ${x.now.toFixed(1)} now, <b>${x.ifOut.toFixed(1)}</b> if ${lastName(x.star.name)} misses the rest${
+              x.pMiss!=null?` · ${Math.round(x.pMiss*100)}% chance he does`:``}</span></span>
+          <span style="text-align:right;white-space:nowrap">${x.ev!=null
+            ? `<b class="num" style="color:var(--good-ink)">+${x.ev.toFixed(1)}</b><span class="meta">expected</span>`
+            : `<b class="num" style="color:var(--good-ink)">+${x.swing.toFixed(1)}</b><span class="meta">if it happens</span>`}</span></div>`).join("")
+        +`<div class="note" style="margin-top:10px">Ranked by <b>expected</b> value: what the cover is worth if the starter goes down,
+          times the measured chance he does. That second number comes from <b>${(window.__FFDATA__&&__FFDATA__.MISSRATE&&__FFDATA__.MISSRATE.years)||"nflverse"}</b>
+          roster data — given a player was active one week, how often he isn't the next
+          (${["QB","RB","WR","TE"].map(p=>missRate(p)?`${p} ${(missRate(p)*100).toFixed(1)}%`:null).filter(Boolean).join(" · ")} per game).
+          Multiplying those two is the step the market leaves out: one product sells the probability, another eyeballs the payoff.</div>`
       : `<div class="emptystate">No backup on your bench meaningfully covers a starter.</div>`;
   })();
 
@@ -6075,25 +6081,54 @@ function streamPlan(pos,roster,from,to,opts){
 /* ---- Contingent value: what your backup becomes if the man in front of him goes down ----
    The market scan found the two halves of this sold separately and never multiplied: one product
    models the chance a starter misses time, another eyeballs what the backup would be worth.
-   The honest half to build is the second — what he's actually worth to YOUR lineup if the starter
-   is out for the rest of the year — because it falls out of the same marginal machinery.
-   We deliberately do NOT multiply by a probability of injury: nothing in this app measures the
-   chance a currently healthy player gets hurt, and a number invented for that would quietly set
-   the whole ranking. */
+   The second half falls out of the marginal machinery already here. The first is now measured too
+   (see missRate below), so this finally multiplies them — which per the market scan nobody does. */
+/* The chance a starter misses a given game, measured rather than assumed: nflverse weekly roster
+   status across 2016-2024, ~60,000 player-weeks. A HAZARD rate — given a man was active this
+   week, how often is he unavailable next week — because that is the risk facing a player who is
+   fit today. Season-total games-missed would have been survivorship-poisoned by players who tore
+   something in week 2 and never came back.
+   Two things worth knowing from it. "Running backs get hurt most" is barely true: RB 6.2% against
+   WR 6.2%, essentially identical, while QBs sit at 3.6%. And age barely moves it — the 29+ QB
+   rate is LOWER than the under-25 rate, which is selection, not durability: bad young QBs get
+   benched and that counts as unavailable. So the rate is per position only, not per age. */
+function missRate(pos){
+  const M=window.__FFDATA__&&__FFDATA__.MISSRATE;
+  return (M&&M.weeklyMiss&&M.weeklyMiss[pos])||null;
+}
+function pMissAny(pos,weeks){
+  const h=missRate(pos);
+  if(!h||weeks<=0)return null;
+  return 1-Math.pow(1-h,weeks);
+}
 function contingentValue(roster,from,to){
   const out=[];
+  /* Cover only runs one way. Without this it also reported "Josh Allen behind Joe Burrow", which
+     is the same pair inverted and describes nothing — the man you're insuring has to be the one
+     in the lineup, and the cover has to be the one who isn't. */
+  const {slots}=fillLineup(roster);
+  const starting=new Set(slots.filter(s=>s.pl).map(s=>s.pl.id));
   roster.forEach(star=>{
     if(!["RB","WR","TE","QB"].includes(star.pos))return;
+    if(!starting.has(star.id))return;
     const without=roster.filter(p=>p.id!==star.id);
     roster.forEach(back=>{
       if(back.id===star.id||back.pos!==star.pos)return;
+      if(starting.has(back.id))return;
       // what he adds today, and what he'd add to the same roster minus the starter
       const now  =marginalROS(back,roster.filter(p=>p.id!==back.id),from,to);
       const ifOut=marginalROS(back,without.filter(p=>p.id!==back.id),from,to);
-      out.push({back,star,now,ifOut,swing:ifOut-now});
+      /* Expected value of the cover: the extra he'd be worth, times the measured chance the man
+         in front of him actually misses time over this window. This is the multiplication the
+         market never performs — one product sells the probability, another eyeballs the payoff,
+         and nobody puts them together. */
+      const pm=pMissAny(star.pos,Math.max(0,to-from+1));
+      out.push({back,star,now,ifOut,swing:ifOut-now,pMiss:pm,
+                ev:pm==null?null:(ifOut-now)*pm});
     });
   });
-  return out.filter(x=>x.swing>1).sort((a,b)=>b.swing-a.swing).slice(0,6);
+  return out.filter(x=>x.swing>1)
+            .sort((a,b)=>(b.ev!=null&&a.ev!=null?b.ev-a.ev:b.swing-a.swing)).slice(0,6);
 }
 async function trendingAdds(){
   try{
