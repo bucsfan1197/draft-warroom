@@ -3080,8 +3080,15 @@ function selfTest(){
         startSitAdvice(AU,BU,120).moves.forEach(m=>{
           swaps++; if(!canFill(m.inPl.pos,m.slot))bad++; });
       }
-      add("Start/sit only suggests legal swaps",bad===0&&swaps>0,
-          swaps?`${swaps} candidate swaps checked, ${bad} illegal`:"no swaps available to check");
+      /* Only assert when there's actually something to judge. Requiring swaps>0 in the pass
+         condition turned "your roster is too small to have any bench swaps" into a failure, which
+         fired on every fresh account before the draft — a false alarm, not a defect. A roster with
+         no legal swaps has no ILLEGAL swaps either, so on a small roster this simply doesn't report,
+         the same way the drift checks stay quiet without a lineup. On a full roster it still fails
+         loudly if a single suggested swap is ineligible. */
+      if(swaps>0)
+        add("Start/sit only suggests legal swaps",bad===0,
+            `${swaps} candidate swaps checked, ${bad} illegal`);
     }
     /* Waivers and drops must both be judged on marginal value, and the two must agree. Ranking
        the bench by raw points said "drop Brock Bowers" — the lowest scorer on the bench but the
