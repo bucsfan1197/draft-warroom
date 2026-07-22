@@ -1829,11 +1829,27 @@ function renderInSeason(){
   const worstAt=pos=>{const a=(mineByPos[pos]||[]).slice().sort((x,y)=>pts(x)-pts(y));return a.length?pts(a[0]):0;};
   const cands=state.players.filter(p=>!drafted.has(p.id)&&["QB","RB","WR","TE"].includes(p.pos))
     .map(p=>({p,up:pts(p)-worstAt(p.pos)})).filter(x=>x.up>0).sort((a,b)=>b.up-a.up).slice(0,10);
-  $("#waiverBox").innerHTML=cands.length?cands.map(x=>
+  // WEEK-AWARE: if a starting slot is stuck with a bye player (or empty) this week, lead with players who fill THAT hole
+  const holes=L.slots.filter(s=>!s.pl||s.pl.bye===w);
+  const holePos=[...new Set(holes.map(s=>s.pl?s.pl.pos:(["FLEX","SUPERFLEX"].includes(s.slot)?"RB":s.slot)))];
+  let holeHtml="";
+  if(holePos.length){
+    const fills=holePos.map(pos=>{
+      const best=state.players.filter(p=>!drafted.has(p.id)&&p.pos===pos&&p.bye!==w)
+        .sort((a,b)=>wkPts(b,w)-wkPts(a,w)).slice(0,2);
+      return {pos,best};
+    }).filter(f=>f.best.length);
+    if(fills.length)holeHtml=`<h3 class="eyebrow" style="margin-bottom:6px">🚨 Week ${w} bye holes — stream these</h3>`
+      +fills.map(f=>f.best.map(p=>
+        `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)} <span class="meta">${p.team}</span></span>
+          <span class="chip crit">fills your ${f.pos} · ${wkPts(p,w).toFixed(1)} pts wk ${w}</span></div>`).join("")).join("")
+      +`<h3 class="eyebrow" style="margin:14px 0 6px">Season-long upgrades</h3>`;
+  }
+  $("#waiverBox").innerHTML=(holeHtml||"")+(cands.length?cands.map(x=>
     `<div class="kv"><span><span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name}${injChip(x.p)} <span class="meta">${x.p.team}</span></span>
       <span class="chip good">+${Math.round(x.up)} over your worst ${x.p.pos}</span></div>`).join("")
     +`<div class="note" style="margin-top:10px">Ranked by upgrade over the weakest player you actually roster at that spot — not a generic replacement level.</div>`
-    :`<div class="emptystate">Nothing on the wire beats your roster.</div>`;
+    :`<div class="emptystate">Nothing on the wire beats your roster.</div>`);
 
   // ---- trade value board ----
   const dyn=state.settings.format==="dynasty";
