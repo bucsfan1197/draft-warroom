@@ -2418,6 +2418,16 @@ function selfTest(){
     const dem=["QB","RB","WR","TE","K","DST"].reduce((a,p)=>a+posDemandShare(p),0);
     add("Positional demand is a valid share of the board",dem>0.85&&dem<1.15,
         `shares total ${dem.toFixed(2)}`);
+    /* Trade evenness, measured from real completed trades. The percentile must rise with how
+       even a deal is — the first version had it inverted and warned about a near-even swap while
+       waving through a 7-to-1 fleece, so the direction is asserted here explicitly. */
+    const lp=[0.1,0.3,0.5,0.73,0.95].map(lopsidedPct);
+    add("Lopsided trades are flagged, even ones aren't",
+        lp.every((v,i)=>i===0||v>=lp[i-1])&&lopsidedPct(0.1)<25&&lopsidedPct(0.95)>75,
+        `a 10-to-1 deal is rarer than ${lopsidedPct(0.1)}% of real trades; a near-even one than ${lopsidedPct(0.95)}%`);
+    add("Trade evenness is measured from real completed trades",
+        ACCEPTED_RATIOS.length>=15&&evennessOf(100,100)===1&&evennessOf(20,100)===0.2,
+        `${ACCEPTED_RATIOS.length} completed trades, median ${ACCEPTED_RATIOS[ACCEPTED_RATIOS.length>>1]}`);
     // ---- injury cost, measured from seven seasons of the injury report ----
     const rbT=P.find(x=>x.pos==="RB"), teT=P.find(x=>x.pos==="TE");
     const qW=rbT?availWeek({...rbT,inj:"Questionable"}):1;
@@ -2707,6 +2717,35 @@ function lineupOnSlots(players,slots,valFn){
 // Endowment effect: a real manager needs MEANINGFUL value back, not a rounding error, and
 // won't ship his single best player for depth pieces. ONE definition, shared by the finder
 // and the manual evaluator, so both answer "would they accept?" by the same standard.
+/* HOW EVEN DOES A REAL TRADE HAVE TO BE?
+   Measured, finally. Walked every league in this account backwards through previous_league_id —
+   15 league-seasons — and pulled every completed trade Sleeper recorded, then priced both sides
+   with our own market values. Only the 2025-26 trades are usable: pricing a 2023 trade with 2026
+   values measures how much those players changed, not what the managers agreed to, and the two
+   buckets differ so sharply (median 0.22 against 0.73) that the drift is obvious.
+
+   19 recent completed trades, weaker side over stronger side:
+     0.07 0.25 0.38 0.41 0.55 0.60 0.67 0.69 0.71 0.73 0.74 0.76 0.76 0.78 0.79 0.85 0.85 0.87 0.91
+   Median 0.73. Three quarters sit at 0.60 or better. Exactly one of nineteen fell under 0.25.
+
+   Managers accept close-to-even deals and essentially nothing else — so a suggestion that hands
+   one side four times the value isn't a clever find, it's one nobody would sign. The sample is
+   small and it's from one account's leagues, which is why it's used to rank and to warn rather
+   than to hard-gate anything above the floor where real trades actually stop. */
+const ACCEPTED_RATIOS=[0.07,0.25,0.38,0.41,0.55,0.60,0.67,0.69,0.71,0.73,0.74,0.76,0.76,0.78,0.79,0.85,0.85,0.87,0.91];
+function evennessOf(aVal,bVal){
+  const hi=Math.max(aVal,bVal), lo=Math.min(aVal,bVal);
+  return hi>0?lo/hi:1;
+}
+/* Share of real completed trades that were AT LEAST THIS LOPSIDED — i.e. how unusual this
+   proposal is. A near-even deal scores ~100 (nothing remarkable); a wildly uneven one scores near
+   0 (almost nobody signs those). Getting this the right way round matters: the first version
+   asked "how many were at least this EVEN", which is high for lopsided deals, and it duly warned
+   about a Chase-for-Bijan swap while waving through Chris Bell for Ja'Marr Chase. */
+function lopsidedPct(ratio){
+  if(!isFinite(ratio))return 100;
+  return Math.round(ACCEPTED_RATIOS.filter(r=>r<=ratio).length/ACCEPTED_RATIOS.length*100);
+}
 function acceptCheck(myGain,theirGain,takingTheirBest){
   const fair=theirGain>=Math.max(1.5,0.25*myGain);
   const bestBlock=!!takingTheirBest&&theirGain<0.6*myGain;
@@ -3481,6 +3520,10 @@ function labCompute(){
         return `<div class="note" style="margin-top:8px">Least certain piece: <b>${nm}</b> (±${Math.round(worst.c.sd*100)}%) — ${worst.c.why}${worst.c.n?`, ${worst.c.n.toLocaleString()} votes behind it`:""}.</div>`;})()}
       ${avgDis!=null?`<div class="note" style="margin-top:8px">${avgDis>=0.45?"⚠️ ":""}The three market sources ${avgDis>=0.45?"<b>disagree sharply</b>":"broadly agree"} about these players (spread ${avgDis.toFixed(2)} sd)${avgDis>=0.45?" — treat this verdict as soft, and check the players individually.":"."}</div>`:""}
       ${unmatched.length?`<div class="note" style="margin-top:8px">⚠️ Couldn't match: <b>${unmatched.map(u=>u.raw).join(", ")}</b> — check the spelling, or pick from the dropdown.</div>`:""}
+      ${(()=>{const ev=evennessOf(gv,tv), pct=lopsidedPct(ev);
+        if(!isFinite(ev)||ev>=0.9) return "";
+        const rare=pct<=25;
+        return `<div class="note" style="margin-top:8px">${rare?"⚠️ ":""}One side is getting <b>${Math.round((1/Math.max(ev,0.01)-1)*100)}%</b> more value than the other. Only <b>${pct}%</b> of real completed trades were this lopsided${rare?" — most managers simply decline these":""}. <span class="meta">Measured from 19 completed trades across this account's leagues, 2025-26.</span></div>`;})()}
       ${labCapCheck(give,get)}
       <div class="note" style="margin-top:8px">${labSettingsLine()}</div>
     </div>
@@ -4032,13 +4075,17 @@ function findTrades(){
       const theirAfter=theirAll.filter(p=>!get.includes(p)).concat(give);
       const myGain=sideValue(mineAfter,slots,V)-base;
       const theirGain=sideValue(theirAfter,slots,V)-oBase;
-      if(myGain>0.5&&acceptCheck(myGain,theirGain,get.includes(oPool[0])).ok)
-        cands.push({oi,oppName:opp.name,give,get,myGain,theirGain,mineAfter,theirAfter});
+      // Real completed trades essentially stop being accepted below a quarter of even value —
+      // one of nineteen. A suggestion past that point is not a find, it's an offer nobody signs.
+      const even=evennessOf(sumA(give),sumA(get));
+      if(myGain>0.5&&even>=0.25&&acceptCheck(myGain,theirGain,get.includes(oPool[0])).ok)
+        cands.push({oi,oppName:opp.name,give,get,myGain,theirGain,mineAfter,theirAfter,even});
     }
   });
   TRADE.lastSearch={ms:Math.round(performance.now()-t0),considered:cands.length,truncated};
   TRADE.lastCands=cands;                       // kept for inspection/debugging
-  cands.sort((a,b)=>(b.myGain+b.theirGain*0.35)-(a.myGain+a.theirGain*0.35));
+  // rank by what you gain, then by how likely the other manager is to actually sign it
+  cands.sort((a,b)=>(b.myGain+b.theirGain*0.35+b.even*40)-(a.myGain+a.theirGain*0.35+a.even*40));
   const top=[];const seen=new Set(),perOpp={};
   for(const c of cands){ const k=c.oi+"|"+c.get.map(p=>p.id).join(",");
     if(seen.has(k))continue;
@@ -4065,6 +4112,7 @@ function renderTrades(list,base,slots,V,baseline){
         if(sells.length)h+=`<span class="chip warn">📉 sell-high: ${sells.join(", ")} — production outruns his usage</span>`;
         return h?`<div style="margin:4px 0">${h}</div>`:"";})()}
       <div class="why">Your starting lineup <b style="color:var(--good)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"pts"} · their side <b>+${Math.round(c.theirGain)}</b> (so it's plausibly accepted).
+        ${c.even!=null&&c.even<0.6?`<span class="meta">(only ${lopsidedPct(c.even)}% of real trades were this lopsided — expect pushback)</span>`:""}
         ${odds?(()=>{const nz=oddsNoise(odds.before,400,odds.after,400);
           return Math.abs(odds.after-odds.before)>=nz
             ? ` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b> <span class="meta">±${nz}</span>.`
