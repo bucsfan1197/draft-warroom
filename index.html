@@ -150,6 +150,19 @@
   .mchart-lab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-2);margin-top:2px}
   .mchart-lab .mc-tie{font-weight:700}
   .needline{display:block;font-size:10.5px;color:var(--ink-2);line-height:1.3}
+  .ncurve{width:100%;height:120px;display:block}
+  .nc-band{fill:color-mix(in srgb,var(--accent) 9%,transparent)}
+  .nc-fill{fill:color-mix(in srgb,var(--good) 16%,transparent)}
+  .nc-line{fill:none;stroke:var(--good);stroke-width:2;vector-effect:non-scaling-stroke}
+  .nc-half{stroke:var(--line-2);stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:2 4}
+  .nc-even{stroke:var(--ink-2);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-dasharray:4 3}
+  .nc-med{stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
+  .nc-lab{display:flex;justify-content:space-between;gap:10px;font-size:10.5px;color:var(--ink-2);margin-top:2px}
+  .ccrow{display:flex;flex-wrap:wrap;gap:4px 16px;padding:4px 0;font-size:12px;
+         border-bottom:1px solid var(--line)}
+  .ccrow:last-of-type{border-bottom:none}
+  .ccnm{flex:1;min-width:150px}
+  .ccbad{color:var(--warn-ink)}
   .ssrow{display:grid;grid-template-columns:1fr auto;gap:4px 14px;padding:9px 0;border-bottom:1px solid var(--line);align-items:center}
   .ssrow:last-of-type{border-bottom:none}
   .ssmove{font-size:13.5px} .ssrow .meta{font-size:11.5px}
@@ -2865,6 +2878,26 @@ function selfTest(){
     const zm=/x1="([\d.]+)"/.exec(mc), wm=/viewBox="0 0 (\d+)/.exec(mc);
     add("The margin chart is centred on a tie",zm&&wm&&Math.abs(+zm[1]-(+wm[1])/2)<1,
         zm&&wm?`zero sits at ${(+zm[1]).toFixed(0)} of ${wm[1]}px`:"chart did not render");
+    /* The points-needed curve has to be monotone: scoring more can never lower your chance of
+       winning. It's the sort of thing that looks obviously true and quietly isn't if the
+       distribution is sampled per point rather than read off one sorted set of outcomes. */
+    const ncT=needCurve(evenA,{lo:70,med:90,hi:115},3000);
+    const dips=ncT.pts.filter((p,i)=>i&&p.p<ncT.pts[i-1].p-1e-9);
+    add("Scoring more never lowers your odds",dips.length===0,
+        `${ncT.pts.length} points along the curve, ${dips.length} going the wrong way`);
+    /* A start/sit call cannot cost you the week more often than it is wrong. For the benched
+       player to have rescued a loss he must first have outscored the man you started, so the
+       "cost" outcomes are a strict subset of the "wrong" ones. If that ever inverts, the two
+       counters have drifted apart and the honesty framing is lying. */
+    // slot AND pos have to agree or canFill() rejects every pair and the check silently measures
+    // nothing — which is exactly what it did first time round, passing 0 swaps as "no violations".
+    const mkS=(b,cv,nm,id)=>{const u=mkU(b,cv);u.pl={name:nm,pos:"WR",id};u.slot="WR";return u;};
+    const ssU={starters:[...Array(6)].map((_,i)=>mkS(11+i,0.5+i*0.1,"s"+i,100+i)),
+               bench:[...Array(3)].map((_,i)=>mkS(10+i*2,0.7+i*0.2,"b"+i,200+i))};
+    const ssR=startSitAdvice(ssU,[...Array(6)].map(()=>mkU(13,0.6)),2000);
+    const bad=ssR.moves.filter(m=>m.cost>m.wrong+1e-9);
+    add("A call can't cost you more often than it's wrong",bad.length===0&&ssR.moves.length>0,
+        `${ssR.moves.length} swaps checked · worst gap ${Math.max(0,...ssR.moves.map(m=>m.wrong-m.cost)).toFixed(2)} in the right direction`);
     /* Two hard conservation laws on the season sim: the playoff odds across the league must add
        up to the number of playoff spots, and every game played hands out exactly one win. */
     const SS=simSeason(200), SCk=seasonSchedule();
@@ -5294,30 +5327,73 @@ function canFill(pos,slot){
    Each candidate swap is measured against the SAME simulated opponent weeks (common random
    numbers), so a small edge isn't just sampling noise. */
 function startSitAdvice(A,unitsB,iters){
-  const N=iters||1200;
+  const N=iters||1500;
   // Same shape on every path. Returning a bare [] here was truthy, so the caller sailed past its
   // null check and then read .moves off an array — crashing the tab for anyone with an empty
   // bench, which is everyone until a draft is a few rounds old.
   if(!A.starters.length||!A.bench.length)return {base:0,moves:[]};
-  const oppDraws=[]; for(let i=0;i<N;i++)oppDraws.push(drawScore(unitsB));
-  const winRate=units=>{
-    let w=0;
-    for(let i=0;i<N;i++) if(drawScore(units)>oppDraws[i])w++;
-    return w/N;
-  };
-  const base=winRate(A.starters);
-  const out=[];
-  A.bench.forEach(b=>{
-    A.starters.forEach((s,i)=>{
-      if(!canFill(b.pl.pos,s.slot))return;
-      if(b.pl.id===s.pl.id)return;
-      const alt=[...A.starters]; alt[i]={...b,slot:s.slot};
-      const p=winRate(alt);
-      out.push({inPl:b.pl,outPl:s.pl,slot:s.slot,gain:p-base,
-        projDelta:(b.base*b.mult)-(s.base*s.mult)});
-    });
-  });
-  return {base,moves:out.sort((x,y)=>y.gain-x.gain)};
+  const pairs=[];
+  A.bench.forEach(b=>A.starters.forEach((s,i)=>{
+    if(canFill(b.pl.pos,s.slot)&&b.pl.id!==s.pl.id)pairs.push({b,s,i});}));
+  if(!pairs.length)return {base:0,moves:[]};
+  const st=pairs.map(()=>({win:0,wrong:0,cost:0,saved:0}));
+  const roll=u=>u.base*u.mult*seasonFactor(u.sd)*weekFactor(u.cv);
+  let baseWin=0;
+  for(let it=0;it<N;it++){
+    /* One simulated week drives the base lineup and every candidate swap at once. Re-drawing per
+       candidate was the first version: it cost a full simulation per pair and let sampling noise
+       sit on top of every comparison, which at these margins is bigger than the effect. */
+    const opp=drawScore(unitsB);
+    const sv=A.starters.map(roll);
+    const total=sv.reduce((a,b)=>a+b,0);
+    const baseWon=total>opp; if(baseWon)baseWin++;
+    const bv={}; A.bench.forEach(u=>bv[u.pl.id]=roll(u));
+    for(let k=0;k<pairs.length;k++){
+      const pr=pairs[k], v=bv[pr.b.pl.id];
+      const altWon=(total-sv[pr.i]+v)>opp;
+      if(altWon)st[k].win++;
+      if(v>sv[pr.i])st[k].wrong++;            // the benched player simply outscored the starter
+      if(!baseWon&&altWon)st[k].cost++;       // ...and it flipped the result: the call cost you
+      if(baseWon&&!altWon)st[k].saved++;      // ...or the call is what saved it
+    }
+  }
+  const base=baseWin/N;
+  const moves=pairs.map((pr,k)=>({
+    inPl:pr.b.pl,outPl:pr.s.pl,slot:pr.s.slot,
+    gain:st[k].win/N-base,
+    projDelta:(pr.b.base*pr.b.mult)-(pr.s.base*pr.s.mult),
+    /* Two different things, and conflating them is why start/sit advice feels so fraught.
+       `wrong` is how often the guy on your bench outscores the guy you started — usually a
+       coin flip, and the number that makes people agonise. `cost` is how often that actually
+       flips the week. They come apart hard: being "wrong" 45% of the time while it matters 3%
+       of the time means the decision is nearly free, and saying so is more useful than a pick. */
+    wrong:st[k].wrong/N, cost:st[k].cost/N, saved:st[k].saved/N}));
+  return {base,moves:moves.sort((x,y)=>y.gain-x.gain)};
+}
+/* Win probability as a function of what you finish on — the "points-needed curve" the market scan
+   asked for and nobody ships. It is just the opponent's distribution read backwards: for every
+   possible final score, how often does that beat them. It shows the cliff, which a single
+   projected total cannot, and it needs no data we don't have.
+   (A true win-probability-over-time chart, the thing every NFL gamecast has, would need kickoff
+   times so games could be resolved in order. Our schedule blob carries opponents only, so that
+   chart would have to invent a running order and is deliberately not built.) */
+function needCurve(unitsB,mine,iters){
+  const N=iters||3000, opp=[];
+  for(let i=0;i<N;i++)opp.push(drawScore(unitsB));
+  opp.sort((a,b)=>a-b);
+  const lo=Math.max(0,mine.lo-Math.max(12,(mine.hi-mine.lo)*0.25)), hi=mine.hi+Math.max(12,(mine.hi-mine.lo)*0.25);
+  const STEPS=60, pts=[];
+  for(let i=0;i<=STEPS;i++){
+    const x=lo+(hi-lo)*i/STEPS;
+    let c=0,a=0,b=opp.length-1;             // opponents strictly below x
+    while(a<=b){const m=(a+b)>>1; if(opp[m]<x){c=m+1;a=m+1;}else b=m-1;}
+    pts.push({x,p:c/N});
+  }
+  const at=x=>{let c=0,a=0,b=opp.length-1;
+    while(a<=b){const m=(a+b)>>1; if(opp[m]<x){c=m+1;a=m+1;}else b=m-1;} return c/N;};
+  // the score that makes it a true coin flip
+  const evenAt=opp[Math.floor(opp.length/2)];
+  return {pts,lo,hi,at,evenAt};
 }
 /* How much this one game is worth to your season. "Win and you're at 94%, lose and you're at 81%"
    is the context every matchup screen leaves out — they show you the game or the standings, never
@@ -5355,6 +5431,26 @@ function weekLeverage(me,week,iters){
     return made/N;
   };
   return {cur,win:forced("W"),lose:forced("L")};
+}
+function needCurveChart(nc,mine){
+  const W=560,H=120,PAD=2;
+  const sx=x=>(x-nc.lo)/(nc.hi-nc.lo)*W, sy=p=>H-PAD-p*(H-PAD*2);
+  const line=nc.pts.map(p=>`${sx(p.x).toFixed(1)},${sy(p.p).toFixed(1)}`).join(" ");
+  const area=`${sx(nc.lo)},${H} ${line} ${sx(nc.hi)},${H}`;
+  const evenX=sx(nc.evenAt), medX=sx(mine.med);
+  const band=`M${sx(mine.lo)},0 H${sx(mine.hi)} V${H} H${sx(mine.lo)} Z`;
+  return `<svg class="ncurve" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+      aria-label="Your chance of winning for each possible final score">
+    <path d="${band}" class="nc-band"/>
+    <polygon points="${area}" class="nc-fill"/>
+    <polyline points="${line}" class="nc-line"/>
+    <line x1="0" y1="${sy(.5)}" x2="${W}" y2="${sy(.5)}" class="nc-half"/>
+    <line x1="${evenX}" y1="0" x2="${evenX}" y2="${H}" class="nc-even"/>
+    <line x1="${medX}" y1="0" x2="${medX}" y2="${H}" class="nc-med"/>
+  </svg>
+  <div class="nc-lab"><span>${Math.round(nc.lo)} pts</span>
+    <span>the dashed line is a coin flip · the solid line is where you're projected</span>
+    <span>${Math.round(nc.hi)} pts</span></div>`;
 }
 /* Plain English for a probability. A number alone invites false precision — "63%" reads as a
    promise, "leaning your way" reads as what it is. */
@@ -5419,6 +5515,14 @@ function renderMatchups(){
         <div class="meta" style="margin-top:4px">Every simulated version of this week, by how much you win or lose.
         The shaded green area <b>is</b> the ${pct}% — not a number you're asked to take on trust.
         Notice how wide it is next to a ${fmt(Math.abs(sim.a.mean-sim.b.mean))}-point projected gap.</div></div>
+      ${(()=>{const nc=needCurve(B.starters,sim.a,3000);
+        return `<div class="mchartwrap">
+          <div class="eyebrow" style="margin-bottom:4px">What you need to put up</div>
+          ${needCurveChart(nc,sim.a)}
+          <div class="meta" style="margin-top:4px">Score <b>${fmt(nc.evenAt)}</b> and this is a coin flip.
+          At your projected <b>${fmt(sim.a.med)}</b> you win <b>${Math.round(nc.at(sim.a.med)*100)}%</b> of the time;
+          a bad week at ${fmt(sim.a.lo)} drops you to ${Math.round(nc.at(sim.a.lo)*100)}%, a good one at ${fmt(sim.a.hi)} lifts you to ${Math.round(nc.at(sim.a.hi)*100)}%.
+          The shaded band is where you'll usually land.</div></div>`;})()}
       ${lineupCompare(A,B,opp)}`;
 
   /* The old tab said "W" whenever the projection was higher, which is the single most misleading
@@ -5476,7 +5580,8 @@ function renderMatchups(){
   const helpful=ss?ss.moves.filter(m=>m.gain>0.005):[];
   $("#mStartSit").innerHTML=played?`<div class="meta">Week ${wk} is already final.</div>`
     :!ss||!ss.moves.length?`<div class="emptystate">Once you have players on the bench, every legal swap gets checked here.</div>`
-    :!helpful.length?`<p class="meta" style="margin:0">Your best lineup by projected points is also your best lineup for winning this particular game — no swap improves your odds. That is the normal case, and worth knowing rather than guessing at.</p>`
+    :!helpful.length?`<p class="meta" style="margin:0 0 10px">Your best lineup by projected points is also your best lineup for winning this particular game — no swap improves your odds. That is the normal case, and worth knowing rather than guessing at.</p>`
+      +closeCalls(ss)
     :`<p class="meta" style="margin:0 0 10px">Every lineup tool picks the highest projected total. That isn't always the best lineup for the game in front of you:
       when you need points you want the player who <i>can</i> reach them, even if he projects lower. These swaps raise your chance of winning.</p>`
      +helpful.slice(0,4).map(m=>`<div class="ssrow">
@@ -5486,7 +5591,8 @@ function renderMatchups(){
             :`Also projects ${fmt(m.projDelta)} points higher`}</div>
         <div class="ssgain"><b>+${(m.gain*100).toFixed(1)}%</b><span class="meta">win odds</span></div>
       </div>`).join("")
-     +`<div class="meta" style="margin-top:8px">Baseline with your current best-by-points lineup: <b>${Math.round(ss.base*100)}%</b>.</div>`;
+     +`<div class="meta" style="margin-top:8px">Baseline with your current best-by-points lineup: <b>${Math.round(ss.base*100)}%</b>.</div>`
+     +closeCalls(ss);
 
   // ---- what the game is worth ----
   const lev=played?null:weekLeverage(me,wk,300);
@@ -5535,6 +5641,26 @@ function renderMatchups(){
       <td class="r num meta">${fmt(r.pf/g)}</td>
       <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
   }).join("");
+}
+/* How much a start/sit call is actually worth losing sleep over.
+   Two numbers that everyone conflates: how often the player you benched outscores the one you
+   started, and how often that flips the week. The first is usually near a coin flip and is what
+   makes these decisions feel agonising; the second is often a couple of percent. Being wrong 45%
+   of the time and paying for it 3% of the time means the call is nearly free — which is more
+   useful to a manager than another confident recommendation. */
+function closeCalls(ss){
+  const cc=ss.moves.filter(m=>m.wrong>=0.32&&m.wrong<=0.68)
+                   .sort((a,b)=>b.cost-a.cost).slice(0,3);
+  if(!cc.length)return "";
+  return `<div class="note" style="margin-top:12px"><div class="eyebrow" style="margin-bottom:6px">How much these calls really matter</div>`
+    +cc.map(m=>`<div class="ccrow">
+        <span class="ccnm"><b>${m.outPl.name}</b> over ${m.inPl.name}</span>
+        <span class="meta">wrong <b>${Math.round(m.wrong*100)}%</b> of the time</span>
+        <span class="meta">costs you the week <b class="${m.cost>=0.05?"ccbad":""}">${(m.cost*100).toFixed(1)}%</b></span>
+      </div>`).join("")
+    +`<div class="meta" style="margin-top:6px">${cc[0].cost<0.05
+        ? `Close to a coin flip on points, but it almost never changes the result. Start whoever you like and stop agonising.`
+        : `This one is worth thinking about — it flips the week often enough to matter.`}</div></div>`;
 }
 /* Slot-by-slot, because "you're projected 118 to 105" doesn't tell you where the game is won.
    Each row is the same lineup position on both sides with the gap between them. */
