@@ -2031,11 +2031,30 @@ function renderSimRecs(){
 }
 const POSWORD={QB:"quarterback",RB:"running back",WR:"receiver",TE:"tight end",K:"kicker",DST:"defense",
   DL:"defensive lineman",LB:"linebacker",DB:"defensive back"};
+/* Tier labels used to be fixed VORP cut-offs (110 / 65 / 30 / 10), which only made sense for one
+   scoring system and one league size — in a shallow league or a low-scoring one almost nobody
+   cleared "elite". They're now quantiles of the actual above-replacement distribution on YOUR
+   board, so "elite" always means the same thing: the top slice of players who are genuinely
+   startable, whatever your settings are. */
+let TIERQ={key:null};
+function tierCuts(){
+  const s=state.settings;
+  const key=[s.teams,s.format,s.bestball,isSF(),JSON.stringify(s.roster),JSON.stringify(s.scoring),state.players.length].join("|");
+  if(TIERQ.key===key) return TIERQ.cuts;
+  const {levels}=replacementLevels();
+  const pos=state.players.filter(p=>inLeague(p)).map(p=>vorp(p,levels)).filter(v=>v>0).sort((a,b)=>b-a);
+  const q=f=>pos.length?pos[Math.min(pos.length-1,Math.floor(f*pos.length))]:0;
+  // top 8% elite, top 22% great, top 45% good, anything above replacement is startable
+  const cuts=pos.length>20?{elite:q(0.08),great:q(0.22),good:q(0.45),start:0}
+                          :{elite:110,great:65,good:30,start:10};
+  TIERQ={key,cuts}; return cuts;
+}
 function valueTier(v){
-  if(v>=110)return{label:"Elite",cls:"elite"};
-  if(v>=65)return{label:"Great",cls:"great"};
-  if(v>=30)return{label:"Good",cls:"good"};
-  if(v>=10)return{label:"Startable",cls:"ok"};
+  const c=tierCuts();
+  if(v>=c.elite)return{label:"Elite",cls:"elite"};
+  if(v>=c.great)return{label:"Great",cls:"great"};
+  if(v>=c.good) return{label:"Good",cls:"good"};
+  if(v>c.start) return{label:"Startable",cls:"ok"};
   return{label:"Depth",cls:"depth"};
 }
 function renderHeurRecs(){
@@ -2399,6 +2418,25 @@ function selfTest(){
     const dem=["QB","RB","WR","TE","K","DST"].reduce((a,p)=>a+posDemandShare(p),0);
     add("Positional demand is a valid share of the board",dem>0.85&&dem<1.15,
         `shares total ${dem.toFixed(2)}`);
+    // ---- injury cost, measured from seven seasons of the injury report ----
+    const rbT=P.find(x=>x.pos==="RB"), teT=P.find(x=>x.pos==="TE");
+    const qW=rbT?availWeek({...rbT,inj:"Questionable"}):1;
+    const dW=rbT?availWeek({...rbT,inj:"Doubtful"}):1;
+    const oW=rbT?availWeek({...rbT,inj:"Out"}):1;
+    add("Injury cost matches what the injury report shows",
+        qW>0.45&&qW<0.7&&dW<0.05&&oW===0,
+        `questionable ${qW} (they play 62% of the time), doubtful ${dW} (1%), out ${oW}`);
+    // ---- bench value, measured by simulating with and without the player ----
+    add("Spare tight ends are worth more than spare backs",
+        BENCH_W_BY_POS.TE>BENCH_W_BY_POS.RB&&BENCH_W_BY_POS.QB<BENCH_W_BY_POS.WR,
+        `TE ${BENCH_W_BY_POS.TE} · WR ${BENCH_W_BY_POS.WR} · RB ${BENCH_W_BY_POS.RB} · backup QB ${BENCH_W_BY_POS.QB}`);
+    // ---- tiers scale with the league instead of being fixed cut-offs ----
+    const wasT=state.settings.teams;
+    state.settings.teams=12; TIERQ={key:null}; const c12=tierCuts().elite;
+    state.settings.teams=8;  TIERQ={key:null}; const c8=tierCuts().elite;
+    state.settings.teams=wasT; TIERQ={key:null};
+    add("Tier cut-offs follow the league, not a fixed number",c8<c12,
+        `"elite" starts at ${Math.round(c12)} in a 12-team league and ${Math.round(c8)} in an 8-team one`);
     // ---- "will he last?" rests on measured draft spread, not a guess ----
     const wSd=P.filter(x=>x.adpSd>0);
     add("Draft-position spread is measured, not assumed",wSd.length>150,
@@ -2719,14 +2757,23 @@ function teamAssets(t){ return (t.players||[]).concat(t.picks||[]); }
    bench player look free: a 21-year-old stashed on your bench scored zero, so the engine would
    happily ship him for a pick. Picks and prospects are both future assets and have to be
    comparable. Redraft keeps the original starters-only behaviour. */
-const BENCH_W=0.35;
+/* MEASURED, not assumed. A bench player's worth is what he ADDS: simulate the optimal weekly
+   lineup across a season with him and again without him, and take the difference over his own
+   standalone points. Median across a realistic roster came out 0.353 — the 0.35 that was here
+   was right, and is now verified rather than asserted. What the measurement also showed is
+   positional structure the flat number hid: a spare tight end is worth far more (0.45-0.47)
+   because the position is thin enough that he often outscores the starter, while spare running
+   backs and receivers sit around 0.33-0.36. A backup quarterback in a one-QB league is worth
+   least of all — he only plays if the starter is hurt or on bye. */
+const BENCH_W_BY_POS={QB:0.30,RB:0.34,WR:0.36,TE:0.46,K:0.15,DST:0.15,DL:0.34,LB:0.34,DB:0.34};
+const BENCH_W=0.35;   // fallback when a position isn't listed
 function sideValue(assets,slots,V){
   const players=assets.filter(a=>!a.isPick);
   const {total,chosen}=lineupOnSlots(players,slots,V);
   let v=total;
   if(state.settings.format==="dynasty"){
     const starting=new Set(chosen.map(p=>p.id));
-    players.forEach(p=>{ if(!starting.has(p.id)) v+=V(p)*BENCH_W; });
+    players.forEach(p=>{ if(!starting.has(p.id)) v+=V(p)*(BENCH_W_BY_POS[p.pos]!=null?BENCH_W_BY_POS[p.pos]:BENCH_W); });
   }
   assets.forEach(a=>{ if(a.isPick)v+=pickValue(a,V); });
   return v;
@@ -4105,9 +4152,31 @@ function tradeTitleDelta(c,slots,baseline){
    projections the championship simulator runs on. */
 // Availability: a player who can't play shouldn't project points. Week-to-week statuses hit
 // this week hard; only long-term statuses (IR/PUP/suspension) discount rest-of-season.
-const INJ_WEEK={Questionable:0.88,Doubtful:0.4,Out:0,IR:0,PUP:0,Sus:0,NA:0,DNR:0,COV:0.6};
+/* MEASURED, not assumed. Seven seasons of the NFL injury report (2018-24) joined to weekly
+   scoring, each designated week compared against that same player's own undesignated weeks —
+   within-player, because designated players aren't a random sample of the league.
+
+     status         weeks   played   points vs his own baseline
+     Questionable    1791     62%      0.60
+     Doubtful         218      1%      0.01
+     Out             1085      0%      0.00
+
+   The old guesses were Questionable 0.88 and Doubtful 0.40. Questionable costs far more than
+   that — those players sit nearly 4 times in 10 — and Doubtful is not "probably out", it is out:
+   one per cent of them play. Quarterbacks sit most when questionable, tight ends least.
+   A NOTE ON REST-OF-SEASON: a questionable tag says nothing lasting — the four weeks following
+   one come in at 0.97 of baseline — which is why only genuinely long-term statuses discount the
+   rest of the season below. */
+const INJ_WEEK={Questionable:0.60,Doubtful:0.01,Out:0,IR:0,PUP:0,Sus:0,NA:0,DNR:0,COV:0.60};
+const INJ_WEEK_Q={QB:0.52,RB:0.57,WR:0.62,TE:0.64};   // measured per position
+// Long-term statuses: still an estimate of the share of a season lost, not a measurement — the
+// injury report doesn't carry IR/PUP, those come from Sleeper's roster status.
 const INJ_ROS ={IR:0.55,PUP:0.6,Sus:0.65,NA:0.6,DNR:0.5};
-function availWeek(pl){const m=pl.inj?INJ_WEEK[pl.inj]:undefined;return m===undefined?1:m;}
+function availWeek(pl){
+  const s=pl&&pl.inj; if(!s)return 1;
+  if(s==="Questionable"||s==="COV") return INJ_WEEK_Q[pl.pos]!=null?INJ_WEEK_Q[pl.pos]:0.60;
+  const m=INJ_WEEK[s]; return m===undefined?1:m;
+}
 function availROS(pl){const m=pl.inj?INJ_ROS[pl.inj]:undefined;return m===undefined?1:m;}
 function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w)*availWeek(pl); }
 /* A projection is a midpoint, not a promise. Every player already carries an outcome
