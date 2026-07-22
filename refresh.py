@@ -10,7 +10,7 @@ Run it and leave it: it refreshes every REFRESH_HOURS and pushes only when data 
 First run downloads a bit; after that each cycle is ~30-60s.
 Requires: pip install pandas numpy   (git must be installed and the repo already set up)
 """
-import urllib.request, urllib.error, json, re, time, subprocess, os, sys, traceback
+import urllib.request, urllib.error, json, re, time, subprocess, os, sys, traceback, csv
 
 # ---------- config ----------
 HERE      = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +38,8 @@ ALIAS={"LA":"LAR","STL":"LAR","SD":"LAC","OAK":"LV","WSH":"WAS","JAC":"JAX"}
 def std(t): return ALIAS.get(t,t)
 
 # ---------- live pulls ----------
+BASE=json.load(open(os.path.join(HERE,"base.json"),encoding="utf-8"))
+
 def pull_ffc():
     out={}; drafts=0
     for fmt in ("ppr","2qb"):
@@ -93,8 +95,29 @@ def pull_sleeper_weekly():
                 if pts is not None: e["wk"][w]=round(float(pts),2)
             time.sleep(0.2)
         except Exception as ex: log("  Sleeper wk",w,"fail:",ex)
+    """Correct the measured bias before anything downstream sees it.
+
+    tools_beat.py compared Sleeper's own archived weekly projections against nflverse actuals,
+    fitted a per-position offset on 2021-23 and tested it on 2024 without ever fitting to it:
+    mean absolute error 5.285 -> 5.210 and correlation 0.553 -> 0.560. Small, but real, free, and
+    in the right direction. Quarterbacks carry nearly all of it — projected about four points a
+    week too high, which an older independent calibration also found at -4.6 a season, so two
+    separate measurements agree on the sign and rough size.
+
+    Shrinking projections toward the positional mean was tested at the same time and made things
+    WORSE out of sample (+0.57%), so it is deliberately not applied. Weekly consensus turns out
+    not to be over-dispersed, which is the opposite of the textbook expectation and the reason
+    this is applied rather than assumed."""
+    PF=(BASE.get("PROJFIX") or {}).get("bias") or {}
+    for (pos,key),e in out.items():
+        b=PF.get(pos)
+        # Only inside the range it was fitted on. The offset was measured on projections of 3+
+        # points, so applying it to a backup projected for 2 is extrapolation — and with the QB
+        # offset near -4 it drove them to zero, which dropped ten players out of the pool
+        # entirely. Faded in across the boundary so there's no cliff at exactly 3.
+        if b: e["wk"]=[round(v+b*min(1.0,max(0.0,(v-3.0)/3.0)),2) if v>3 else v for v in e["wk"]]
     for e in out.values(): e["season"]=round(sum(e["wk"][1:19]),1); e["wk"]=e["wk"][1:19]
-    log(f"  Sleeper weekly: {len(out)}")
+    log(f"  Sleeper weekly: {len(out)}" + (f" (bias-corrected: {PF})" if PF else ""))
     return out
 
 def _espn_call(filt):
@@ -330,6 +353,33 @@ def pull_kickoffs():
     except Exception as ex:
         log("  kickoff pull failed:",ex); return None
 
+def archive_projections(players):
+    """Snapshot what we projected, before the games are played.
+
+    The whole reason "can we beat consensus" went unanswered for so long is that nobody keeps the
+    forecast — you can always find out what happened, never what was predicted. Sleeper happens to
+    serve its own history, which is how tools_beat.py got a test at all, but that is luck and it is
+    one provider. This keeps our own, weekly, so that in a season's time there is a real archive to
+    fit and test against instead of borrowing someone else's.
+
+    Append-only, one row per player per snapshot. Small: a few hundred KB a season.
+    """
+    try:
+        path=os.path.join(HERE,"proj_archive.csv")
+        new=not os.path.exists(path)
+        stamp=time.strftime("%Y-%m-%d")
+        with open(path,"a",newline="",encoding="utf-8") as f:
+            w=csv.writer(f)
+            if new: w.writerow(["date","season","name","pos","team","proj","espn","sleeper","adp"])
+            for p in players:
+                c=p.get("cons") or {}
+                w.writerow([stamp,SEASON,p["name"],p["pos"],p.get("team",""),
+                            round(sum(p.get("wk") or [0]),1) if p.get("wk") else "",
+                            c.get("e",""),c.get("k",""),p.get("adp","")])
+        log(f"  archived {len(players)} projections -> proj_archive.csv")
+    except Exception as ex:
+        log("  archive failed:",ex)
+
 def build_data():
     base=json.load(open(os.path.join(HERE,"base.json"),encoding="utf-8"))
     FACT=base["DIST_FACTORS"]; BANDW=base.get("BANDW",8); TEMPL=base["STAT_TEMPLATE"]
@@ -525,6 +575,8 @@ def build_data():
     # because it matches the team code we already store.
     for p in players:
         if p["pos"]=="DST" and p.get("team"): p["name"]=f'{p["team"]} Defense'
+
+    archive_projections(players)
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,
