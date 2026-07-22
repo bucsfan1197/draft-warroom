@@ -2161,6 +2161,18 @@ function selfTest(){
     const dear =keeperSurplus(kp,{kind:"round",round:1 },{max:3,esc:0,years:1}).total;
     add("The same player is worth more at a cheaper keeper cost",cheap>dear,
         kp?`${kp.name}: +${Math.round(cheap)} at R10 vs +${Math.round(dear)} at R1`:"");
+    /* Scale-consistency guard. Mixing pts() with valueOf-based replacement levels has now caused
+       two separate bugs (the team report, then this pick board). If the scales ever drift apart
+       again the count of above-replacement players collapses, so check it directly — and check
+       it with best ball ON, which is where the two scales diverge most. */
+    const wasBB=state.settings.bestball;
+    const posCount=()=>{PICKVAL={key:null};return pickValueTable().board.filter(x=>x.v>0).length;};
+    const starters=(()=>{const b=replacementLevels().base;return b.QB+b.RB+b.WR+b.TE;})();
+    const n1=posCount(); state.settings.bestball=true; const n2=posCount();
+    state.settings.bestball=wasBB; PICKVAL={key:null};
+    add("Pick values use one consistent value scale",
+        n1>starters*0.7&&n2>starters*0.7,
+        `${n1} above replacement (${n2} in best ball) vs ${starters} league starters`);
     const kl=parseKeeperLine("Puka Nacua 8"), kl2=parseKeeperLine("Jayden Daniels $34");
     add("Keeper lines parse (round and salary)",
         kl&&kl.cost===8&&kl.kind==="round"&&/nacua/i.test(kl.name)
@@ -2891,8 +2903,11 @@ function pickValueTable(){
      because ADP and value disagree (an early quarterback carries almost no value over
      replacement in a 1QB league and dragged its neighbourhood down). Ranking by value is both
      monotone by construction and the honest statement of what a pick buys. */
+  // MUST use vorp()/valueOf, not pts — replacement levels live on the valueOf scale, and in
+  // best ball (ceiling-tilted) or dynasty they are not the same number. Mixing them collapsed
+  // this board to 37 positive players and made every late pick look free.
   const board=state.players.filter(p=>p.pos!=="K"&&p.pos!=="DST")
-    .map(p=>({p,v:Math.max(0,pts(p)-(levels[p.pos]||0))}))
+    .map(p=>({p,v:Math.max(0,vorp(p,levels))}))
     .sort((a,b)=>b.v-a.v);
   PICKVAL={key,board};
   return PICKVAL;
@@ -2914,7 +2929,7 @@ function auctionValueAt(dollars){
   let best=0;
   state.players.forEach(p=>{
     if(p.pos==="K"||p.pos==="DST")return;
-    if(A.val(p)<=dollars) best=Math.max(best,Math.max(0,pts(p)-(levels[p.pos]||0)));
+    if(A.val(p)<=dollars) best=Math.max(best,Math.max(0,vorp(p,levels)));
   });
   return best;
 }
@@ -2932,7 +2947,7 @@ function roundHitRate(round){
    because a surplus three years out is worth less than one now. */
 function keeperSurplus(pl,cost,cfg){
   const {levels}=replacementLevels();
-  const base=Math.max(0,pts(pl)-(levels[pl.pos]||0));
+  const base=Math.max(0,vorp(pl,levels));      // same scale as the pick board
   const years=Math.max(1,Math.min(4,cfg.years||1));
   const auction=cost.kind==="auction";
   const rows=[]; let total=0;
