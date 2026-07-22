@@ -141,6 +141,29 @@
                  color:var(--ink-2);background:var(--panel-2);width:52px}
   .lcmp .lc-nm{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lcmp td.won{font-weight:800;color:var(--good-ink)}
+  .mchartwrap{margin-top:18px}
+  .mchart{width:100%;height:104px;display:block;overflow:visible}
+  .mc-win{fill:color-mix(in srgb,var(--good) 26%,transparent)}
+  .mc-lose{fill:color-mix(in srgb,var(--crit) 20%,transparent)}
+  .mc-line{fill:none;stroke:var(--ink-2);stroke-width:1.5;vector-effect:non-scaling-stroke;opacity:.65}
+  .mc-zero{stroke:var(--ink);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-dasharray:3 3;opacity:.55}
+  .mchart-lab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-2);margin-top:2px}
+  .mchart-lab .mc-tie{font-weight:700}
+  .needline{display:block;font-size:10.5px;color:var(--ink-2);line-height:1.3}
+  .ssrow{display:grid;grid-template-columns:1fr auto;gap:4px 14px;padding:9px 0;border-bottom:1px solid var(--line);align-items:center}
+  .ssrow:last-of-type{border-bottom:none}
+  .ssmove{font-size:13.5px} .ssrow .meta{font-size:11.5px}
+  .ssgain{grid-row:1/3;grid-column:2;text-align:right;white-space:nowrap}
+  .ssgain b{display:block;font-size:17px;color:var(--good-ink);font-variant-numeric:tabular-nums}
+  .levrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .levbox{border:1px solid var(--line);border-radius:11px;padding:12px;text-align:center;background:var(--panel-2)}
+  .levbox.win{border-color:color-mix(in srgb,var(--good) 45%,transparent);
+              background:color-mix(in srgb,var(--good) 9%,transparent)}
+  .levbox.lose{border-color:color-mix(in srgb,var(--crit) 45%,transparent);
+               background:color-mix(in srgb,var(--crit) 9%,transparent)}
+  .levnum{font-size:27px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.15}
+  .levbox.win .levnum{color:var(--good-ink)} .levbox.lose .levnum{color:var(--crit-ink)}
+  @media(max-width:620px){.levrow{grid-template-columns:1fr}}
   .swingrow{display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--line)}
   .swingrow:last-child{border-bottom:none}
   .swname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
@@ -651,6 +674,18 @@
       <div class="hd"><h2>Who actually decides this game</h2>
         <span class="pickcounter" style="margin-left:auto">Not the same as who scores most</span></div>
       <div class="bd"><div id="mSwing"></div></div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Start / sit</h2>
+        <span class="pickcounter" style="margin-left:auto">Judged on winning, not on points</span></div>
+      <div class="bd"><div id="mStartSit"></div></div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>What this game is worth</h2>
+        <span class="pickcounter" style="margin-left:auto" id="mLevCtx"></span></div>
+      <div class="bd"><div id="mLeverage"></div></div>
     </div>
 
     <div class="panel" style="margin-top:16px">
@@ -2807,6 +2842,29 @@ function selfTest(){
     const iSteady=swTest.findIndex(x=>x.pl.name==="steady"), iVol=swTest.findIndex(x=>x.pl.name==="volatile");
     add("Swing measures volatility, not just points",iVol<iSteady,
         `the boom-or-bust 11-pt WR outranks the steady 14-pt TE (${iVol+1} vs ${iSteady+1} of ${swTest.length})`);
+    /* "What do I need from him" must be about HIM. The first version let the rest of the lineup
+       vary along with the bar, which made the answer circular — every player came back at exactly
+       the team's win probability, nine rows of the same number dressed up as per-player insight.
+       A spread across players is the evidence that the figure carries information. */
+    const needA=[...Array(6)].map((_,i)=>mkU(9+i*2,0.4+i*0.15));
+    needA.forEach((u,i)=>u.pl={name:"n"+i,pos:"WR"});
+    // The opponent has to be a real opponent. Pitching this lineup (84 projected) against a
+    // 60-point one makes every bar negative and every answer "100%", which says nothing about
+    // whether the figure is per-player — it only says the game was already over.
+    const needOpp=[...Array(6)].map(()=>mkU(14,0.6));
+    const needs=needA.map((_,i)=>needFrom(needA,i,needOpp,3000));
+    const spread=Math.max(...needs.map(x=>x.p))-Math.min(...needs.map(x=>x.p));
+    /* The real spread here is ~10 points and the circular version's is ~2, so the threshold sits
+       between them rather than on top of the value being measured. At 0.10 this failed
+       intermittently on sampling noise alone — a test that flickers teaches you to ignore it. */
+    add("What you need from a player is about that player",spread>0.06,
+        `his own odds of clearing the bar range ${Math.round(Math.min(...needs.map(x=>x.p))*100)}–${Math.round(Math.max(...needs.map(x=>x.p))*100)}% across the lineup`);
+    /* The margin chart's axis is symmetric about zero, so a close game can't be made to look
+       lopsided by one freak simulation setting the scale. */
+    const mc=marginChart(simMatchup(evenA,evenA.map(u=>({...u})),1200).margin,0.5);
+    const zm=/x1="([\d.]+)"/.exec(mc), wm=/viewBox="0 0 (\d+)/.exec(mc);
+    add("The margin chart is centred on a tie",zm&&wm&&Math.abs(+zm[1]-(+wm[1])/2)<1,
+        zm&&wm?`zero sits at ${(+zm[1]).toFixed(0)} of ${wm[1]}px`:"chart did not render");
     /* Two hard conservation laws on the season sim: the playoff odds across the league must add
        up to the number of playoff spots, and every game played hands out exactly one win. */
     const SS=simSeason(200), SCk=seasonSchedule();
@@ -5053,18 +5111,76 @@ function drawScore(units){
 /* Win probability by simulation. Ties are a real fantasy outcome and most leagues score them as
    half a win, so they're counted rather than silently awarded to one side. */
 function simMatchup(unitsA,unitsB,iters){
-  const N=iters||2500; let win=0,tie=0; const sa=[],sb=[];
+  const N=iters||2500; let win=0,tie=0; const sa=[],sb=[],mg=[];
   for(let i=0;i<N;i++){
     const a=drawScore(unitsA), b=drawScore(unitsB);
-    sa.push(a); sb.push(b);
+    sa.push(a); sb.push(b); mg.push(a-b);
     if(Math.abs(a-b)<0.05)tie++; else if(a>b)win++;
   }
   sa.sort((x,y)=>x-y); sb.sort((x,y)=>x-y);
   const q=(arr,p)=>arr[Math.min(arr.length-1,Math.max(0,Math.round(p*(arr.length-1))))];
   const mean=arr=>arr.reduce((s,v)=>s+v,0)/arr.length;
-  return {p:(win+tie/2)/N, tie:tie/N,
+  return {p:(win+tie/2)/N, tie:tie/N, margin:mg,
     a:{mean:mean(sa),lo:q(sa,.1),hi:q(sa,.9),med:q(sa,.5)},
     b:{mean:mean(sb),lo:q(sb,.1),hi:q(sb,.9),med:q(sb,.5)}};
+}
+/* The margin curve: your score minus theirs, with everything right of zero being a win.
+   Two projected totals side by side make a 4-point edge look decisive. One curve centred near
+   zero shows what it really is — the width dwarfs the gap, and the shaded area IS the win
+   probability rather than a number you're asked to trust. It also reads correctly when the two
+   totals are far apart, which overlapping score curves don't. */
+function marginChart(margins,p){
+  if(!margins||!margins.length)return "";
+  /* Clip the axis to the 1st–99th percentile and make it symmetric about zero. Using the raw
+     min and max let a couple of freak simulations set the scale — the first version drew an axis
+     from -173 to +305 and squashed the entire distribution into a spike. Symmetry matters too:
+     an axis that runs further one way than the other makes a close game look lopsided before
+     you've read a single number. Outliers are folded into the end bins, not dropped. */
+  const s=[...margins].sort((a,b)=>a-b);
+  const qq=p=>s[Math.min(s.length-1,Math.max(0,Math.round(p*(s.length-1))))];
+  const reach=Math.max(Math.abs(qq(.01)),Math.abs(qq(.99)),5);
+  const lo=-reach, hi=reach;
+  const span=hi-lo, BINS=46, bin=new Array(BINS).fill(0);
+  margins.forEach(m=>bin[Math.min(BINS-1,Math.max(0,Math.floor((m-lo)/span*BINS)))]++);
+  const mx=Math.max(...bin), W=560, H=104, zx=(0-lo)/span*W;
+  const pt=(i,v)=>`${(i+0.5)/BINS*W},${H-(v/mx)*(H-8)}`;
+  const line=bin.map((v,i)=>pt(i,v)).join(" ");
+  // the winning half of the curve, clipped at the zero line
+  const winSide=`0,${H} ${line} ${W},${H}`;
+  return `<svg class="mchart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+      aria-label="Distribution of your margin of victory; ${Math.round(p*100)} percent of outcomes are a win">
+    <defs><clipPath id="winclip"><rect x="${zx}" y="0" width="${W-zx}" height="${H}"/></clipPath>
+           <clipPath id="loseclip"><rect x="0" y="0" width="${zx}" height="${H}"/></clipPath></defs>
+    <polygon points="${winSide}" class="mc-win" clip-path="url(#winclip)"/>
+    <polygon points="${winSide}" class="mc-lose" clip-path="url(#loseclip)"/>
+    <polyline points="${line}" class="mc-line"/>
+    <line x1="${zx}" y1="0" x2="${zx}" y2="${H}" class="mc-zero"/>
+  </svg>
+  <div class="mchart-lab"><span>you lose by ${Math.round(-lo)}</span><span class="mc-tie">tie</span><span>you win by ${Math.round(hi)}</span></div>`;
+}
+/* "What do I need from him?" — the question every manager actually asks, and per the market
+   scan the single biggest hole in this category: live win probability exists in several places,
+   but every one shows only a level, never the inverse.
+   In each simulated week, hold everyone else as drawn and ask what THIS player would have had to
+   score for the week to flip. The median of those thresholds is what you need from him; how often
+   he clears it is how likely you are to get it. */
+function needFrom(units,idx,unitsB,iters){
+  /* Everyone ELSE is held at what they're projected to do, which is what "what do I need from
+     him" means when a manager asks it. Letting the rest of the lineup vary too was the first
+     version and it was circular: the bar then moves with the same randomness that decides the
+     game, so every player came back at exactly the team's win probability — nine rows all
+     reading 60%, carrying no information about any individual. Holding the rest fixed makes the
+     bar a real number he has to clear, and the probability his own. */
+  const N=iters||1500;
+  let rest=0;
+  for(let k=0;k<units.length;k++) if(k!==idx) rest+=units[k].base*units[k].mult;
+  const oppExp=unitsB.reduce((s,u)=>s+u.base*u.mult,0);
+  const bar=oppExp-rest;
+  const u=units[idx]; let got=0;
+  for(let i=0;i<N;i++){
+    if(u.base*u.mult*seasonFactor(u.sd)*weekFactor(u.cv)>bar)got++;
+  }
+  return {need:bar,p:got/N};
 }
 /* Which players actually decide this game.
    Research kept turning up the same hole: every site tells you your projected total, none tells
@@ -5161,6 +5277,85 @@ function simSeason(iters){
     games:SC.weeks.reduce((n,wk)=>n+(wk.pairs.some(p=>p.includes(i))?1:0),0)}));
   SEASONSIM={key,val}; return val;
 }
+function canFill(pos,slot){
+  if(slot==="FLEX")return FLEX_POS.includes(pos);
+  if(slot==="SUPERFLEX")return SUPER_POS.includes(pos);
+  if(slot==="IDP_FLEX")return IDP_POS.includes(pos);
+  return pos===slot;
+}
+/* Start/sit that optimises for WINNING rather than for points.
+   fillLineup picks the highest projected total, and every lineup tool on the market does the
+   same. But the highest total isn't always the best lineup for the game in front of you. Down
+   against a strong opponent you need variance — a boom-or-bust receiver projected two points
+   lower is the right start because he's the one who can actually reach the number you need.
+   Comfortably ahead of a weak team you want the opposite: take the floor and don't hand back a
+   game you should win. That distinction only exists once you have a probability rather than a
+   projected score, which is why nobody who ships a single number can offer it.
+   Each candidate swap is measured against the SAME simulated opponent weeks (common random
+   numbers), so a small edge isn't just sampling noise. */
+function startSitAdvice(A,unitsB,iters){
+  const N=iters||1200;
+  // Same shape on every path. Returning a bare [] here was truthy, so the caller sailed past its
+  // null check and then read .moves off an array — crashing the tab for anyone with an empty
+  // bench, which is everyone until a draft is a few rounds old.
+  if(!A.starters.length||!A.bench.length)return {base:0,moves:[]};
+  const oppDraws=[]; for(let i=0;i<N;i++)oppDraws.push(drawScore(unitsB));
+  const winRate=units=>{
+    let w=0;
+    for(let i=0;i<N;i++) if(drawScore(units)>oppDraws[i])w++;
+    return w/N;
+  };
+  const base=winRate(A.starters);
+  const out=[];
+  A.bench.forEach(b=>{
+    A.starters.forEach((s,i)=>{
+      if(!canFill(b.pl.pos,s.slot))return;
+      if(b.pl.id===s.pl.id)return;
+      const alt=[...A.starters]; alt[i]={...b,slot:s.slot};
+      const p=winRate(alt);
+      out.push({inPl:b.pl,outPl:s.pl,slot:s.slot,gain:p-base,
+        projDelta:(b.base*b.mult)-(s.base*s.mult)});
+    });
+  });
+  return {base,moves:out.sort((x,y)=>y.gain-x.gain)};
+}
+/* How much this one game is worth to your season. "Win and you're at 94%, lose and you're at 81%"
+   is the context every matchup screen leaves out — they show you the game or the standings, never
+   the bridge between them. */
+function weekLeverage(me,week,iters){
+  const S=simSeason(iters||300);
+  const cur=S[me]?S[me].playoff:0;
+  const forced=res=>{
+    const T=state.settings.teams, SC=seasonSchedule(), N=iters||300;
+    const rosters=[...Array(T).keys()].map(teamRoster);
+    const U={}; SC.weeks.forEach(w=>{U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters);});
+    const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
+    let made=0;
+    for(let it=0;it<N;it++){
+      const w=new Array(T).fill(0), pf=new Array(T).fill(0);
+      SC.weeks.forEach(wk=>wk.pairs.forEach(([a,b])=>{
+        let sa,sb;
+        if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){sa=wk.done[a];sb=wk.done[b];}
+        else {sa=drawScore(U[wk.week][a]||[]);sb=drawScore(U[wk.week][b]||[]);}
+        /* The week in question is pinned to the result being tested; every other week plays out
+           normally. Pin by SWAPPING the two drawn scores when the outcome doesn't match, rather
+           than by inflating the winner — points-for is the standings tiebreak, so manufacturing
+           an extra-large score would quietly improve my seeding on top of the win being tested,
+           and the whole point is to isolate the win. */
+        if(wk.week===week&&(a===me||b===me)){
+          const iAmA=(a===me), meWon=iAmA?(sa>sb):(sb>sa);
+          if(meWon!==(res==="W")){ const t=sa; sa=sb; sb=t; }
+          if(sa===sb){ if((res==="W")===iAmA)sa+=0.1; else sb+=0.1; }
+        }
+        pf[a]+=sa;pf[b]+=sb;
+        if(sa>sb)w[a]++;else if(sb>sa)w[b]++;else{w[a]+=.5;w[b]+=.5;}
+      }));
+      if([...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])).slice(0,nSeeds).includes(me))made++;
+    }
+    return made/N;
+  };
+  return {cur,win:forced("W"),lose:forced("L")};
+}
 /* Plain English for a probability. A number alone invites false precision — "63%" reads as a
    promise, "leaning your way" reads as what it is. */
 function oddsWord(p){
@@ -5220,6 +5415,10 @@ function renderMatchups(){
         <div class="meta">most likely ${fmt(sim.b.lo)} – ${fmt(sim.b.hi)}</div>
         ${bandBar(sim.b,"theirs")}
       </div></div>
+      <div class="mchartwrap">${marginChart(sim.margin,sim.p)}
+        <div class="meta" style="margin-top:4px">Every simulated version of this week, by how much you win or lose.
+        The shaded green area <b>is</b> the ${pct}% — not a number you're asked to take on trust.
+        Notice how wide it is next to a ${fmt(Math.abs(sim.a.mean-sim.b.mean))}-point projected gap.</div></div>
       ${lineupCompare(A,B,opp)}`;
 
   /* The old tab said "W" whenever the projection was higher, which is the single most misleading
@@ -5241,13 +5440,67 @@ function renderMatchups(){
     :`<p class="meta" style="margin:0 0 10px">Each bar is how far your win probability moves between this player having a bad day and a good one.
       A big projection isn't the same as a big influence — the game turns on the players whose range is widest,
       because that's where the outcome is still undecided.</p>`
-    +top.slice(0,8).map(x=>`<div class="swingrow">
+    +top.slice(0,8).map(x=>{
+        const i=A.starters.findIndex(u=>u.pl.id===x.pl.id);
+        const nd=i>=0?needFrom(A.starters,i,B.starters,1200):null;
+        return `<div class="swingrow">
         <span class="pos ${x.pl.pos}">${x.slot==="FLEX"||x.slot==="SUPERFLEX"?x.slot.slice(0,4):x.pl.pos}</span>
-        <span class="swname">${x.pl.name} ${injChip(x.pl)}</span>
+        <span class="swname">${x.pl.name} ${injChip(x.pl)}
+          ${nd?`<span class="needline">${nd.need<=0
+              ?`the rest of your lineup already covers it — anything he adds is cushion`
+              :`needs <b>${fmt(nd.need)}</b> if everyone else scores as projected — he clears that ${Math.round(nd.p*100)}% of the time`}</span>`:""}</span>
         <span class="meta num">${fmt(x.proj)} proj</span>
         <span class="swbar"><span style="width:${x.swing/mx*100}%"></span></span>
-        <b class="num">${Math.round(x.swing*100)}%</b></div>`).join("")
-    +`<div class="meta" style="margin-top:8px">Read it as: if <b>${top[0].pl.name}</b> has a good day rather than a bad one, your chance of winning moves about <b>${Math.round(top[0].swing*100)} points</b>.</div>`;
+        <b class="num">${Math.round(x.swing*100)}%</b></div>`;}).join("")
+    +`<div class="meta" style="margin-top:8px">Read it as: if <b>${top[0].pl.name}</b> has a good day rather than a bad one, your chance of winning moves about <b>${Math.round(top[0].swing*100)} points</b>.
+      "Needs" is what he has to score for the week to flip, with everyone else playing out normally.</div>`;
+
+  /* Points left on the bench. The market scan calls this table stakes — Fleaflicker puts an
+     "Optimum" line directly under the score and it's the best treatment out there — and we had
+     nothing. Before kickoff it's a lineup warning; afterwards it's the "should have started" line. */
+  const bestPossible=(()=>{
+    const all=[...A.starters,...A.bench];
+    const {slots}=fillLineup(all.map(u=>u.pl));
+    return slots.reduce((s,x)=>{ if(!x.pl)return s;
+      const u=all.find(y=>y.pl.id===x.pl.id); return s+(u?u.base*u.mult:0); },0);
+  })();
+  const nowProj=A.starters.reduce((s,u)=>s+u.base*u.mult,0);
+  if(!played&&bestPossible>nowProj+0.05){
+    $("#mSwing").insertAdjacentHTML("beforeend",
+      `<div class="note warn-note" style="margin-top:12px">Your lineup projects <b>${fmt(nowProj)}</b> but your roster can reach <b>${fmt(bestPossible)}</b> —
+       <b>${fmt(bestPossible-nowProj)} points are sitting on your bench.</b> Check Start / sit below.</div>`);
+  }
+
+  // ---- start / sit ----
+  const ss=played?null:startSitAdvice(A,B.starters,1200);
+  const helpful=ss?ss.moves.filter(m=>m.gain>0.005):[];
+  $("#mStartSit").innerHTML=played?`<div class="meta">Week ${wk} is already final.</div>`
+    :!ss||!ss.moves.length?`<div class="emptystate">Once you have players on the bench, every legal swap gets checked here.</div>`
+    :!helpful.length?`<p class="meta" style="margin:0">Your best lineup by projected points is also your best lineup for winning this particular game — no swap improves your odds. That is the normal case, and worth knowing rather than guessing at.</p>`
+    :`<p class="meta" style="margin:0 0 10px">Every lineup tool picks the highest projected total. That isn't always the best lineup for the game in front of you:
+      when you need points you want the player who <i>can</i> reach them, even if he projects lower. These swaps raise your chance of winning.</p>`
+     +helpful.slice(0,4).map(m=>`<div class="ssrow">
+        <div class="ssmove"><b>Start ${m.inPl.name}</b> <span class="meta">over ${m.outPl.name} at ${m.slot.replace("SUPERFLEX","SFLX")}</span></div>
+        <div class="meta">${m.projDelta<0
+            ?`Gives up ${fmt(-m.projDelta)} projected points, but his range is what this game needs`
+            :`Also projects ${fmt(m.projDelta)} points higher`}</div>
+        <div class="ssgain"><b>+${(m.gain*100).toFixed(1)}%</b><span class="meta">win odds</span></div>
+      </div>`).join("")
+     +`<div class="meta" style="margin-top:8px">Baseline with your current best-by-points lineup: <b>${Math.round(ss.base*100)}%</b>.</div>`;
+
+  // ---- what the game is worth ----
+  const lev=played?null:weekLeverage(me,wk,300);
+  $("#mLevCtx").textContent=played?"":`week ${wk} of ${SC.weeks.length}`;
+  $("#mLeverage").innerHTML=played?`<div class="meta">Week ${wk} is already in the books.</div>`
+    :`<div class="levrow">
+       <div class="levbox win"><div class="eyebrow">If you win</div><div class="levnum">${Math.round(lev.win*100)}%</div><div class="meta">make the playoffs</div></div>
+       <div class="levbox"><div class="eyebrow">Right now</div><div class="levnum">${Math.round(lev.cur*100)}%</div><div class="meta">make the playoffs</div></div>
+       <div class="levbox lose"><div class="eyebrow">If you lose</div><div class="levnum">${Math.round(lev.lose*100)}%</div><div class="meta">make the playoffs</div></div>
+     </div>
+     <div class="meta" style="margin-top:10px">${
+       Math.abs(lev.win-lev.lose)<0.04
+        ? `This one barely moves your season — about <b>${Math.round(Math.abs(lev.win-lev.lose)*100)} points</b> of playoff odds either way. Don't burn a waiver claim on it.`
+        : `This week swings your playoff odds by roughly <b>${Math.round((lev.win-lev.lose)*100)} points</b>. ${lev.win-lev.lose>0.15?"It's one of the big ones.":"Worth a close look at your lineup."}`}</div>`;
 
   // ---- season ----
   const S=simSeason(400), mine=S[me];
