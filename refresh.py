@@ -601,10 +601,15 @@ def write_data_js(data):
 def git_push():
     if not GIT_PUSH: return
     try:
-        st=subprocess.run(["git","-C",HERE,"status","--porcelain","data.js"],capture_output=True,text=True)
+        # data.js drives the site; proj_archive.csv is the season-long forecast record. The archive
+        # is the whole point of the accuracy work — next year's walk-forward test is fit against it —
+        # so it has to leave this machine. It was accumulating locally and never pushed, one disk
+        # failure from gone. Both are backed up now. Trigger on either changing.
+        tracked=["data.js","proj_archive.csv"]
+        st=subprocess.run(["git","-C",HERE,"status","--porcelain",*tracked],capture_output=True,text=True)
         if not st.stdout.strip():
             log("git: no change, nothing to push"); return
-        subprocess.run(["git","-C",HERE,"add","data.js"],check=True)
+        subprocess.run(["git","-C",HERE,"add",*tracked],check=True)
         subprocess.run(["git","-C",HERE,"commit","-m",f"data update {time.strftime('%Y-%m-%d %H:%M')}"],check=True)
         subprocess.run(["git","-C",HERE,"push"],check=True)
         log("git: pushed OK - your live site will update in ~1 min")
