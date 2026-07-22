@@ -57,12 +57,12 @@ def pull_sleeper_players():
     out={}
     try:
         d=getj("https://api.sleeper.app/v1/players/nfl", timeout=90)
-        for p in d.values():
+        for pid,p in d.items():
             if p.get("position") not in ("QB","RB","WR","TE","K"): continue
             nm=p.get("full_name") or ""
             if not nm: continue
             out[norm(nm)]={"name":nm,"pos":p.get("position"),"age":p.get("age"),"team":p.get("team"),
-                           "inj":p.get("injury_status"),"depth":p.get("depth_chart_order")}
+                           "inj":p.get("injury_status"),"depth":p.get("depth_chart_order"),"sid":str(pid)}
         log(f"  Sleeper players: {len(out)}")
     except Exception as ex: log("  Sleeper players fail:",ex)
     return out
@@ -252,6 +252,8 @@ def build_data():
             if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         # injuries / depth
         io=slp.get(k)
+        if io and io.get("sid"): p["sid"]=io["sid"]
+        if pos=="DST": p["sid"]=team
         if io:
             if io.get("inj"): p["inj"]=io["inj"]
             if io.get("depth") is not None: p["depth"]=io["depth"]
@@ -306,6 +308,7 @@ def build_data():
         if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         fa=dist_for(pos,posCount[pos],FACT,BANDW)
         if fa: p["dist"]={"f":fa["f"],"c":fa["c"],"bust":fa["bust"],"boom":fa["boom"]}
+        if info.get("sid"): p["sid"]=info["sid"]
         if info.get("inj"): p["inj"]=info["inj"]
         if info.get("depth") is not None: p["depth"]=info["depth"]
         if ea:
@@ -332,7 +335,7 @@ def build_data():
         posCount["DST"]=posCount.get("DST",0)+1
         p={"id":pid,"name":team+" Defense","pos":"DST","team":team,"bye":BYE.get(team,0),
            "adp":round(300+len(players)*0.2,1),"adpSf":round(300+len(players)*0.2,1),
-           "override":None,"age":27,"stats":{"p":round(seasonPts,1)}}
+           "override":None,"age":27,"sid":team,"stats":{"p":round(seasonPts,1)}}
         if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         players.append(p); pid+=1
     log(f"  pool expanded to {len(players)} players")

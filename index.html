@@ -240,6 +240,7 @@
       <button class="tab" data-tab="backtest">Backtest</button>
       <button class="tab hide" data-tab="dynasty" id="dynastyTabBtn">Dynasty</button>
       <button class="tab" data-tab="season">In-Season</button>
+      <button class="tab" data-tab="trade">Trades</button>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
@@ -396,6 +397,23 @@
   </section>
 
   <!-- DYNASTY TAB -->
+  <!-- TRADE TAB -->
+  <section id="tab-trade" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Trade finder</h2><span id="tradeCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="syncrow">
+          <button class="draftbtn alt" id="tradeLoadBtn">Load my league rosters</button>
+          <select id="tradeLeague" class="hide" style="flex:1;min-width:200px"></select>
+          <select id="tradeMe" class="hide" style="min-width:170px"></select>
+          <button class="draftbtn hide" id="tradeFindBtn">Find trades</button>
+        </div>
+        <div id="tradeStatus" class="meta" style="margin-top:6px">Pulls every manager's real roster from Sleeper, then searches for deals that improve <b>both</b> teams.</div>
+        <div id="tradeResults" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- IN-SEASON TAB -->
   <section id="tab-season" class="hide">
     <div class="panel">
@@ -771,13 +789,13 @@ function buildPlayers(){
     return D.PLAYERS.map((e,i)=>({id:i,name:e.name,pos:e.pos,team:e.team,bye:e.bye||TEAM_BYE[e.team]||0,
       stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,
       dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,
-      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn,usage:e.usage}));
+      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn,usage:e.usage,sid:e.sid}));
   }
   return RAW.map((r,i)=>{const [name,pos,team,,stats]=r;return {id:i,name,pos,team,bye:TEAM_BYE[team]||0,stats:{...stats},adp:i+1,adpSf:i+1,override:null,age:AGE[name]??27};});
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:13},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:14},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -800,13 +818,13 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==13){
+  if(D&&D.PLAYERS&&st.settings._projv!==14){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
-    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.ecr=e.ecr;p.ecrSf=e.ecrSf;p.ecrDyn=e.ecrDyn;p.usage=e.usage;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
-    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn,usage:e.usage});});
-    st.settings._projv=13;
+    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.ecr=e.ecr;p.ecrSf=e.ecrSf;p.ecrDyn=e.ecrDyn;p.usage=e.usage;p.sid=e.sid;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
+    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn,usage:e.usage,sid:e.sid});});
+    st.settings._projv=14;
   }
   return st;
 }
@@ -1771,6 +1789,145 @@ function renderTiers(){
   el.innerHTML+=`<div class="note" style="margin-top:8px">${note||"Tiers are deep — no need to reach yet."}</div>`;
 }
 
+/* ===================== TRADE FINDER =====================
+   Pulls every manager's ACTUAL roster from your Sleeper league, values both sides on the
+   league's real starting slots, searches 1-for-1 / 2-for-1 / 1-for-2 combinations, keeps only
+   deals that improve BOTH teams (so they might actually be accepted), then runs a season
+   simulation on the finalists to show the change in your championship odds. */
+const TRADE={leagueId:null,teams:[],slots:[],me:0,users:{}};
+function tradeStatus(t,c){const e=$("#tradeStatus");if(e){e.innerHTML=t;e.style.color=c||"";}}
+function parseSlots(rp){
+  const map={SUPER_FLEX:"SUPERFLEX",DEF:"DST",WRRB_FLEX:"FLEX",REC_FLEX:"FLEX",IDP_FLEX:null,BN:null,IR:null,TAXI:null};
+  return (rp||[]).map(x=>map[x]===undefined?x:map[x]).filter(Boolean);
+}
+function lineupOnSlots(players,slots,valFn){
+  const used=new Set(); let total=0; const chosen=[];
+  const pick=posList=>{
+    let best=null;
+    players.forEach(p=>{ if(used.has(p.id))return; if(!posList.includes(p.pos))return;
+      if(!best||valFn(p)>valFn(best))best=p; });
+    if(best){used.add(best.id);total+=valFn(best);chosen.push(best);}
+    return best;
+  };
+  slots.filter(s=>!["FLEX","SUPERFLEX"].includes(s)).forEach(s=>pick([s]));
+  slots.filter(s=>s==="FLEX").forEach(()=>pick(FLEX_POS));
+  slots.filter(s=>s==="SUPERFLEX").forEach(()=>pick(SUPER_POS));
+  return {total,chosen};
+}
+function tradeVal(){ return state.settings.format==="dynasty"?(p=>dynValue(p)):(p=>pts(p)); }
+async function tradeLoadLeagues(){
+  const user=($("#syncUser").value||"").trim()||localStorage.getItem("ffwr_syncuser")||"";
+  if(!user){tradeStatus("Add your Sleeper username in League Setup first.","var(--crit)");return;}
+  tradeStatus("Finding your leagues…");
+  try{
+    const u=await SJ(`https://api.sleeper.app/v1/user/${encodeURIComponent(user)}`);
+    let all=[];
+    for(const yr of [String(new Date().getFullYear()),String(new Date().getFullYear()-1)]){
+      try{(await SJ(`https://api.sleeper.app/v1/user/${u.user_id}/leagues/nfl/${yr}`)||[])
+        .forEach(l=>all.push({id:l.league_id,name:`${l.name} (${yr}, ${l.total_rosters}-team)`}));}catch(e){}
+    }
+    if(!all.length){tradeStatus("No leagues found.","var(--warn)");return;}
+    const sel=$("#tradeLeague");
+    sel.innerHTML=all.map(l=>`<option value="${l.id}">${l.name}</option>`).join("");
+    sel.classList.remove("hide");
+    sel.onchange=()=>tradeLoadRosters(sel.value);
+    await tradeLoadRosters(sel.value);
+  }catch(e){tradeStatus("Couldn't reach Sleeper.","var(--crit)");}
+}
+async function tradeLoadRosters(leagueId){
+  tradeStatus("Loading rosters…");
+  try{
+    const [rosters,users,lg]=await Promise.all([
+      SJ(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
+      SJ(`https://api.sleeper.app/v1/league/${leagueId}/users`),
+      SJ(`https://api.sleeper.app/v1/league/${leagueId}`)]);
+    const nameOf={};(users||[]).forEach(u=>nameOf[u.user_id]=u.display_name||u.username||"Manager");
+    const bySid={};state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
+    TRADE.leagueId=leagueId; TRADE.users=nameOf;
+    TRADE.slots=parseSlots(lg.roster_positions);
+    TRADE.teams=(rosters||[]).map(r=>({
+      rosterId:r.roster_id, owner:r.owner_id, name:nameOf[r.owner_id]||("Team "+r.roster_id),
+      players:(r.players||[]).map(sid=>bySid[String(sid)]).filter(Boolean),
+      unmatched:(r.players||[]).filter(sid=>!bySid[String(sid)]).length}));
+    const sel=$("#tradeMe");
+    sel.innerHTML=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name} (${t.players.length})</option>`).join("");
+    sel.classList.remove("hide"); $("#tradeFindBtn").classList.remove("hide");
+    // guess which team is yours
+    const myUser=Object.keys(nameOf).find(id=>nameOf[id].toLowerCase()===(($("#syncUser").value||"").trim().toLowerCase()));
+    const mi=TRADE.teams.findIndex(t=>t.owner===myUser); TRADE.me=mi>=0?mi:0; sel.value=String(TRADE.me);
+    sel.onchange=()=>{TRADE.me=+sel.value;};
+    $("#tradeCtx").textContent=`${TRADE.teams.length} teams · ${TRADE.slots.join("/")}`;
+    tradeStatus(`Loaded <b>${lg.name}</b> — ${TRADE.teams.length} rosters. Pick your team and hit Find trades.`,"var(--good)");
+  }catch(e){tradeStatus("Couldn't load rosters: "+e,"var(--crit)");}
+}
+function findTrades(){
+  if(!TRADE.teams.length){tradeStatus("Load your league first.","var(--warn)");return;}
+  const V=tradeVal(), slots=TRADE.slots.length?TRADE.slots:["QB","RB","RB","WR","WR","TE","FLEX","K","DST"];
+  const me=TRADE.teams[TRADE.me];
+  const base=lineupOnSlots(me.players,slots,V).total;
+  const cands=[];
+  const myPool=me.players.slice().sort((a,b)=>V(b)-V(a)).slice(0,16);
+  TRADE.teams.forEach((opp,oi)=>{
+    if(oi===TRADE.me||!opp.players.length)return;
+    const oBase=lineupOnSlots(opp.players,slots,V).total;
+    const oPool=opp.players.slice().sort((a,b)=>V(b)-V(a)).slice(0,16);
+    const combos=[];
+    myPool.forEach(a=>oPool.forEach(b=>combos.push([[a],[b]])));                      // 1-for-1
+    myPool.forEach((a,i)=>myPool.slice(i+1).forEach(a2=>oPool.forEach(b=>combos.push([[a,a2],[b]]))));  // 2-for-1
+    combos.forEach(([give,get])=>{
+      const mineAfter=me.players.filter(p=>!give.includes(p)).concat(get);
+      const theirAfter=opp.players.filter(p=>!get.includes(p)).concat(give);
+      const myGain=lineupOnSlots(mineAfter,slots,V).total-base;
+      const theirGain=lineupOnSlots(theirAfter,slots,V).total-oBase;
+      if(myGain>0.5&&theirGain>0.5) cands.push({oi,oppName:opp.name,give,get,myGain,theirGain,mineAfter,theirAfter});
+    });
+  });
+  cands.sort((a,b)=>(b.myGain+b.theirGain*0.35)-(a.myGain+a.theirGain*0.35));
+  const top=[];const seen=new Set(),perOpp={};
+  for(const c of cands){ const k=c.oi+"|"+c.get.map(p=>p.id).join(",");
+    if(seen.has(k))continue;
+    if((perOpp[c.oi]||0)>=2)continue;        // spread suggestions across managers
+    seen.add(k); perOpp[c.oi]=(perOpp[c.oi]||0)+1; top.push(c); if(top.length>=6)break; }
+  const baseline=simTitle(TRADE.teams.map(t=>t.players),slots,1500);
+  renderTrades(top,base,slots,V,baseline);
+}
+function renderTrades(list,base,slots,V,baseline){
+  const box=$("#tradeResults");
+  if(!list.length){box.innerHTML=`<div class="emptystate">No trade improves both teams right now — your roster is balanced against theirs.</div>`;return;}
+  const dyn=state.settings.format==="dynasty";
+  box.innerHTML=list.map((c,i)=>{
+    const odds=(i<3)?tradeTitleDelta(c,slots,baseline):null;
+    return `<div class="rec${i===0?" top":""}" style="margin-bottom:10px">
+      <div class="rank-badge">#${i+1}</div>
+      <div class="r1"><span class="nm">${c.oppName}</span></div>
+      <div class="cardmeta">You get <b>${c.get.map(p=>p.name).join(" + ")}</b> · You give <b>${c.give.map(p=>p.name).join(" + ")}</b></div>
+      <div class="why">Your starting lineup <b style="color:var(--good)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"pts"} · their side <b>+${Math.round(c.theirGain)}</b> (so it's plausibly accepted).
+        ${odds?(Math.abs(odds.after-odds.before)>=2?` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b>.`:` Title odds unchanged (${odds.before}%).`):""}</div>
+    </div>`;}).join("")
+    +`<div class="note">Both sides are valued on <b>your league's actual starting slots</b> (${slots.join("/")}) using ${dyn?"age-adjusted dynasty value":"projected points"}. Only deals that help both teams are shown — a trade the other manager would never accept is worthless. Title odds come from 1,500 simulated seasons of the real league; moves under 2 points are within simulation noise and shown as unchanged.</div>`;
+}
+// Season simulation on the real league rosters: how do your title odds change?
+// Samples each starter's season from its own boom/bust distribution, 500 runs.
+function simTitle(rosters,slots,iters){
+  const V=p=>pts(p); let wins=0;
+  for(let it=0;it<(iters||500);it++){
+    let best=-1,bestScore=-1;
+    for(let i=0;i<rosters.length;i++){
+      const L=lineupOnSlots(rosters[i],slots,V);
+      let sc=0;
+      for(const p of L.chosen){const d=p.dist,sd=d?(d.c-d.f)/2.08:0.18;
+        sc+=pts(p)*Math.max(0.15,1+gauss()*sd*0.9);}
+      if(sc>bestScore){bestScore=sc;best=i;}
+    }
+    if(best===TRADE.me)wins++;
+  }
+  return Math.round(wins/(iters||500)*100);
+}
+function tradeTitleDelta(c,slots,baseline){
+  const after=TRADE.teams.map((t,i)=>i===TRADE.me?c.mineAfter:(i===c.oi?c.theirAfter:t.players));
+  return {before:baseline,after:simTitle(after,slots,1500)};
+}
+
 /* ===================== IN-SEASON: start/sit, waivers, trade value =====================
    Draft day is one day; the season is 17 weeks. Reuses the same matchup-adjusted weekly
    projections the championship simulator runs on. */
@@ -2411,6 +2568,8 @@ function wireSetup(){
   $("#syncDraftId").onkeydown=e=>{ if(e.key==="Enter"&&!SYNC.id)sleeperConnect(); };
   // league opponent modeling
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
+  $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
+  $("#tradeFindBtn").onclick=()=>findTrades();
   $("#leagueLearnBtn").onclick=()=>learnLeague($("#leagueSelect").value);
   $("#leagueClearBtn").onclick=()=>{ state.league=null; $("#leagueTend").classList.add("hide");
     $("#leagueClearBtn").classList.add("hide"); leagueStatus("Cleared — opponents are generic again."); save(); };
