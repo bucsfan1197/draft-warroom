@@ -414,6 +414,20 @@
         <div id="tradeResults" style="margin-top:12px"></div>
       </div>
     </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Evaluate a specific offer</h2><span id="evalCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="syncrow">
+          <select id="evalOpp" style="min-width:190px"></select>
+          <button class="draftbtn" id="evalRunBtn">Evaluate</button>
+        </div>
+        <div class="grid-draft" style="grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
+          <div><h3 class="eyebrow" style="margin-bottom:6px">You give</h3><select id="evalGive" multiple size="8" style="width:100%"></select></div>
+          <div><h3 class="eyebrow" style="margin-bottom:6px">You get</h3><select id="evalGet" multiple size="8" style="width:100%"></select></div>
+        </div>
+        <div id="evalOut" style="margin-top:12px"><div class="note">Pick players on each side (ctrl/⌘-click for multiple), then hit Evaluate. Works for any package size.</div></div>
+      </div>
+    </div>
   </section>
 
   <!-- IN-SEASON TAB -->
@@ -1990,8 +2004,53 @@ async function tradeLoadRosters(leagueId){
     const mi=TRADE.teams.findIndex(t=>t.owner===myUser); TRADE.me=mi>=0?mi:0; sel.value=String(TRADE.me);
     sel.onchange=()=>{TRADE.me=+sel.value;};
     $("#tradeCtx").textContent=`${TRADE.teams.length} teams · ${TRADE.slots.join("/")}`;
+    try{evalPopulate();}catch(e){}
     tradeStatus(`Loaded <b>${lg.name}</b> — ${TRADE.teams.length} rosters. Pick your team and hit Find trades.`,"var(--good)");
   }catch(e){tradeStatus("Couldn't load rosters: "+e,"var(--crit)");}
+}
+// ---- Manual evaluator: judge a specific offer, any package size ----
+function evalPopulate(){
+  const me=TRADE.teams[TRADE.me]; if(!me)return;
+  const oppSel=$("#evalOpp");
+  oppSel.innerHTML=TRADE.teams.map((t,i)=>i===TRADE.me?"":`<option value="${i}">${t.name}</option>`).join("");
+  const V=tradeVal();
+  const fill=(sel,list)=>{sel.innerHTML=list.slice().sort((a,b)=>V(b)-V(a))
+    .map(p=>`<option value="${p.id}">${p.pos} ${p.name} (${Math.round(V(p))})</option>`).join("");};
+  fill($("#evalGive"),me.players);
+  const oi=+oppSel.value||TRADE.teams.findIndex((t,i)=>i!==TRADE.me);
+  if(TRADE.teams[oi])fill($("#evalGet"),TRADE.teams[oi].players);
+  oppSel.onchange=()=>{const o=+oppSel.value; if(TRADE.teams[o])fill($("#evalGet"),TRADE.teams[o].players);};
+}
+function evalTrade(){
+  const out=$("#evalOut");
+  if(!TRADE.teams.length){out.innerHTML=`<div class="note">Load your league rosters above first.</div>`;return;}
+  const me=TRADE.teams[TRADE.me], oi=+$("#evalOpp").value, opp=TRADE.teams[oi];
+  const ids=sel=>[...$(sel).selectedOptions].map(o=>+o.value);
+  const give=me.players.filter(p=>ids("#evalGive").includes(p.id));
+  const get=opp?opp.players.filter(p=>ids("#evalGet").includes(p.id)):[];
+  if(!give.length||!get.length){out.innerHTML=`<div class="note">Select at least one player on each side.</div>`;return;}
+  const V=tradeVal(), slots=TRADE.slots.length?TRADE.slots:["QB","RB","RB","WR","WR","TE","FLEX","K","DST"];
+  const mineAfter=me.players.filter(p=>!give.includes(p)).concat(get);
+  const theirAfter=opp.players.filter(p=>!get.includes(p)).concat(give);
+  const myGain=lineupOnSlots(mineAfter,slots,V).total-lineupOnSlots(me.players,slots,V).total;
+  const theirGain=lineupOnSlots(theirAfter,slots,V).total-lineupOnSlots(opp.players,slots,V).total;
+  const base=simTitle(TRADE.teams.map(t=>t.players),slots,400);
+  const after=simTitle(TRADE.teams.map((t,i)=>i===TRADE.me?mineAfter:(i===oi?theirAfter:t.players)),slots,400);
+  const dOdds=after-base, dyn=state.settings.format==="dynasty";
+  const verdict=myGain>3&&dOdds>=2?["ACCEPT","good","This clearly improves your team."]
+    :myGain>0&&dOdds>=0?["LEAN ACCEPT","good","Small but real gain."]
+    :myGain<-3||dOdds<=-2?["DECLINE","crit","This makes your team worse."]
+    :["NEUTRAL","warn","Roughly a wash — only do it if you like the players."];
+  const willThey=theirGain>0.5?`<span class="chip good">They likely accept (+${Math.round(theirGain)} for them)</span>`
+    :`<span class="chip crit">They likely decline (${Math.round(theirGain)} for them)</span>`;
+  out.innerHTML=`<div class="rec top"><div class="r1"><span class="nm">${verdict[0]}</span>
+      <span class="chip ${verdict[1]}" style="margin-left:8px">${verdict[2]}</span></div>
+    <div class="cardmeta">You give <b>${give.map(p=>p.name).join(" + ")}</b> · you get <b>${get.map(p=>p.name).join(" + ")}</b></div>
+    <div class="why">Your starting lineup <b style="color:${myGain>=0?'var(--good)':'var(--crit)'}">${myGain>=0?"+":""}${Math.round(myGain)}</b> ${dyn?"dynasty value":"pts"} ·
+      title odds <b>${base}% → <span style="color:${dOdds>=0?'var(--good)':'var(--crit)'}">${after}%</span></b>
+      ${Math.abs(dOdds)<2?'<span class="meta">(within simulation noise)</span>':''}<br>${willThey}</div>
+    <div class="note" style="margin-top:8px">Roster spots: you ${give.length>get.length?`free up ${give.length-get.length}`:get.length>give.length?`use ${get.length-give.length} more`:"stay even"}.
+      ${give.length>get.length?"Consolidating talent into fewer, better starters is usually good — just make sure your bench can cover byes.":""}</div></div>`;
 }
 function findTrades(){
   if(!TRADE.teams.length){tradeStatus("Load your league first.","var(--warn)");return;}
@@ -2763,6 +2822,7 @@ function wireSetup(){
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   $("#tradeFindBtn").onclick=()=>findTrades();
+  $("#evalRunBtn").onclick=()=>evalTrade();
   $("#leagueLearnBtn").onclick=()=>learnLeague($("#leagueSelect").value);
   $("#leagueClearBtn").onclick=()=>{ state.league=null; $("#leagueTend").classList.add("hide");
     $("#leagueClearBtn").classList.add("hide"); leagueStatus("Cleared — opponents are generic again."); save(); };
