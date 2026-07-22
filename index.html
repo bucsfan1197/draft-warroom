@@ -1020,7 +1020,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:17},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:18},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -1049,7 +1049,7 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==17){
+  if(D&&D.PLAYERS&&st.settings._projv!==18){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
@@ -1062,7 +1062,7 @@ function migrate(st){
     D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
-    st.settings._projv=17;
+    st.settings._projv=18;
   }
   return st;
 }
@@ -2274,6 +2274,26 @@ function selfTest(){
     state.settings.format=wf2; LABC={key:null};
     add("Superflex raises quarterback prices",qbSF>qb1*1.05,
         qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    // ---- per-asset confidence ----
+    const withN=P.filter(x=>x.mktN).length;
+    add("Sample size behind each market value",withN>200,
+        `${withN} players carry a vote count (max ${Math.max(0,...P.map(x=>x.mktN||0)).toLocaleString()})`);
+    const byVotes=P.filter(x=>x.mkt&&x.mktN).sort((a,b)=>b.mktN-a.mktN);
+    if(byVotes.length>20){
+      const heavy=assetConfidence({kind:"player",player:byVotes[0]});
+      const thin =assetConfidence({kind:"player",player:byVotes[byVotes.length-1]});
+      add("Thin samples are marked less certain",thin.sd>heavy.sd,
+          `${byVotes[0].name} ±${Math.round(heavy.sd*100)}% (${heavy.n.toLocaleString()} votes) vs ${byVotes[byVotes.length-1].name} ±${Math.round(thin.sd*100)}% (${thin.n.toLocaleString()})`);
+    }
+    const near=assetConfidence({kind:"pick",season:CUR_SEASON()+1,round:1});
+    const far =assetConfidence({kind:"pick",season:CUR_SEASON()+3,round:1});
+    add("Distant picks are marked less certain than near ones",far.sd>near.sd,
+        `next year ±${Math.round(near.sd*100)}% vs three out ±${Math.round(far.sd*100)}%`);
+    // a band must grow with the size of the deal, and errors must add in quadrature (not linearly)
+    const two=P.filter(x=>x.mkt).slice(0,2).map(x=>({kind:"player",player:x}));
+    const b1=tradeBand([two[0]]), b2=tradeBand(two);
+    add("Trade uncertainty compounds correctly",b2>b1&&b2<b1*2.2,
+        `one asset ±${Math.round(b1)}, two ±${Math.round(b2)} — added in quadrature, not summed`);
     // ---- salary cap / contracts ----
     const cl=parseContractLine("Puka Nacua $42 3yr"), cl2=parseContractLine("Bijan Robinson 55 x2");
     add("Contract lines parse (salary and years)",
@@ -2926,6 +2946,54 @@ function labSettingsLine(){
   return `Priced for <b>${bits.join(" · ")}</b>. ${how}${seriesNote}
     <span class="meta">Market prices are quoted for 12-team leagues — the shape barely moves with league size, but a very shallow or very deep league will shade values slightly.</span>`;
 }
+/* ---- PER-ASSET CONFIDENCE ----
+   Published trade values are quoted to the dollar and none of them tell you how much data is
+   behind the number. It varies enormously: KeepTradeCut has 329,000 votes on Justin Jefferson
+   and 1,200 on a deep rookie — a 270x range — and a third of the board is priced by only one of
+   the three sources. Future picks are thinnest of all, which is exactly where people trade
+   hardest. So each asset gets an honest relative error, and those errors combine into a band on
+   the trade itself. A 500-point edge means nothing if the inputs are worth ±900. */
+function assetConfidence(a){
+  if(!a) return null;
+  if(a.kind==="pick"||a.isPick){
+    // picks are quoted by one or two sources, never voted on, and the further out the thinner
+    const yrs=Math.max(0,(a.season||CUR_SEASON())-CUR_SEASON());
+    return {sd:Math.min(0.5,0.22+0.06*yrs), n:0, srcN:1, why:"future picks are the thinnest data any source has"};
+  }
+  const p=a.player||a; if(!p||!p.mkt) return {sd:0.30,n:0,srcN:0,why:"no market price — valued from this app's projections"};
+  const series=mktSeriesKey().find(k=>p.mkt[k]!=null);
+  const src=(p.mktSrc||{})[series]||{};
+  const vals=Object.values(src).filter(x=>x>0);
+  // 1. how far apart the sources are (range → sd for a handful of samples)
+  const spread=vals.length>1?(Math.max(...vals)-Math.min(...vals))/Math.max(1,vals.reduce((x,y)=>x+y,0)/vals.length):0;
+  const sdSpread=spread/2.5;
+  // 2. how many votes stand behind the crowd-sourced side of it
+  const n=p.mktN||0;
+  const sdVotes=n?Math.min(0.5,0.35/Math.sqrt(Math.max(0.05,n/5000))):0.35;
+  // 3. one source pricing an asset alone can't be cross-checked at all
+  const srcN=p.mktSrcN||vals.length||1;
+  const sd=Math.max(srcN===1?0.25:0.04,Math.sqrt(sdSpread*sdSpread+sdVotes*sdVotes));
+  const why=srcN===1?"only one source prices him"
+    :n&&n<8000?"thin voting sample"
+    :spread>0.5?"the sources disagree sharply"
+    :"well covered and broadly agreed";
+  return {sd:Math.min(0.6,sd),n,srcN,spread,why};
+}
+function confLabel(c){
+  if(!c) return "";
+  const lv=c.sd<=0.12?["high","good"]:c.sd<=0.25?["medium","warn"]:["low","crit"];
+  const bits=[];
+  if(c.n) bits.push(`${c.n.toLocaleString()} votes`);
+  if(c.srcN) bits.push(`${c.srcN} source${c.srcN>1?"s":""}`);
+  return `<span class="chip ${lv[1]}" title="${bits.join(" · ")}${bits.length?" — ":""}${c.why}">±${Math.round(c.sd*100)}%</span>`;
+}
+// The band on a whole trade: independent asset errors add in quadrature, not linearly.
+function tradeBand(list){
+  let v=0;
+  list.forEach(a=>{ const c=assetConfidence(a); if(!c)return;
+    const val=labValue(a); v+=Math.pow(val*c.sd,2); });
+  return Math.sqrt(v);
+}
 /* Cap check. In a salary-cap league the most common reason a trade dies isn't value — it's that
    the deal doesn't fit, and no free calculator tells you. Salaries come from the Contracts tab
    where they're known, or can be tagged inline ("Bijan Robinson $55"). */
@@ -2957,14 +3025,14 @@ function labRenderSide(list,elId,nId){
   const el=$(elId); if(!el)return;
   el.innerHTML=list.map(a=>{
     if(a.kind==="pick")
-      return `<div class="labrow"><span>🎟 ${a.label}</span><span class="v">${Math.round(labValue(a)).toLocaleString()}</span></div>`;
+      return `<div class="labrow"><span>🎟 ${a.label}</span>${confLabel(assetConfidence(a))}<span class="v">${Math.round(labValue(a)).toLocaleString()}</span></div>`;
     if(!a.player)
       return `<div class="labrow bad"><span>“${a.raw}” — no match</span><span class="v">0</span></div>`;
     const alt=a.cands.length>1
       ? `<select data-side="${a.side}" data-idx="${a.idx}" class="labpick">`
         +a.cands.map(c=>`<option value="${c.id}"${c.id===a.player.id?" selected":""}>${c.name} · ${c.pos}${c.team?" "+c.team:""}</option>`).join("")
         +`</select>` : `<span>${a.player.name} <span class="meta">${a.player.pos}${a.player.team?" "+a.player.team:""}</span></span>`;
-    return `<div class="labrow">${alt}<span class="v">${Math.round(labValue(a)).toLocaleString()}</span></div>`;
+    return `<div class="labrow">${alt}${confLabel(assetConfidence(a))}<span class="v">${Math.round(labValue(a)).toLocaleString()}</span></div>`;
   }).join("");
   const n=$(nId); if(n)n.textContent=list.length?`· ${list.length} piece${list.length>1?"s":""}`:"";
   el.querySelectorAll("select.labpick").forEach(sel=>{
@@ -3118,8 +3186,15 @@ function labCompute(){
   const net=(tv+spotGain-spotCost)-gv;
   const scale=Math.max(gv,tv,1);
   const tol=Math.max(0,+($("#labTol").value||5))/100;
+  /* Two different reasons a trade can be "close": it's inside YOUR fairness tolerance, or it's
+     inside the error bar of the values themselves. The second matters more and no other
+     calculator shows it — an edge smaller than the uncertainty in its own inputs isn't an edge. */
+  const band=tradeBand([...give,...get]);
   const fair=Math.abs(net)<=tol*scale;
-  const verdict=fair?["FAIR","warn","Inside your fairness band — this comes down to whether you like the players."]
+  const insideNoise=Math.abs(net)<=band;
+  const verdict=insideNoise
+      ?["TOO CLOSE TO CALL","warn","The gap is smaller than the uncertainty in these values — this is a coin flip dressed up as a number."]
+    :fair?["FAIR","warn","Inside your fairness band — this comes down to whether you like the players."]
     :net>0?["YOU WIN","good","You're getting more value than you're giving up."]
            :["YOU LOSE","crit","You're giving up more value than you're getting back."];
   const pct=Math.round(Math.abs(net)/scale*100);
@@ -3146,8 +3221,14 @@ function labCompute(){
       <div class="labdecomp">${rows.map(([k,v])=>
         `<div class="kv"><span>${k}</span><span class="num" style="color:${v>=0?'var(--good)':'var(--crit)'}">${v>=0?"+":""}${v.toLocaleString()}</span></div>`).join("")}
         <div class="kv" style="border-top:1px solid var(--line);padding-top:4px;margin-top:2px">
-          <span><b>Net for you</b></span><span class="num" style="color:${net>=0?'var(--good)':'var(--crit)'}">${net>=0?"+":""}${Math.round(net).toLocaleString()}</span></div>
+          <span><b>Net for you</b> <span class="meta">± ${Math.round(band).toLocaleString()} from how well these assets are actually priced</span></span>
+          <span class="num" style="color:${insideNoise?'var(--ink-2)':net>=0?'var(--good)':'var(--crit)'}">${net>=0?"+":""}${Math.round(net).toLocaleString()}</span></div>
       </div>
+      ${(()=>{const all=[...give,...get].map(a=>({a,c:assetConfidence(a)})).filter(x=>x.c);
+        const worst=all.sort((x,y)=>y.c.sd-x.c.sd)[0];
+        if(!worst||worst.c.sd<0.25)return "";
+        const nm=worst.a.kind==="pick"?worst.a.label:(worst.a.player&&worst.a.player.name)||"one asset";
+        return `<div class="note" style="margin-top:8px">Least certain piece: <b>${nm}</b> (±${Math.round(worst.c.sd*100)}%) — ${worst.c.why}${worst.c.n?`, ${worst.c.n.toLocaleString()} votes behind it`:""}.</div>`;})()}
       ${avgDis!=null?`<div class="note" style="margin-top:8px">${avgDis>=0.45?"⚠️ ":""}The three market sources ${avgDis>=0.45?"<b>disagree sharply</b>":"broadly agree"} about these players (spread ${avgDis.toFixed(2)} sd)${avgDis>=0.45?" — treat this verdict as soft, and check the players individually.":"."}</div>`:""}
       ${unmatched.length?`<div class="note" style="margin-top:8px">⚠️ Couldn't match: <b>${unmatched.map(u=>u.raw).join(", ")}</b> — check the spelling, or pick from the dropdown.</div>`:""}
       ${labCapCheck(give,get)}

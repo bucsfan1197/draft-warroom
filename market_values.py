@@ -118,7 +118,14 @@ def ktc():
             y, tier, rd = int(pm.group(1)), pm.group(2).lower(), ROUND_WORD[pm.group(3)]
             picks[pick_key(y, rd, tier)] = vals
         else:
-            players[norm(nm)] = {"pos": p.get("position"), "v": vals, "age": p.get("age")}
+            # KTC publishes how many keep/trade/cut votes stand behind each player. That's the
+            # sample size the whole crowd-sourced value rests on, and it spans ~270x across the
+            # board — the single most useful confidence signal any of these sources exposes.
+            n = 0
+            for side in ("oneQBValues", "superflexValues"):
+                b = p.get(side) or {}
+                n = max(n, (b.get("kept") or 0) + (b.get("traded") or 0) + (b.get("cut") or 0))
+            players[norm(nm)] = {"pos": p.get("position"), "v": vals, "age": p.get("age"), "n": n}
     print(f"  KTC: {len(arr)} rows -> {len(players)} players, {len(picks)} picks")
     return players, picks
 
@@ -207,6 +214,14 @@ def build():
                 diffs.append(max(d.values()) - min(d.values()))
         spread_report[series] = (len(z_by_name), len(common),
                                  round(st.median(diffs), 3) if diffs else None)
+
+    # carry the vote count through as the sample size behind each value
+    for k, r in kt_p.items():
+        if k in out_players and r.get("n"):
+            out_players[k]["n"] = r["n"]
+    # how many independent sources actually price this asset
+    for k in out_players:
+        out_players[k]["srcN"] = max((len(v) for v in out_players[k].get("src", {}).values()), default=0)
 
     # identity: sleeper id / position / age, from whichever source has it
     for k in out_players:

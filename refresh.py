@@ -451,6 +451,8 @@ def build_data():
             if tgt is not None:
                 tgt["mkt"]=r["v"]
                 if r.get("dis"): tgt["mktDis"]=r["dis"]
+                if r.get("n"): tgt["mktN"]=r["n"]          # votes behind the value
+                if r.get("srcN"): tgt["mktSrcN"]=r["srcN"] # how many sources price him
                 if r.get("src"): tgt["mktSrc"]=r["src"]
                 hit+=1
         log(f"  market matched to pool: {hit}/{len(players)}")
