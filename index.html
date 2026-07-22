@@ -241,6 +241,7 @@
       <button class="tab hide" data-tab="dynasty" id="dynastyTabBtn">Dynasty</button>
       <button class="tab" data-tab="season">In-Season</button>
       <button class="tab" data-tab="trade">Trades</button>
+      <span id="dataAge" class="meta" style="margin-left:auto;align-self:center;white-space:nowrap"></span>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
@@ -522,6 +523,11 @@
                 <button class="draftbtn hide" id="leagueLearnBtn">Learn</button>
                 <button class="ghost hide" id="leagueClearBtn">Clear</button>
               </div>
+              <div class="syncrow" style="margin-top:8px">
+                <button class="ghost" id="scoringImportBtn">⚙ Import this league's scoring &amp; roster</button>
+                <button class="ghost" id="selfTestBtn">🧪 Run self-test</button>
+              </div>
+              <div id="selfTestOut" class="hide" style="margin-top:8px"></div>
               <div id="leagueStatus" class="meta" style="margin-top:6px">Uses your past drafts (via Sleeper) to predict what each manager actually does.</div>
               <div id="leagueTend" class="hide" style="margin-top:8px"></div>
             </div>
@@ -786,16 +792,16 @@ function buildPlayers(){
   const D=window.__FFDATA__;
   if(D&&D.PLAYERS&&D.PLAYERS.length){
     // projections DERIVED from 11-season ADP-rank production curves (see Projections tab)
-    return D.PLAYERS.map((e,i)=>({id:i,name:e.name,pos:e.pos,team:e.team,bye:e.bye||TEAM_BYE[e.team]||0,
-      stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,
-      dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,
-      adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn,usage:e.usage,sid:e.sid}));
+    // Copy EVERY field the data blob provides. Hand-listing fields silently dropped new ones
+    // (ecr, usage, sid all broke this way) — never maintain a field list again.
+    return D.PLAYERS.map((e,i)=>Object.assign({},e,{id:i,override:null,stats:{...e.stats},
+      bye:e.bye||TEAM_BYE[e.team]||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));
   }
   return RAW.map((r,i)=>{const [name,pos,team,,stats]=r;return {id:i,name,pos,team,bye:TEAM_BYE[team]||0,stats:{...stats},adp:i+1,adpSf:i+1,override:null,age:AGE[name]??27};});
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:14},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:15},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -818,13 +824,20 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==14){
+  if(D&&D.PLAYERS&&st.settings._projv!==15){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
-    st.players.forEach(p=>{const e=byName[nrm(p.name)];p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;if(e){p.adp=e.adp;p.adpSf=e.adpSf;p.adpE=e.adpE;p.adpEsf=e.adpEsf;p.adpY=e.adpY;p.adpS=e.adpS;p.adpSsf=e.adpSsf;p.adpSdyn=e.adpSdyn;p.adpSdynSf=e.adpSdynSf;p.ecr=e.ecr;p.ecrSf=e.ecrSf;p.ecrDyn=e.ecrDyn;p.usage=e.usage;p.sid=e.sid;p.dist=e.dist||null;p.inj=e.inj||null;p.depth=(e.depth!=null?e.depth:null);p.cons=e.cons||null;p.wk=e.wk||null;if(p.age==null||p.age===27)p.age=e.age;if(p.override==null)p.stats={...e.stats};}});
-    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push({id:nid++,name:e.name,pos:e.pos,team:e.team,bye:e.bye||0,stats:{...e.stats},adp:e.adp,adpSf:(e.adpSf!=null?e.adpSf:e.adp),override:null,age:e.age||27,dist:e.dist||null,inj:e.inj||null,depth:(e.depth!=null?e.depth:null),cons:e.cons||null,wk:e.wk||null,adpE:e.adpE,adpEsf:e.adpEsf,adpY:e.adpY,adpS:e.adpS,adpSsf:e.adpSsf,adpSdyn:e.adpSdyn,adpSdynSf:e.adpSdynSf,ecr:e.ecr,ecrSf:e.ecrSf,ecrDyn:e.ecrDyn,usage:e.usage,sid:e.sid});});
-    st.settings._projv=14;
+    const USER_OWNED=new Set(["id","override","stats","age"]);   // things the user can edit
+    st.players.forEach(p=>{const e=byName[nrm(p.name)];
+      p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;
+      if(e){ Object.keys(e).forEach(k=>{ if(!USER_OWNED.has(k)) p[k]=e[k]; });
+             if(p.age==null||p.age===27)p.age=e.age;
+             if(p.override==null)p.stats={...e.stats}; }});
+    D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push(
+      Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
+        bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
+    st.settings._projv=15;
   }
   return st;
 }
@@ -1532,7 +1545,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function fmt(n){return (Math.round(n*10)/10).toFixed(1);}
 function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show");clearTimeout(f._t);f._t=setTimeout(()=>f.classList.remove("show"),1600);}
 
-function renderAll(){applyFormatUI();renderClock();syncPickTimer();renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();renderTeamTab();renderInSeason();renderMatchups();renderBacktest();renderDynasty();renderPlayersTab();renderReplBox();save();}
+function renderAll(){applyFormatUI();renderClock();syncPickTimer();renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();renderTeamTab();renderInSeason();renderMatchups();renderBacktest();renderDynasty();renderPlayersTab();renderReplBox();renderDataAge();save();}
 
 function renderClock(){
   if(state.settings.auction){
@@ -1792,6 +1805,115 @@ function renderTiers(){
   if(cliffs.length)note+=cliffs.map(p=>`<b>${p}</b> falls off a cliff after the next ${info[p].n} (−${Math.round(info[p].drop)} pts to the tier below)`).join("; ")+". ";
   if(runs.length)note+=`🔥 <b>${runs.join(", ")}</b> ${runs.length>1?"are":"is"} getting drafted fast.`;
   el.innerHTML+=`<div class="note" style="margin-top:8px">${note||"Tiers are deep — no need to reach yet."}</div>`;
+}
+
+/* ---- data freshness: never let a dead refresh script silently serve stale numbers ---- */
+function dataAgeHours(){
+  const u=((window.__FFDATA__||{}).META||{}).updated; if(!u)return null;
+  const t=Date.parse(u.replace(" ","T")); if(isNaN(t))return null;
+  return (Date.now()-t)/3600000;
+}
+function renderDataAge(){
+  const el=$("#dataAge"); if(!el)return;
+  const h=dataAgeHours();
+  if(h==null){el.textContent="";return;}
+  const txt=h<1?"just now":h<48?`${Math.round(h)}h ago`:`${Math.round(h/24)}d ago`;
+  el.innerHTML=h>36?`<span class="chip crit">data ${txt} — is refresh.py running?</span>`
+                   :`<span style="opacity:.6">data ${txt}</span>`;
+}
+
+/* ---- SELF-TEST: catches the class of bugs that silently shipped before (stale field
+   propagation, blank tabs, illegal rosters, cap violations, JS errors). Run it any time. ---- */
+function selfTest(){
+  const box=$("#selfTestOut"); box.classList.remove("hide");
+  box.innerHTML=`<div class="note">Running self-test…</div>`;
+  const R=[], errs=[]; const onerr=e=>errs.push(e.message); window.addEventListener("error",onerr);
+  const add=(name,pass,detail)=>R.push({name,pass,detail});
+  const snapshot={settings:JSON.parse(JSON.stringify(state.settings)),picks:state.picks.slice(),mock:state.ui.mock};
+  try{
+    const D=window.__FFDATA__||{}, P=state.players;
+    const cnt=k=>P.filter(x=>x[k]!=null).length;
+    // 1. data integrity
+    add("Player pool loaded",P.length>=400,`${P.length} players`);
+    add("Data fields propagated (no stale-migration bug)",
+        cnt("sid")>300&&cnt("usage")>200&&cnt("ecr")>200,
+        `sid ${cnt("sid")} · usage ${cnt("usage")} · ecr ${cnt("ecr")}`);
+    add("All 32 defenses present",P.filter(x=>x.pos==="DST").length===32,`${P.filter(x=>x.pos==="DST").length} DST`);
+    add("Positions normalised (DST/K not DEF/PK)",!P.some(x=>["DEF","PK"].includes(x.pos)),"no DEF/PK");
+    const h=dataAgeHours();
+    add("Data is fresh",h==null||h<=36,h==null?"unknown":`${Math.round(h)}h old`);
+    // 2. every tab opens with content
+    const tabs=[...document.querySelectorAll('.tab')].filter(t=>!t.classList.contains("hide"));
+    let badTab=null;
+    tabs.forEach(t=>{ t.click();
+      const v=[...document.querySelectorAll('section[id^="tab-"]')].filter(x=>!x.classList.contains("hide"));
+      if(v.length!==1||v[0].innerText.replace(/\s+/g,' ').trim().length<40) badTab=t.textContent.trim(); });
+    add("Every tab opens with content",!badTab,badTab?`"${badTab}" is blank`:`${tabs.length} tabs`);
+    // 3. mock drafts across formats: legal + no cap violations
+    const SEG=(id,v)=>{const b=[...document.getElementById(id).querySelectorAll('button')].find(x=>x.dataset.v===v);if(b)b.click();};
+    const MOCK=()=>[...document.querySelectorAll('button')].find(b=>/mock draft/i.test(b.textContent));
+    const S={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,BENCH:6};
+    const cases=[["Redraft","redraft",false,S],["Superflex","redraft",false,Object.assign({},S,{SUPERFLEX:1})],
+                 ["Dynasty","dynasty",false,S],
+                 ["Best ball","redraft",true,{QB:1,RB:2,WR:3,TE:1,FLEX:1,SUPERFLEX:0,K:0,DST:0,BENCH:10}]];
+    cases.forEach(([label,fmt,bb,roster])=>{
+      SEG("s_format",fmt); SEG("s_bestball",bb?"1":"0");
+      Object.assign(state.settings.roster,roster);
+      state.settings.teams=12; state.settings.slot=6;
+      if(state.ui.mock)MOCK().click();
+      state.picks=[];SIMCACHE={key:null};renderAll();MOCK().click();
+      const size=Object.values(roster).reduce((a,b)=>a+b,0);
+      let n=0,g=0;
+      while(n<size&&g<400){g++;const rl=document.getElementById("recList");
+        const b=[...rl.querySelectorAll("button")].find(x=>/draft to my team/i.test(x.textContent));
+        if(!b)break;b.click();n++;}
+      const comp={};teamRoster(myIdx()).forEach(x=>comp[x.pos]=(comp[x.pos]||0)+1);
+      const TG=rosterTargets(),RR=state.settings.roster;
+      const legal=(comp.QB||0)>=RR.QB&&(comp.RB||0)>=RR.RB&&(comp.WR||0)>=RR.WR&&(comp.TE||0)>=RR.TE&&(comp.K||0)>=RR.K&&(comp.DST||0)>=RR.DST;
+      const over=Object.keys(comp).filter(x=>comp[x]>(TG.mx[x]||0));
+      add(`${label}: legal roster, no over-cap`, legal&&!over.length&&teamRoster(myIdx()).length===size,
+          Object.entries(comp).map(([k,v])=>k+v).join(" ")+(over.length?` — OVER: ${over.join(",")}`:""));
+    });
+    // 4. simulator
+    let simOk=true; try{ runSim(60); }catch(e){ simOk=false; }
+    add("Championship simulator runs",simOk,"");
+  }catch(e){ add("Self-test completed without crashing",false,String(e)); }
+  window.removeEventListener("error",onerr);
+  add("No JavaScript errors",errs.length===0,errs.slice(0,2).join(" | "));
+  // restore
+  state.settings=snapshot.settings; state.picks=snapshot.picks; state.ui.mock=snapshot.mock;
+  SIMCACHE={key:null}; loadSetupInputs(); renderAll();
+  const pass=R.filter(r=>r.pass).length;
+  box.innerHTML=`<div class="kv"><span><b>${pass}/${R.length} checks passed</b></span>
+    <span class="chip ${pass===R.length?'good':'crit'}">${pass===R.length?'ALL GOOD':'ISSUES FOUND'}</span></div>`
+    +R.map(r=>`<div class="kv"><span>${r.pass?'✅':'❌'} ${r.name}</span><span class="meta">${r.detail||''}</span></div>`).join("");
+  return R;
+}
+
+/* ---- import your league's real scoring + roster from Sleeper ---- */
+async function importLeagueScoring(){
+  const id=$("#leagueSelect").value||TRADE.leagueId;
+  if(!id){leagueStatus("Pick a league first (Find my leagues).","var(--warn)");return;}
+  try{
+    const lg=await SJ(`https://api.sleeper.app/v1/league/${id}`);
+    const sc=lg.scoring_settings||{};
+    const map={passYd:"pass_yd",passTd:"pass_td",int:"pass_int",rushYd:"rush_yd",rushTd:"rush_td",
+               rec:"rec",recYd:"rec_yd",recTd:"rec_td",fl:"fum_lost"};
+    let applied=0;
+    Object.entries(map).forEach(([ours,theirs])=>{
+      if(sc[theirs]!=null){state.settings.scoring[ours]=+sc[theirs];applied++;}
+    });
+    applySleeperRoster(lg.settings);
+    if(lg.roster_positions){
+      const slots=parseSlots(lg.roster_positions), R=state.settings.roster, c={};
+      slots.forEach(x=>c[x]=(c[x]||0)+1);
+      ["QB","RB","WR","TE","K","DST","FLEX","SUPERFLEX"].forEach(k=>{if(c[k]!=null)R[k]=c[k];});
+      R.BENCH=(lg.roster_positions.filter(x=>x==="BN")||[]).length||R.BENCH;
+    }
+    if(lg.total_rosters)state.settings.teams=lg.total_rosters;
+    SIMCACHE={key:null}; loadSetupInputs(); renderAll(); save();
+    leagueStatus(`⚙ Imported <b>${lg.name}</b>: ${applied} scoring rules, ${state.settings.teams} teams, roster ${Object.entries(state.settings.roster).filter(([k,v])=>v).map(([k,v])=>k+":"+v).join(" ")}.`,"var(--good)");
+  }catch(e){leagueStatus("Couldn't import league settings.","var(--crit)");}
 }
 
 /* ===================== TRADE FINDER =====================
@@ -2573,6 +2695,8 @@ function wireSetup(){
   $("#syncDraftId").onkeydown=e=>{ if(e.key==="Enter"&&!SYNC.id)sleeperConnect(); };
   // league opponent modeling
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
+  $("#selfTestBtn").onclick=()=>selfTest();
+  $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   $("#tradeFindBtn").onclick=()=>findTrades();
   $("#leagueLearnBtn").onclick=()=>learnLeague($("#leagueSelect").value);
