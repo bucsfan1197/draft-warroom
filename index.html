@@ -82,6 +82,42 @@
      pushed "Dynasty" outside its own control. Scoped to .field so the short segs elsewhere
      (which collapse if their display changes) are untouched. */
   .field .seg,#s_clock,#s_adp{flex-wrap:wrap;height:auto}
+
+  /* ---- Projections ----------------------------------------------------------------
+     The range bar is the one mark that carries two facts at once: WHERE a player sits and HOW
+     WIDE his outcomes are. Every rival ships these as bare numerals in separate columns, so the
+     eye has to do the comparison arithmetic itself. All bars share one axis so widths mean
+     something down the column. */
+  .rangebar{display:flex;align-items:center;gap:8px}
+  .rb-track{position:relative;flex:1;min-width:70px;height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden}
+  .rb-fill{position:absolute;top:0;height:100%;border-radius:4px;
+           background:color-mix(in srgb,var(--accent) 34%,transparent)}
+  .rb-dot{position:absolute;top:-2px;width:3px;height:11px;border-radius:2px;background:var(--accent);transform:translateX(-1px)}
+  .rb-lab{font-size:10.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .vsadp{font-size:10.5px;font-weight:700}
+  .vsadp.good{color:var(--good-ink)} .vsadp.bad{color:var(--crit-ink)}
+  .prow{cursor:pointer}
+  .prow.open{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+  .prow td.edited{color:var(--accent);font-weight:700}
+  .tierrow td{background:var(--panel-2);font-weight:800;font-size:11px;letter-spacing:.06em;
+              text-transform:uppercase;color:var(--ink-2);padding:5px 10px}
+  .detailrow td{background:color-mix(in srgb,var(--panel-2) 45%,transparent);padding:14px 16px}
+  .dwrap{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:820px){.dwrap{grid-template-columns:1fr}}
+  .mathtbl{width:100%;border-collapse:collapse}
+  .mathtbl td{padding:3px 6px;border-bottom:1px solid var(--line);font-size:12px}
+  .mathtbl tr.tot td{border-bottom:none;border-top:2px solid var(--line-2);padding-top:6px}
+  .mathtbl input{width:66px}
+  .factrow{display:flex;gap:14px;flex-wrap:wrap}
+  .factrow label{font-size:11.5px;color:var(--ink-2);display:flex;align-items:center;gap:5px}
+  .factrow input{width:64px}
+  .ghost.sm{padding:2px 8px;font-size:11px;margin-left:6px}
+  .warn-note{border-color:color-mix(in srgb,var(--warn) 40%,transparent);
+             background:color-mix(in srgb,var(--warn) 9%,transparent)}
+  /* Week-by-week: 18 bars, byes left as gaps rather than drawn as zero-height mystery ticks. */
+  .spark{display:flex;align-items:flex-end;gap:2px;height:44px;padding-top:4px}
+  .spark .sb{flex:1;background:color-mix(in srgb,var(--accent) 55%,transparent);border-radius:2px 2px 0 0;min-height:3px}
+  .spark .sb.bye{background:repeating-linear-gradient(45deg,var(--line-2) 0 2px,transparent 2px 4px);height:100%!important;opacity:.5}
   /* ---- trade calculator ---- */
   /* a textarea doesn't fill its box on its own — without this it sits at its default ~20 cols */
   #labGive,#labGet,#keepList,#capList,#lab3r0,#lab3r1,#lab3r2{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
@@ -380,6 +416,10 @@
   .tblwrap{border-radius:10px}
   #availTable td,#availTable th{padding:6px 7px}
   #availTable th.r,#availTable td.r{padding-left:4px}
+  /* The board runs ~12px over its grid track in every mode — enough to clip ADP off the right
+     edge. Eight columns is the right amount of information here, so buy the width back from the
+     gutters rather than dropping a column or letting the table scroll sideways on a desktop. */
+  #availTable td,#availTable th{padding-left:5px;padding-right:5px}
   /* the floor-ceil range is context, not a headline — keep it legible but let it be narrow */
   #availTable .rng{display:block;font-size:10px;color:var(--ink-2);font-variant-numeric:tabular-nums;line-height:1.25}
   .thsub{display:block;font-size:8.5px;letter-spacing:.06em;opacity:.75;font-weight:600}
@@ -775,21 +815,26 @@
   </section>
   <section id="tab-players" class="hide">
     <div class="panel">
-      <div class="hd"><h2>Projection editor</h2><span class="pickcounter" style="margin-left:auto">Click any projection to change it · Enter to save</span></div>
+      <div class="hd"><h2>Projections</h2><span class="pickcounter" style="margin-left:auto" id="pEditCount"></span></div>
       <div class="bd">
-        <div class="note" style="margin-bottom:12px"><b>How these projections are built:</b> The <b>baseline is the ESPN + Sleeper 2026 consensus</b> (season <i>and</i> week-to-week), scaled onto stat lines so <i>your</i> scoring settings still recompute (PPR/half/TE-premium). The <b>Src E/S</b> column shows both sources — a big gap means the experts disagree (more uncertain). <b>Floor/Ceil</b> and <b>Boom/Bust%</b> come from 11 seasons of actual outcome spread by position &amp; ADP rank (the historical model now powers <i>risk</i>, not the point estimate). <b>ADP</b> (1QB + superflex), <b>injuries</b> (Q/OUT/IR), and depth flags are live from Fantasy Football Calculator + Sleeper. The simulator scores each week off the <b>real consensus weekly grid</b>. Override any Proj/bye; edits save with the draft.</div>
         <div class="toolbar">
           <input type="text" class="search" id="psearch" placeholder="Search player…">
           <div id="pposFilters"></div>
+          <div class="seg" id="s_pview" title="Season total, average per game, or only the weeks still to come">
+            <button data-v="season" class="on">Season</button><button data-v="game">Per game</button><button data-v="ros">Rest of season</button></div>
+          <div class="seg" id="s_pdetail" title="Show the projected stat line behind each total">
+            <button data-v="0" class="on">Totals</button><button data-v="1">Stat detail</button></div>
+          <button class="ghost" id="pexport" title="Download every visible row, including your edits">Export CSV</button>
+          <button class="ghost hide" id="presetall" title="Throw away every edit and go back to consensus">Reset my edits</button>
         </div>
-        <div class="tblwrap scrollbox" style="max-height:640px">
-          <table><thead><tr>
-            <th data-psort="rank">#</th><th data-psort="name">Player</th><th data-psort="pos">Pos</th><th data-psort="team">Tm</th>
-            <th class="r" data-psort="age">Age</th><th class="r" data-psort="bye">Bye</th><th class="r" data-psort="adp">ADP</th><th class="r" data-psort="proj">Proj (editable)</th>
-            <th class="r">Floor</th><th class="r">Ceil</th><th class="r">Boom</th><th class="r">Bust</th>
-            <th class="r" title="Season strength of schedule (matchup ease, 1.00 = avg)">Sched</th><th class="r" title="Playoff-weeks (15–17) strength of schedule">Playoff SoS</th>
-            <th class="r" title="ESPN / Sleeper season projections — big gap = experts disagree">Src E/S</th>
-          </tr></thead><tbody id="playersBody"></tbody></table>
+        <div class="note" style="margin-bottom:12px;font-size:12px">
+          <b>Click any row to open it.</b> Inside you can edit the <b>stat line</b> — catches, yards, touchdowns — and the points recompute under
+          <i>your</i> scoring. That is the difference between saying "I think he scores 280" and saying <i>why</i>.
+          The <b>range bar</b> is that player's own spread of outcomes; <b>Sources</b> is a separate question — whether ESPN and Sleeper agree about him.
+          A player can be wide-range and fully agreed on, or narrow and hotly disputed.
+          <div style="margin-top:6px" id="pviewNote"></div></div>
+        <div class="tblwrap scrollbox" style="max-height:min(72vh,780px)">
+          <table id="ptable"><thead><tr id="phead"></tr></thead><tbody id="playersBody"></tbody></table>
         </div>
       </div>
     </div>
@@ -816,7 +861,7 @@
             </div>
           </div>
           <div class="note hide" id="bbNote" style="margin-bottom:16px">🎈 <b>Best ball on.</b> Your optimal lineup scores automatically every week — no start/sit — so <b>ceiling and boom weeks win, floor matters less</b>. Player values now tilt toward upside, and stacks get extra credit in the simulator. Draft deeper at QB/WR/TE for spike weeks.</div>
-          <div class="note hide" id="dynNote" style="margin-bottom:16px">🏰 <b>Dynasty mode on.</b> Player value now blends current production with a 4-year age-adjusted projection. <b>Contend</b> weights this season heavily (chase win-now vets); <b>Rebuild</b> weights future years (prioritize youth); <b>Balanced</b> splits the difference. Set each player's age on the Projections tab, and check the Dynasty tab for rookie-pick values and your roster's age profile.</div>
+          <div class="note hide" id="dynNote" style="margin-bottom:16px">🏰 <b>Dynasty mode on.</b> Player value now blends current production with a 4-year age-adjusted projection. <b>Contend</b> weights this season heavily (chase win-now vets); <b>Rebuild</b> weights future years (prioritize youth); <b>Balanced</b> splits the difference. Ages come from the live roster feed — open any player on the Projections tab to correct one, and check the Dynasty tab for rookie-pick values and your roster's age profile.</div>
           <div class="form-grid">
             <div class="field"><label>Teams</label><input type="number" id="s_teams" min="4" max="16" step="1"></div>
             <div class="field"><label>Your draft slot</label><input type="number" id="s_slot" min="1" step="1"></div>
@@ -1192,7 +1237,7 @@ function freshState(){
     settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:19},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
-    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
+    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null}
   };
 }
 
@@ -1222,7 +1267,7 @@ function migrate(st){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
-    const USER_OWNED=new Set(["id","override","stats","age"]);   // things the user can edit
+    const USER_OWNED=new Set(["id","override","stats","age","so"]);   // things the user can edit
     st.players.forEach(p=>{const e=byName[nrm(p.name)];
       p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;
       if(e){ Object.keys(e).forEach(k=>{ if(!USER_OWNED.has(k)) p[k]=e[k]; });
@@ -1238,8 +1283,23 @@ function migrate(st){
 function save(){try{localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch(e){}}
 
 /* ============================= MATH ============================= */
+/* The stat line a player is currently projected for: the consensus underneath, with any of the
+   user's own assumptions laid on top. Kept SPARSE and separate from .stats on purpose — the blob
+   refreshes .stats every data pull, so storing edits inline would either be wiped by the next
+   refresh or freeze the player at whatever the consensus said the day you touched him. This way
+   you keep "I think he gets 85 catches" while everything you didn't touch stays live. */
+function line(pl){ return pl.so?{...pl.stats,...pl.so}:pl.stats; }
+const STATDEF={
+  py:["Pass yds","passYd"], ptd:["Pass TD","passTd"], int:["INT","int"],
+  ry:["Rush yds","rushYd"], rtd:["Rush TD","rushTd"],
+  rec:["Rec","rec"], recy:["Rec yds","recYd"], rectd:["Rec TD","recTd"], fl:["Fumbles","fl"]};
+/* Which stats to show for whom. Position-tailored rather than one universal grid — a QB row with
+   an empty Rec column and a WR row with an empty Pass Yds column are both just noise. */
+const STATCOLS={QB:["py","ptd","int","ry","rtd","fl"],RB:["ry","rtd","rec","recy","rectd","fl"],
+  WR:["rec","recy","rectd","ry","rtd","fl"],TE:["rec","recy","rectd","fl"]};
+function statCols(pos){return STATCOLS[pos]||[];}
 function pts(pl){
-  const s=state.settings.scoring, t=pl.stats;
+  const s=state.settings.scoring, t=line(pl);
   if(pl.override!=null && pl.override!=="") return +pl.override;
   if(pl.idp){                       // defenders score off their own stat line
     const d=pl.idp;
@@ -1638,7 +1698,13 @@ function normCdf(z){return .5*(1+erf(z/Math.SQRT2));}
    Where a player has no published figure the fallback is now the measured relationship,
    stdev ≈ 0.106 x adp (fitted across all 221 players, R²=0.57), not a third of a guess. */
 function adpSpreadOf(pl,adp){
-  if(pl&&pl.adpSd>0) return pl.adpSd;
+  /* FFC publishes a standard deviation next to its own ADP, and it describes THAT board only.
+     Switch to dynasty, superflex, ESPN or Sleeper and the mean moves while the spread doesn't —
+     which is how Josh Allen ended up carrying a mean of 1.5 with a spread of 7.8 picks, giving
+     the consensus first pick in the draft a 14% chance of lasting another eight selections.
+     Use the published figure only when the board on screen is the one it was measured against;
+     otherwise fall back to the spread-vs-ADP slope fitted across all 790 players. */
+  if(pl&&pl.adpSd>0&&Math.abs(adp-(pl.adp||0))<0.05) return pl.adpSd;
   return Math.max(1.2,adp*0.106);
 }
 function pAvailAt(pl,pickNo){
@@ -2329,8 +2395,11 @@ function renderAvail(){
     else{av=a[key];bv=b[key];}
     return dir*(av-bv);
   });
-  const vh=$("#vorpHead");if(vh)vh.textContent=isDyno()?"Better by (yrs)":"Better by";
-  const auct=state.settings.auction, actx=auct?auctionCtx():null;
+  /* Dynasty used to widen this header to "Better by (yrs)", which pushed the whole board past the
+     column and clipped ADP off the right edge — the identical failure to the one the width guard
+     caught in League Setup. The unit belongs in the sub-label, where Proj already puts "low – high"
+     and it costs no extra width. */
+  const vh=$("#vorpHead");if(vh)vh.innerHTML=isDyno()?'Better by<span class="thsub">next 4 yrs</span>':"Better by";  const auct=state.settings.auction, actx=auct?auctionCtx():null;
   const ah=$("#adpHead");if(ah)ah.textContent=auct?"$ Val":"ADP";
   $("#availCount").textContent=auct?`${rows.length} shown · $ values${actx.infl!==1?` · inflation ${actx.infl.toFixed(2)}×`:''}`:`${rows.length} shown · ADP: ${ADP_SRC[state.settings.adpSource||'ffc']} ${isSF()?'SF':'1QB'}`;
   const abar=$("#auctionBar");
@@ -2616,6 +2685,51 @@ function selfTest(){
     add("Every colour and style is defined",badVars.length===0,badVars.length?badVars.join(", "):"every var(--x) is defined");
     add(`Layout is sound at ${window.innerWidth}px`,lay.length===0,
         lay.length?lay.slice(0,3).join(" · ")+(lay.length>3?` (+${lay.length-3} more)`:""):`${tabs.length} tabs, nothing clipped`);
+    /* 2b-bis. PROJECTIONS. The breakdown claims to show where a number comes from, so the first
+       job is proving it isn't decorative: stat × your scoring, summed, must equal the number in
+       the Proj column exactly. The second is the distinction the whole tab is built on — a stat
+       line follows a scoring change, a typed total does not — asserted in BOTH directions so it
+       can't pass by accident. */
+    const pv=state.players.find(p=>p.pos==="RB"&&p.stats&&p.stats.ry>500);
+    let mathOk="no RB to test",editFollows="",fixedFrozen="";
+    if(pv){
+      const L=line(pv), sc=state.settings.scoring;
+      const sum=statCols(pv.pos).reduce((a,c)=>a+(+L[c]||0)*(+sc[STATDEF[c][1]]||0),0);
+      mathOk=Math.abs(sum-pts(pv))<0.05?`${fmt(sum)} = ${fmt(pts(pv))}`:`breakdown ${fmt(sum)} vs shown ${fmt(pts(pv))}`;
+      add("The breakdown adds up to the projection",Math.abs(sum-pts(pv))<0.05,mathOk);
+      /* Test the EDIT, not just the scoring. Comparing an edited player's total across two
+         scoring settings passes even if the edit is being thrown away, because the underlying
+         stat line moves too — so measure the delta the edit itself is responsible for, at both
+         settings. Ten extra catches must be worth exactly ten points at 1.0 and five at 0.5. */
+      const savedRec=sc.rec, savedSo=pv.so, savedOv=pv.override;
+      delete pv.so; pv.override=null;
+      const edit={rec:(+pv.stats.rec||0)+10};
+      const deltaAt=r=>{ sc.rec=r;
+        delete pv.so; const off=pts(pv);
+        pv.so=edit;   const on=pts(pv);
+        return on-off; };
+      const d1=deltaAt(savedRec), d2=deltaAt(0.5);
+      sc.rec=savedRec;
+      const ok1=Math.abs(d1-10*savedRec)<0.05, ok2=Math.abs(d2-10*0.5)<0.05;
+      editFollows=`+10 catches = +${fmt(d1)} at ${savedRec}/rec, +${fmt(d2)} at half-PPR`;
+      add("Your stat edit is applied, and re-prices when scoring changes",ok1&&ok2,editFollows);
+      pv.so=savedSo; pv.override=333;
+      sc.rec=0.5; const b2=pts(pv); sc.rec=savedRec;
+      fixedFrozen=`stayed ${fmt(b2)}`;
+      add("A typed total stays put, and is flagged as such",b2===333&&/fixed total/.test(detailRow(pv,6)),fixedFrozen);
+      pv.override=savedOv; if(savedSo)pv.so=savedSo; else delete pv.so;
+    }
+    /* vs-ADP must be measured inside a position. The bug this catches shipped for a moment: raw
+       points rank QBs first overall against an ADP near 30, so every quarterback read as a large
+       steal. If the median QB delta ever drifts far from zero again, that's the same mistake. */
+    const qbs=state.players.filter(p=>p.pos==="QB"&&p.adp);
+    const pr={},ar={};
+    [...qbs].sort((a,b)=>pts(b)-pts(a)).forEach((p,i)=>pr[p.id]=i+1);
+    [...qbs].sort((a,b)=>a.adp-b.adp).forEach((p,i)=>ar[p.id]=i+1);
+    const dl=qbs.map(p=>ar[p.id]-pr[p.id]).sort((a,b)=>a-b);
+    const medD=dl.length?dl[Math.floor(dl.length/2)]:0;
+    add("Value-vs-ADP is judged within a position",Math.abs(medD)<=2,
+        `median QB gap ${medD>0?"+":""}${medD} — not a blanket "every QB is a steal"`);
     // 2c. TRADE ENGINE: bracket resolves at every playoff size, picks are valued sanely
     const wkOf=(T,best)=>Array.from({length:T},(_,i)=>{const a=new Array(25).fill(0);
       for(let w=0;w<25;w++)a[w]=(i===best?1000:100-i);return a;});
@@ -4874,45 +4988,226 @@ function renderMatchups(){
 }
 
 /* ---- PROJECTIONS tab ---- */
+/* Games actually projected: the weekly grid carries a 0 for the bye and for weeks the player
+   isn't expected to play, so counting non-zero weeks is a measurement rather than "17 minus a bye". */
+function gamesOf(pl){ if(!pl.wk||!pl.wk.length)return 17; let n=0; for(const v of pl.wk)if(v>0)n++; return n||17; }
+function pviewOf(pl){
+  const v=state.ui.pview||"season", p=pts(pl);
+  if(v==="game") return p/Math.max(1,gamesOf(pl));
+  if(v==="ros")  return rosPts(pl,state.ui.seasonWeek||1);
+  return p;
+}
+/* Two different uncertainties, deliberately kept apart.
+   `dist` is how wide THIS PLAYER's own outcomes are — the same projection can still finish
+   anywhere in a band. Source disagreement is a different thing entirely: it's whether the
+   forecasters even concur on the middle. Every site in the market blurs these together or shows
+   only one; a player can be wide-range and unanimously agreed on (a healthy volume RB) or narrow
+   and hotly disputed (a rookie nobody has priced). Conflating them loses that. */
+function srcSpread(pl){
+  const c=pl.cons; if(!c)return null;
+  const a=+c.e||0,b=+c.k||0,m=+c.s||((a+b)/2);
+  if(!a||!b||!m)return null;
+  return {e:a,k:b,mid:m,gap:Math.abs(a-b),rel:Math.abs(a-b)/m};
+}
+function agreeChip(pl){
+  const s=srcSpread(pl);
+  if(!s)return `<span class="meta">one source</span>`;
+  const cls=s.rel<.08?"good":s.rel<.18?"":"warn";
+  const word=s.rel<.08?"agree":s.rel<.18?"close":"split";
+  return `<span class="chip ${cls}" title="ESPN ${Math.round(s.e)} vs Sleeper ${Math.round(s.k)} — ${Math.round(s.rel*100)}% apart">${word}</span>`;
+}
+/* Tier breaks by gap detection, and ONLY within a single position — a tier spanning QBs and WRs
+   would be arithmetic with no meaning behind it. A break is a drop-off clearly larger than the
+   typical step between neighbours, which is how people actually read a cliff on a cheat sheet. */
+function tierBreaks(vals){
+  if(vals.length<6)return new Set();
+  const gaps=[]; for(let i=1;i<vals.length;i++)gaps.push(vals[i-1]-vals[i]);
+  const sorted=[...gaps].sort((a,b)=>a-b), med=sorted[Math.floor(sorted.length/2)]||0;
+  const sd=Math.sqrt(gaps.reduce((a,g)=>a+(g-med)*(g-med),0)/gaps.length)||0;
+  const thr=med+1.1*sd, out=new Set();
+  gaps.forEach((g,i)=>{ if(g>thr&&g>0)out.add(i+1); });
+  return out;
+}
 function renderPlayersTab(){
-  const {levels}=replacementLevels();
-  const u=state.ui;
-  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pts(pl)}));
+  const u=state.ui, detail=!!u.pdetail, unit=u.pview==="game"?"pts/gm":"pts";
+  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pviewOf(pl)}));
   if(u.pposFilter!=="ALL")rows=rows.filter(r=>u.pposFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.pposFilter);
   if(u.psearch)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.psearch.toLowerCase()));
   const key=u.psort,dir=u.pdir;
   rows.sort((a,b)=>{
     if(key==="name"||key==="pos"||key==="team")return dir*(a.pl[key]).localeCompare(b.pl[key]);
     if(key==="proj")return dir*(a.proj-b.proj);
+    if(key==="vsadp")return dir*((b.pl.adp||999)-(a.pl.adp||999));
     return dir*((a.pl[key]||0)-(b.pl[key]||0));
   });
-  $("#playersBody").innerHTML=rows.map((r,i)=>`
-    <tr><td class="num meta">${i+1}</td>
-      <td class="plname">${r.pl.name} ${injChip(r.pl)}${r.pl.override!=null&&r.pl.override!==""?' <span class="chip info">edited</span>':''}</td>
-      <td><span class="pos ${r.pl.pos}">${r.pl.pos}</span></td>
-      <td class="meta">${r.pl.team}</td>
-      <td class="r"><input class="editcell num" style="width:44px" type="number" value="${r.pl.age||''}" data-age="${r.pl.id}"></td>
-      <td class="r"><input class="editcell num" style="width:44px" type="number" value="${r.pl.bye||''}" data-bye="${r.pl.id}"></td>
-      <td class="r num meta">${fmt(r.pl.adp)}</td>
-      <td class="r"><input class="editcell num" type="number" step="0.1" value="${fmt(r.proj)}" data-proj="${r.pl.id}"></td>
-      <td class="r num meta">${r.pl.dist?fmt(floorOf(r.pl)):'—'}</td>
-      <td class="r num meta">${r.pl.dist?fmt(ceilOf(r.pl)):'—'}</td>
-      <td class="r num" style="color:${r.pl.dist&&r.pl.dist.boom>=.1?'var(--good)':'var(--ink-2)'}">${r.pl.dist?Math.round(r.pl.dist.boom*100)+'%':'—'}</td>
-      <td class="r num" style="color:${r.pl.dist&&r.pl.dist.bust>=.22?'var(--warn)':'var(--ink-2)'}">${r.pl.dist?Math.round(r.pl.dist.bust*100)+'%':'—'}</td>
-      ${(()=>{const sk=["QB","RB","WR","TE"].includes(r.pl.pos);const ss=sk?sosOf(r.pl,1,14):0,po=sk?sosOf(r.pl,15,17):0;
-        const c=v=>v>=1.04?'var(--good)':v<=0.96?'var(--crit)':'var(--ink-2)';
-        return `<td class="r num" style="color:${sk?c(ss):''}">${sk?ss.toFixed(2):'—'}</td><td class="r num" style="color:${sk?c(po):''}">${sk?po.toFixed(2):'—'}</td>`;})()}
-      <td class="r num meta" style="font-size:11px">${r.pl.cons?`${Math.round(r.pl.cons.e||0)||'–'}/${Math.round(r.pl.cons.k||0)||'–'}`:'—'}</td>
-    </tr>`).join("");
-  $$("#playersBody [data-proj]").forEach(inp=>inp.onchange=()=>{
-    const id=+inp.dataset.proj;state.players[id].override=inp.value===""?null:+inp.value;renderAll();flash("Projection updated");
+  /* Say what the view actually covers. Before the season starts, rest-of-season IS the whole
+     season — the numbers are right but identical to the Season view, which reads as a broken
+     control unless you say so out loud. */
+  const wkNow=state.ui.seasonWeek||1;
+  $("#pviewNote").innerHTML=u.pview==="game"
+      ? `Average points per game the player is actually expected to play — byes and missed weeks excluded.`
+    : u.pview==="ros"
+      ? (wkNow<=1?`Weeks 1–18. <b>The season hasn't kicked off</b>, so rest-of-season is the same as the full season. Once you set the week on the In-Season tab, this drops the weeks already played.`
+                 :`Only weeks ${wkNow}–18 — the points this player still has left to give.`)
+      : `Full-season totals for all 18 weeks.`;
+  const edits=state.players.filter(p=>p.so||(p.override!=null&&p.override!=="")).length;
+  $("#pEditCount").textContent=edits?`${edits} player${edits>1?"":""} edited by you`:"showing the ESPN + Sleeper consensus";
+  $("#presetall").classList.toggle("hide",!edits);
+
+  /* vs-ADP has to be measured WITHIN a position. Ranking Josh Allen's raw projection against the
+     whole pool puts him first overall and his ADP near 28, which reads as a +27 steal — but every
+     QB shows that, because quarterbacks outscore everyone in raw points and the room drafts them
+     late for exactly that reason. Comparing him only to other QBs is the apples-to-apples version,
+     and it holds no matter which filter or view is on. */
+  const rankIn={}, byPosAll={};
+  state.players.filter(inLeague).forEach(p=>{(byPosAll[p.pos]=byPosAll[p.pos]||[]).push(p);});
+  Object.values(byPosAll).forEach(list=>{
+    const pr={},ar={};
+    [...list].sort((a,b)=>pts(b)-pts(a)).forEach((p,i)=>pr[p.id]=i+1);
+    [...list].filter(p=>p.adp).sort((a,b)=>a.adp-b.adp).forEach((p,i)=>ar[p.id]=i+1);
+    list.forEach(p=>{ if(ar[p.id])rankIn[p.id]={proj:pr[p.id],adp:ar[p.id],pos:p.pos}; });
   });
-  $$("#playersBody [data-bye]").forEach(inp=>inp.onchange=()=>{
-    const id=+inp.dataset.bye;state.players[id].bye=inp.value===""?0:+inp.value;renderAll();
+
+  // One shared axis so the range bars are comparable down the column, not each self-scaled.
+  const maxC=Math.max(1,...rows.map(r=>r.pl.dist?r.proj*r.pl.dist.c:r.proj));
+  const sameP=u.pposFilter!=="ALL"&&u.pposFilter!=="FLEX";
+  const breaks=(sameP&&key==="proj"&&dir===-1)?tierBreaks(rows.map(r=>r.proj)):new Set();
+  const cols=detail&&sameP?statCols(u.pposFilter):[];
+
+  $("#phead").innerHTML=`<th data-psort="rank">#</th><th data-psort="name">Player</th>`
+    +`<th data-psort="proj" class="r">Proj ${unit}</th>`
+    +`<th style="min-width:120px" title="This player's own spread of outcomes — the bar is floor to ceiling, the mark is the projection">Range</th>`
+    +`<th class="r" data-psort="adp" title="Where the room drafts him, and how that compares to where he ranks here">ADP</th>`
+    +`<th title="Do ESPN and Sleeper agree about him? Separate question from the range.">Sources</th>`
+    +cols.map(c=>`<th class="r">${STATDEF[c][0]}</th>`).join("");
+
+  let tier=1;
+  $("#playersBody").innerHTML=rows.map((r,i)=>{
+    const pl=r.pl, d=pl.dist, open=u.popen===pl.id;
+    const lo=d?r.proj*d.f:r.proj, hi=d?r.proj*d.c:r.proj;
+    // A table that starts straight into "Tier 2" reads like the first band went missing.
+    const band=(i===0&&breaks.size)?`<tr class="tierrow"><td colspan="${6+cols.length}">Tier 1 <span class="meta">— the best of the ${u.pposFilter}s</span></td></tr>`
+      :breaks.has(i)?`<tr class="tierrow"><td colspan="${6+cols.length}">Tier ${++tier} <span class="meta">— ${fmt(rows[i].proj)} ${unit} and below</span></td></tr>`:"";
+    /* Stat cells follow the view. Showing "20.5 pts/gm" beside "1477 rush yards" mixes two units
+       in one row and reads as a bug; the same ratio that turned the total into a per-game or
+       rest-of-season number applies to every stat behind it. */
+    const L=line(pl), full=pts(pl), vscale=full>0?r.proj/full:1;
+    const rk=rankIn[pl.id], vsadp=rk?rk.adp-rk.proj:null;
+    return band+`<tr class="prow${open?" open":""}" data-row="${pl.id}">
+      <td class="num meta">${i+1}</td>
+      <td class="plname"><span class="pos ${pl.pos}">${pl.pos}</span> ${pl.name} <span class="meta">${pl.team}${pl.bye?" · bye "+pl.bye:""}</span> ${injChip(pl)}${pl.so?' <span class="chip info" title="You changed his stat line">your line</span>':''}${pl.override!=null&&pl.override!==""?' <span class="chip warn" title="Fixed total — does not follow your scoring settings">fixed total</span>':''}</td>
+      <td class="r num"><b>${fmt(r.proj)}</b></td>
+      <td>${d?`<span class="rangebar" title="Could reasonably finish anywhere from ${fmt(lo)} to ${fmt(hi)} ${unit}">
+            <span class="rb-track"><span class="rb-fill" style="left:${lo/maxC*100}%;width:${Math.max(1,(hi-lo)/maxC*100)}%"></span>
+            <span class="rb-dot" style="left:${r.proj/maxC*100}%"></span></span>
+            <span class="meta rb-lab">${fmt(lo)}–${fmt(hi)}</span></span>`:'<span class="meta">—</span>'}</td>
+      <td class="r num meta">${pl.adp?fmt(pl.adp):'—'}${vsadp!=null&&Math.abs(vsadp)>=3?`<br><span class="vsadp ${vsadp>0?"good":"bad"}" title="${rk?`${pl.pos}${rk.proj} here, but the ${ORD(rk.adp)} ${pl.pos} off the board. ${vsadp>0?`Drafted ${vsadp} ${pl.pos}s later than he ranks — that is the value.`:`Drafted ${-vsadp} ${pl.pos}s earlier than he ranks.`}`:""}">${vsadp>0?"+":""}${vsadp}</span>`:''}</td>
+      <td>${agreeChip(pl)}</td>
+      ${cols.map(c=>`<td class="r num${pl.so&&pl.so[c]!=null?' edited':''}">${fmt((L[c]||0)*vscale)}</td>`).join("")}
+    </tr>`+(open?detailRow(pl,cols.length+6):"");
+  }).join("");
+
+  $$("#playersBody .prow").forEach(tr=>tr.onclick=e=>{
+    if(e.target.closest("input,button"))return;
+    const id=+tr.dataset.row; state.ui.popen=state.ui.popen===id?null:id; renderPlayersTab();
   });
+  wireDetailRow();
+  wireProjSort();
+}
+/* The expanded row is the whole point: it answers "where does this number come from" by showing
+   the arithmetic itself — each projected stat, times your league's value for it, equals its
+   contribution. Nobody in the market does this; the provenance exists at every site and stays in
+   a blog post or a detached PDF. Editing happens here too, on the INPUTS, so the total stays live
+   under a scoring change instead of freezing the moment you touch it. */
+function detailRow(pl,span){
+  const s=state.settings.scoring, L=line(pl), cols=statCols(pl.pos);
+  const total=pts(pl), fixed=pl.override!=null&&pl.override!=="";
+  const parts=cols.filter(c=>STATDEF[c]).map(c=>{
+    const v=+L[c]||0, per=+s[STATDEF[c][1]]||0, sub=v*per;
+    return {c,label:STATDEF[c][0],v,per,sub};
+  });
+  const sum=parts.reduce((a,p)=>a+p.sub,0);
+  const wk=pl.wk&&pl.wk.length?pl.wk:null, mx=wk?Math.max(...wk):0;
+  const sp=srcSpread(pl);
+  return `<tr class="detailrow"><td colspan="${span}"><div class="dwrap">
+    <div>
+      <div class="eyebrow">Where this number comes from</div>
+      ${cols.length?`<table class="mathtbl">${parts.map(p=>`<tr>
+        <td><input class="editcell num" type="number" step="0.1" data-so="${pl.id}:${p.c}" value="${fmt(p.v)}"></td>
+        <td class="meta">${p.label}</td><td class="meta r">× ${p.per}</td>
+        <td class="r num">${fmt(p.sub)}</td></tr>`).join("")}
+        <tr class="tot"><td colspan="3"><b>Projected total</b></td><td class="r num"><b>${fmt(sum)}</b></td></tr></table>
+        <div class="meta" style="margin-top:6px">Change any stat and the total recomputes under <b>your</b> scoring settings.
+        ${pl.so?`<button class="ghost sm" data-resetso="${pl.id}">Back to consensus</button>`:""}</div>`
+      :`<div class="meta">${pl.pos} is projected as a flat point total — there is no stat line to break down.</div>`}
+      <div class="eyebrow" style="margin-top:12px">Player facts</div>
+      <div class="factrow">
+        <label>Age <input class="editcell num" type="number" data-age="${pl.id}" value="${pl.age||''}"></label>
+        <label>Bye <input class="editcell num" type="number" data-bye="${pl.id}" value="${pl.bye||''}"></label>
+        <label>Fixed total <input class="editcell num" type="number" step="0.1" data-proj="${pl.id}" value="${fixed?fmt(+pl.override):''}" placeholder="—"></label>
+      </div>
+      ${fixed?`<div class="note warn-note" style="margin-top:10px"><b>You typed a fixed total of ${fmt(+pl.override)}.</b>
+        It overrides everything above and <b>will not change</b> if you switch PPR or TE-premium.
+        <button class="ghost sm" data-unfix="${pl.id}">Use the stat line instead</button></div>`:""}
+    </div>
+    <div>
+      <div class="eyebrow">How sure is this?</div>
+      <div class="kv"><span>His own range of outcomes</span><b>${pl.dist?`${fmt(floorOf(pl))}–${fmt(ceilOf(pl))}`:"—"}</b></div>
+      <div class="kv"><span>Boom season (top-tier finish)</span><b>${pl.dist?Math.round(pl.dist.boom*100)+"%":"—"}</b></div>
+      <div class="kv"><span>Bust season</span><b>${pl.dist?Math.round(pl.dist.bust*100)+"%":"—"}</b></div>
+      <div class="kv"><span>ESPN says</span><b>${sp?Math.round(sp.e):"—"}</b></div>
+      <div class="kv"><span>Sleeper says</span><b>${sp?Math.round(sp.k):"—"}</b></div>
+      <div class="kv"><span>They are</span><b>${sp?`${Math.round(sp.rel*100)}% apart`:"—"}</b></div>
+      ${["QB","RB","WR","TE"].includes(pl.pos)?`<div class="kv"><span>Schedule (1.00 = average)</span><b>${sosOf(pl,1,14).toFixed(2)}</b></div>
+      <div class="kv"><span>Fantasy playoffs, weeks 15–17</span><b>${sosOf(pl,15,17).toFixed(2)}</b></div>`:""}
+      ${wk?`<div class="eyebrow" style="margin-top:12px">Week by week</div>
+        <div class="spark">${wk.map((v,i)=>`<span class="sb${v<=0?" bye":""}" style="height:${mx?Math.max(3,v/mx*100):3}%" title="Week ${i+1}: ${v>0?fmt(v)+" pts":"bye"}"></span>`).join("")}</div>
+        <div class="meta" style="display:flex;justify-content:space-between"><span>Wk 1</span><span>Wk ${wk.length}</span></div>`:""}
+    </div>
+  </div></td></tr>`;
+}
+function wireDetailRow(){
+  $$("#playersBody [data-so]").forEach(inp=>inp.onchange=()=>{
+    const [id,k]=inp.dataset.so.split(":"), pl=state.players[+id];
+    const base=+pl.stats[k]||0, v=inp.value===""?base:+inp.value;
+    pl.so=pl.so||{};
+    if(Math.abs(v-base)<1e-9)delete pl.so[k]; else pl.so[k]=v;
+    if(!Object.keys(pl.so).length)delete pl.so;
+    renderAll();flash("Stat line updated — points recomputed");
+  });
+  $$("#playersBody [data-resetso]").forEach(b=>b.onclick=()=>{
+    delete state.players[+b.dataset.resetso].so;renderAll();flash("Back to consensus");});
+  $$("#playersBody [data-unfix]").forEach(b=>b.onclick=()=>{
+    state.players[+b.dataset.unfix].override=null;renderAll();flash("Now using the stat line");});
   $$("#playersBody [data-age]").forEach(inp=>inp.onchange=()=>{
-    const id=+inp.dataset.age;state.players[id].age=inp.value===""?0:+inp.value;renderAll();
-  });
+    state.players[+inp.dataset.age].age=inp.value===""?0:+inp.value;renderAll();});
+  $$("#playersBody [data-bye]").forEach(inp=>inp.onchange=()=>{
+    state.players[+inp.dataset.bye].bye=inp.value===""?0:+inp.value;renderAll();});
+  $$("#playersBody [data-proj]").forEach(inp=>inp.onchange=()=>{
+    state.players[+inp.dataset.proj].override=inp.value===""?null:+inp.value;
+    renderAll();flash(inp.value===""?"Back to the stat line":"Fixed total set");});
+}
+function exportProjCSV(){
+  const u=state.ui;
+  let rows=state.players.filter(inLeague);
+  if(u.pposFilter!=="ALL")rows=rows.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
+  if(u.psearch)rows=rows.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
+  rows.sort((a,b)=>pviewOf(b)-pviewOf(a));
+  const sc=["py","ptd","int","ry","rtd","rec","recy","rectd","fl"];
+  const head=["Rank","Player","Pos","Team","Bye","Age","ADP","Proj","Floor","Ceiling","Boom%","Bust%",
+    "ESPN","Sleeper","SourceGap%","Edited",...sc.map(c=>STATDEF[c][0])];
+  const esc=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
+  const body=rows.map((p,i)=>{const L=line(p),sp=srcSpread(p);
+    return [i+1,p.name,p.pos,p.team,p.bye||"",p.age||"",p.adp||"",fmt(pviewOf(p)),
+      p.dist?fmt(floorOf(p)):"",p.dist?fmt(ceilOf(p)):"",p.dist?Math.round(p.dist.boom*100):"",p.dist?Math.round(p.dist.bust*100):"",
+      sp?Math.round(sp.e):"",sp?Math.round(sp.k):"",sp?Math.round(sp.rel*100):"",
+      p.so?"stat line":(p.override!=null&&p.override!==""?"fixed total":""),
+      ...sc.map(c=>L[c]!=null?fmt(L[c]):"")].map(esc).join(",");});
+  const csv=[head.map(esc).join(","),...body].join("\r\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download=`projections-${state.ui.pview||"season"}.csv`;a.click();
+  flash(`Exported ${rows.length} players`);
 }
 
 /* This panel used to say "QB · last starter ≈ #12 · 313 pts", which is three pieces of jargon
@@ -5334,7 +5629,12 @@ function wireHeaderTable(){
   $$("#availTable th[data-sort]").forEach(th=>th.onclick=()=>{
     const k=th.dataset.sort;if(state.ui.sort===k)state.ui.dir*=-1;else{state.ui.sort=k;state.ui.dir=(k==="name"||k==="pos")?1:-1;}renderAvail();
   });
-  $$("#tab-players th[data-psort]").forEach(th=>th.onclick=()=>{
+}
+/* The projections header is rebuilt on every render (its columns depend on the view), so sorting
+   has to be re-bound each time — binding it once at startup would silently stop working the first
+   time you switched views. */
+function wireProjSort(){
+  $$("#phead th[data-psort]").forEach(th=>th.onclick=()=>{
     const k=th.dataset.psort;if(state.ui.psort===k)state.ui.pdir*=-1;else{state.ui.psort=k;state.ui.pdir=(k==="name"||k==="pos"||k==="team")?1:-1;}renderPlayersTab();
   });
 }
@@ -5386,6 +5686,16 @@ function init(){
   $$("#tabs .tab").forEach(t=>t.onclick=()=>showTab(t.dataset.tab));
   $("#search").oninput=e=>{state.ui.search=e.target.value;renderAvail();};
   $("#psearch").oninput=e=>{state.ui.psearch=e.target.value;renderPlayersTab();};
+  // Small local helper: these two segs drive view state only, so they don't go through the
+  // settings/migrate path every other seg on the page uses.
+  const segWire=(sel,fn)=>$$(sel+" button").forEach(b=>b.onclick=()=>{
+    $$(sel+" button").forEach(x=>x.classList.toggle("on",x===b)); fn(b.dataset.v);});
+  segWire("#s_pview",v=>{state.ui.pview=v;renderPlayersTab();save();});
+  segWire("#s_pdetail",v=>{state.ui.pdetail=+v;renderPlayersTab();save();});
+  $("#pexport").onclick=exportProjCSV;
+  $("#presetall").onclick=()=>{
+    if(!confirm("Throw away every projection edit you have made and go back to the ESPN + Sleeper consensus?"))return;
+    state.players.forEach(p=>{delete p.so;p.override=null;});renderAll();flash("All edits cleared");};
   $("#hideDrafted").onclick=()=>{state.ui.hideDrafted=!state.ui.hideDrafted;$("#hideDrafted").classList.toggle("on",state.ui.hideDrafted);renderAvail();};
   $$("#recMode button").forEach(b=>b.onclick=()=>{state.ui.simMode=(b.dataset.m==="sim");SIMCACHE={key:null};renderRecs();});
   wireHeaderTable();wireSetup();initTheme();
