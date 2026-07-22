@@ -114,6 +114,45 @@
   .ghost.sm{padding:2px 8px;font-size:11px;margin-left:6px}
   .warn-note{border-color:color-mix(in srgb,var(--warn) 40%,transparent);
              background:color-mix(in srgb,var(--warn) 9%,transparent)}
+  /* ---- Matchups ----------------------------------------------------------------
+     The head-to-head is the one thing you open this tab for, so it gets the space: two score
+     bands either side of the only number that matters. The win probability is the hero, not the
+     projected totals — those are inputs to it. */
+  .h2h{display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:center}
+  .h2hside{min-width:0}
+  .h2hside.right{text-align:right}
+  .h2hname{font-size:13px;font-weight:700;color:var(--ink-2);letter-spacing:.02em;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .h2hproj{font-size:30px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+  .h2hside .rb-track{margin-top:8px;display:block}
+  .rb-fill.mine{background:color-mix(in srgb,var(--accent) 40%,transparent)}
+  .rb-fill.theirs{background:color-mix(in srgb,var(--ink-2) 30%,transparent)}
+  .h2hmid{text-align:center;padding:0 4px;display:flex;flex-direction:column;align-items:center}
+  .winbig{font-size:44px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
+  .winbig.good{color:var(--good-ink)} .winbig.warn{color:var(--warn-ink)} .winbig.crit{color:var(--crit-ink)}
+  .h2hfinal{padding:6px 0}
+  .h2hscore{font-size:34px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .h2hscore.win{color:var(--good-ink)} .h2hscore.loss{color:var(--crit-ink)}
+  @media(max-width:700px){.h2h{grid-template-columns:1fr;gap:14px}.h2hside.right{text-align:left}}
+  /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
+  .lcmp{width:100%}
+  .lcmp td,.lcmp th{padding:5px 8px;font-size:12.5px}
+  .lcmp .lc-slot{text-align:center;font-size:10px;font-weight:800;letter-spacing:.06em;
+                 color:var(--ink-2);background:var(--panel-2);width:52px}
+  .lcmp .lc-nm{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lcmp td.won{font-weight:800;color:var(--good-ink)}
+  .swingrow{display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .swingrow:last-child{border-bottom:none}
+  .swname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .swbar{width:110px;height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden;flex:none}
+  .swbar span{display:block;height:100%;border-radius:4px;background:var(--accent)}
+  .wprob{width:84px;height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden;flex:none}
+  .wprob span{display:block;height:100%;border-radius:4px;background:var(--ink-2)}
+  .wprob span.good{background:var(--good)} .wprob span.bad{background:var(--crit)}
+  .matchup[data-wk]{cursor:pointer;border-radius:7px;padding-left:4px;padding-right:4px}
+  .matchup[data-wk]:hover{background:var(--panel-2)}
+  .matchup.cur{background:color-mix(in srgb,var(--accent) 10%,transparent);
+               box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
   /* Week-by-week: 18 bars, byes left as gaps rather than drawn as zero-height mystery ticks. */
   .spark{display:flex;align-items:flex-end;gap:2px;height:44px;padding-top:4px}
   .spark .sb{flex:1;background:color-mix(in srgb,var(--accent) 55%,transparent);border-radius:2px 2px 0 0;min-height:3px}
@@ -597,17 +636,34 @@
   <!-- MATCHUPS TAB -->
   <section id="tab-matchups" class="hide">
     <div class="panel">
-      <div class="hd"><h2>Weekly matchup projections</h2><span class="pickcounter" style="margin-left:auto">Best lineup each week · bye weeks score zero</span></div>
+      <div class="hd"><h2>This week</h2>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <button class="ghost sm" id="mPrev" title="Previous week">‹</button>
+          <select id="mWeek" class="search" style="width:auto;padding:4px 8px"></select>
+          <button class="ghost sm" id="mNext" title="Next week">›</button></span></div>
       <div class="bd">
-        <div class="note" id="matchNote" style="margin-bottom:14px"></div>
-        <div class="grid-draft" style="grid-template-columns:1.1fr .9fr">
+        <div id="mH2H"></div>
+        <div class="note" id="matchNote" style="margin-top:14px;font-size:12px"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Who actually decides this game</h2>
+        <span class="pickcounter" style="margin-left:auto">Not the same as who scores most</span></div>
+      <div class="bd"><div id="mSwing"></div></div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>Your season</h2><span class="pickcounter" style="margin-left:auto" id="mSeasonCtx"></span></div>
+      <div class="bd">
+        <div class="grid-draft" style="grid-template-columns:1fr 1fr">
           <div>
-            <h3 style="font-size:13px;margin-bottom:8px" class="eyebrow">Your week-by-week schedule</h3>
+            <h3 class="eyebrow" style="margin-bottom:8px">Every week, and your odds in it</h3>
             <div id="myScheduleBox"></div>
           </div>
           <div>
-            <h3 style="font-size:13px;margin-bottom:8px" class="eyebrow">Projected league standings</h3>
-            <div class="tblwrap"><table><thead><tr><th>Team</th><th class="r">Rec</th><th class="r">PF/wk</th><th class="r">Roster pts</th></tr></thead><tbody id="standingsBody"></tbody></table></div>
+            <h3 class="eyebrow" style="margin-bottom:8px">Where the league finishes</h3>
+            <div class="tblwrap"><table><thead><tr><th>Team</th><th class="r">Record</th><th class="r">Pts/wk</th><th class="r">Playoffs</th></tr></thead><tbody id="standingsBody"></tbody></table></div>
           </div>
         </div>
       </div>
@@ -2730,6 +2786,37 @@ function selfTest(){
     const medD=dl.length?dl[Math.floor(dl.length/2)]:0;
     add("Value-vs-ADP is judged within a position",Math.abs(medD)<=2,
         `median QB gap ${medD>0?"+":""}${medD} — not a blanket "every QB is a steal"`);
+    /* 2b-ter. MATCHUP ENGINE. The tab used to settle games with `mine >= theirs`, so the checks
+       that matter are the ones that would have caught that: a real edge must NOT come back as a
+       certainty, and an even matchup must come back even. */
+    const mkU=(base,cv)=>({pl:{name:"t",pos:"RB",dist:null},base,sd:0.18,cv,mult:1,slot:"RB"});
+    const evenA=Array.from({length:9},()=>mkU(10,0.6));
+    const evenSim=simMatchup(evenA,evenA.map(u=>({...u})),3000);
+    add("An even matchup comes back even",Math.abs(evenSim.p-0.5)<0.035,
+        `identical lineups → ${(evenSim.p*100).toFixed(1)}% (a coin flip, not a verdict)`);
+    const favSim=simMatchup(evenA,evenA.map(u=>({...u,base:8.5})),3000);
+    add("A clear favourite is still only a favourite",favSim.p>0.55&&favSim.p<0.92,
+        `${fmt(favSim.a.mean)} vs ${fmt(favSim.b.mean)} projected → ${(favSim.p*100).toFixed(0)}%, not a W`);
+    /* Leverage must not collapse into "sort by projection". The first version of swingOf used one
+       flat band for every player, which did exactly that — it ranked a steady 14-point tight end
+       above a boom-or-bust 11-point receiver. If that ever regresses, this catches it. */
+    const steady=mkU(14,0.30), volatile=mkU(11,1.10);
+    steady.pl={name:"steady",pos:"TE"}; volatile.pl={name:"volatile",pos:"WR"};
+    const swTest=swingOf([steady,volatile,...Array.from({length:4},()=>mkU(10,0.6))],
+                         evenA.slice(0,6),2500);
+    const iSteady=swTest.findIndex(x=>x.pl.name==="steady"), iVol=swTest.findIndex(x=>x.pl.name==="volatile");
+    add("Swing measures volatility, not just points",iVol<iSteady,
+        `the boom-or-bust 11-pt WR outranks the steady 14-pt TE (${iVol+1} vs ${iSteady+1} of ${swTest.length})`);
+    /* Two hard conservation laws on the season sim: the playoff odds across the league must add
+       up to the number of playoff spots, and every game played hands out exactly one win. */
+    const SS=simSeason(200), SCk=seasonSchedule();
+    const oddsSum=SS.reduce((a,x)=>a+x.playoff,0);
+    const winSum=SS.reduce((a,x)=>a+x.wins,0);
+    const gameCount=SCk.weeks.reduce((n,w)=>n+w.pairs.length,0);
+    add("Playoff odds add up across the league",Math.abs(oddsSum-SCk.playoffTeams)<0.01,
+        `${oddsSum.toFixed(2)} = ${SCk.playoffTeams} playoff spots`);
+    add("Every simulated game produces exactly one win",Math.abs(winSum-gameCount)<0.01,
+        `${winSum.toFixed(1)} wins across ${gameCount} games`);
     // 2c. TRADE ENGINE: bracket resolves at every playoff size, picks are valued sanely
     const wkOf=(T,best)=>Array.from({length:T},(_,i)=>{const a=new Array(25).fill(0);
       for(let w=0;w<25;w++)a[w]=(i===best?1000:100-i);return a;});
@@ -4937,54 +5024,284 @@ function weeklyScore(roster,week){
   const {slots}=fillLineup(active);
   return slots.reduce((s,x)=>s+(x.pl?pts(x.pl)/17:0),0);
 }
-function renderMatchups(){
-  const T=state.settings.teams;
+
+/* ============================ MATCHUP ENGINE ============================
+   The old tab settled every game with `myScore >= theirScore` on a single point projection and
+   then stacked fourteen of those verdicts into a standings table. That isn't what a fantasy week
+   is. A 118-to-105 edge is roughly a 60/40, not a win, and compounding the error across a season
+   produces a table that looks authoritative and isn't — it also handed every tie to whichever
+   team had the lower index.
+
+   Everything here runs the same two-part variance model the title simulator already uses:
+     * one SEASON-LONG error per player, drawn once and held for the whole run, because being
+       wrong about a player is a standing condition rather than a fresh coin flip each Sunday, and
+     * a lognormal WEEKLY swing on top, which is what actually makes a 20-point favourite lose.
+   A matchup therefore returns a probability and a spread, never a verdict. */
+function weekUnits(roster,week){
+  const active=(roster||[]).filter(p=>p&&!p.isPick&&p.bye!==week);
+  const {slots,bench}=fillLineup(active);
+  const unit=p=>{const d=p.dist;return {pl:p,base:pts(p)/17,sd:d?(d.c-d.f)/2.08:0.18,
+    cv:weekCvOf(p.pos),mult:weeklyMultOf(p,week)};};
+  return {starters:slots.filter(s=>s.pl).map(s=>Object.assign(unit(s.pl),{slot:s.slot})),
+          empty:slots.filter(s=>!s.pl).map(s=>s.slot), bench:(bench||[]).map(unit)};
+}
+function drawScore(units){
+  let t=0;
+  for(const u of units) t+=u.base*u.mult*seasonFactor(u.sd)*weekFactor(u.cv);
+  return t;
+}
+/* Win probability by simulation. Ties are a real fantasy outcome and most leagues score them as
+   half a win, so they're counted rather than silently awarded to one side. */
+function simMatchup(unitsA,unitsB,iters){
+  const N=iters||2500; let win=0,tie=0; const sa=[],sb=[];
+  for(let i=0;i<N;i++){
+    const a=drawScore(unitsA), b=drawScore(unitsB);
+    sa.push(a); sb.push(b);
+    if(Math.abs(a-b)<0.05)tie++; else if(a>b)win++;
+  }
+  sa.sort((x,y)=>x-y); sb.sort((x,y)=>x-y);
+  const q=(arr,p)=>arr[Math.min(arr.length-1,Math.max(0,Math.round(p*(arr.length-1))))];
+  const mean=arr=>arr.reduce((s,v)=>s+v,0)/arr.length;
+  return {p:(win+tie/2)/N, tie:tie/N,
+    a:{mean:mean(sa),lo:q(sa,.1),hi:q(sa,.9),med:q(sa,.5)},
+    b:{mean:mean(sb),lo:q(sb,.1),hi:q(sb,.9),med:q(sb,.5)}};
+}
+/* Which players actually decide this game.
+   Research kept turning up the same hole: every site tells you your projected total, none tells
+   you WHICH of your starters the result hinges on. A high projection is not the same as a high
+   influence — a steady 14-point tight end can matter less than a boom-or-bust receiver projected
+   for 11, because the outcome only moves where the outcome is uncertain. So hold the rest of the
+   lineup fixed and swing this one player between a bad day and a good one, and report how far the
+   win probability travels. That number is his leverage on the week. */
+/* A player's own bad day and good day, not a flat one-size band.
+   The first version of this used a fixed 0.55×/1.55× for everybody, which made swing exactly
+   proportional to the projection — it re-ranked the lineup by points scored and called it
+   leverage. Tested against a steady 14-point tight end and a boom-or-bust 11-point receiver it
+   put the tight end on top, the opposite of the whole point. Each player's band now comes from
+   his OWN weekly spread and season-long error, so volatility counts as much as size. */
+const SWINGQ=new WeakMap();
+function swingBand(u){
+  const key=u.pl;
+  const hit=SWINGQ.get(key);
+  if(hit&&hit.cv===u.cv&&hit.sd===u.sd)return hit;
+  const draws=[];
+  for(let i=0;i<1200;i++)draws.push(seasonFactor(u.sd)*weekFactor(u.cv));
+  draws.sort((a,b)=>a-b);
+  const band={cv:u.cv,sd:u.sd,lo:draws[Math.round(.15*(draws.length-1))],hi:draws[Math.round(.85*(draws.length-1))]};
+  SWINGQ.set(key,band);
+  return band;
+}
+function swingOf(unitsA,unitsB,iters){
+  const N=iters||1500, n=unitsA.length;
+  const lo=new Array(n).fill(0), hi=new Array(n).fill(0);
+  const band=unitsA.map(swingBand);
+  for(let it=0;it<N;it++){
+    /* Common random numbers: one simulated week is drawn and then reused for every player's bad
+       case and good case. Re-rolling the rest of the lineup between the two would let sampling
+       noise masquerade as influence, which at these iteration counts is easily larger than the
+       effect being measured. */
+    const opp=drawScore(unitsB);
+    let tot=0; const own=new Array(n);
+    for(let i=0;i<n;i++){const u=unitsA[i];
+      own[i]=u.base*u.mult*seasonFactor(u.sd)*weekFactor(u.cv); tot+=own[i];}
+    for(let i=0;i<n;i++){
+      const rest=tot-own[i], b=unitsA[i].base*unitsA[i].mult;
+      if(rest+b*band[i].lo>opp)lo[i]++;
+      if(rest+b*band[i].hi>opp)hi[i]++;
+    }
+  }
+  return unitsA.map((u,i)=>({pl:u.pl,slot:u.slot,swing:(hi[i]-lo[i])/N,proj:u.base*u.mult}))
+    .sort((x,y)=>y.swing-x.swing);
+}
+/* The league's real schedule when we're synced to Sleeper, the synthetic round-robin otherwise.
+   The old tab always used the round-robin even when the real fixtures had already been fetched
+   for the trade tab — so it could tell you that you played a team in week 3 that you don't. */
+function seasonSchedule(){
+  const T=state.settings.teams, S=TRADE.schedule;
+  if(S&&S.sched&&S.sched.some(Boolean)){
+    const weeks=[];
+    for(let w=1;w<=(S.regEnd||14);w++){
+      const p=S.sched[w]; if(!p)continue;
+      weeks.push({week:w,pairs:p.map(x=>[x.a,x.b]),done:(S.done&&S.done[w])||null});
+    }
+    if(weeks.length)return {weeks,real:true,regEnd:S.regEnd,playoffStart:S.playoffStart,
+      playoffTeams:Math.min(T,S.playoffTeams||6)};
+  }
+  return {weeks:roundRobin(T).map((pairs,i)=>({week:i+1,pairs,done:null})),
+          real:false,regEnd:14,playoffStart:15,playoffTeams:Math.min(6,T)};
+}
+/* "Makes the playoffs" as a frequency over simulated seasons rather than a verdict read off one
+   projection. Weeks already played are fact and are carried through unchanged. */
+let SEASONSIM={key:null,val:null};
+function simSeason(iters){
+  const T=state.settings.teams, SC=seasonSchedule(), N=iters||400;
+  const key=JSON.stringify([T,state.picks.length,state.settings.format,state.settings.bestball,
+    SC.real,state.ui.seasonWeek,Object.values(state.settings.roster)]);
+  if(SEASONSIM.key===key)return SEASONSIM.val;
   const rosters=[...Array(T).keys()].map(teamRoster);
-  const totalRostered=state.picks.length;
-  const done=Math.round(totalRostered/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0))*100);
-  $("#matchNote").innerHTML=`Every team plays its best possible lineup each week. A player's weekly score is his season total spread across the year, and anyone on a bye scores nothing. Only <b>${done}%</b> of the draft is done, so most rosters are still half empty and these numbers will move a lot — they settle as more picks come in.`;
-  const sched=roundRobin(T);
-  // standings
-  const recs=[...Array(T).keys()].map(()=>({w:0,l:0,pf:0,g:0}));
-  sched.forEach(week=>week.forEach(([a,b])=>{
-    // find actual week index
-  }));
-  sched.forEach((week,wi)=>{
-    const wk=wi+1;
-    week.forEach(([a,b])=>{
-      const sa=weeklyScore(rosters[a],wk),sb=weeklyScore(rosters[b],wk);
-      recs[a].pf+=sa;recs[a].g++;recs[b].pf+=sb;recs[b].g++;
-      if(sa>=sb){recs[a].w++;recs[b].l++;}else{recs[b].w++;recs[a].l++;}
+  const U={};
+  SC.weeks.forEach(w=>{ U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters); });
+  const made=new Array(T).fill(0), wins=new Array(T).fill(0), pfs=new Array(T).fill(0);
+  const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
+  for(let it=0;it<N;it++){
+    const w=new Array(T).fill(0), pf=new Array(T).fill(0);
+    SC.weeks.forEach(wk=>{
+      wk.pairs.forEach(([a,b])=>{
+        let sa,sb;
+        if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){ sa=wk.done[a]; sb=wk.done[b]; }
+        else { sa=drawScore(U[wk.week][a]||[]); sb=drawScore(U[wk.week][b]||[]); }
+        pf[a]+=sa; pf[b]+=sb;
+        if(sa>sb)w[a]++; else if(sb>sa)w[b]++; else {w[a]+=.5;w[b]+=.5;}
+      });
     });
-  });
-  const order=[...Array(T).keys()].sort((x,y)=>(recs[y].w-recs[x].w)||(recs[y].pf-recs[x].pf));
-  $("#standingsBody").innerHTML=order.map((i,rank)=>{
-    const rr=recs[i], rp=rosters[i].reduce((s,p)=>s+pts(p),0);
-    return `<tr style="${i===myIdx()?'background:var(--accent-soft)':''}">
-      <td>${i===myIdx()?'★ ':''}${i===myIdx()?'You':'Team '+(i+1)}</td>
-      <td class="r num">${rr.w}-${rr.l}</td>
-      <td class="r num">${rr.g?fmt(rr.pf/rr.g):'—'}</td>
-      <td class="r num meta">${fmt(rp)}</td></tr>`;
+    [...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])).slice(0,nSeeds).forEach(i=>made[i]++);
+    for(let i=0;i<T;i++){wins[i]+=w[i];pfs[i]+=pf[i];}
+  }
+  const val=[...Array(T).keys()].map(i=>({team:i,playoff:made[i]/N,wins:wins[i]/N,pf:pfs[i]/N,
+    games:SC.weeks.reduce((n,wk)=>n+(wk.pairs.some(p=>p.includes(i))?1:0),0)}));
+  SEASONSIM={key,val}; return val;
+}
+/* Plain English for a probability. A number alone invites false precision — "63%" reads as a
+   promise, "leaning your way" reads as what it is. */
+function oddsWord(p){
+  if(p>=.85)return {t:"You should win this",c:"good"};
+  if(p>=.65)return {t:"You're favoured",c:"good"};
+  if(p>=.55)return {t:"Leaning your way",c:""};
+  if(p>=.45)return {t:"A coin flip",c:"warn"};
+  if(p>=.35)return {t:"Leaning their way",c:"warn"};
+  if(p>=.15)return {t:"You're the underdog",c:"crit"};
+  return {t:"You need a big week",c:"crit"};
+}
+function renderMatchups(){
+  const T=state.settings.teams, me=myIdx();
+  const SC=seasonSchedule(), rosters=[...Array(T).keys()].map(teamRoster);
+  const filled=state.picks.length/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0));
+
+  // ---- week selector ----
+  const myWeeks=SC.weeks.filter(w=>w.pairs.some(p=>p.includes(me)));
+  if(!myWeeks.length){$("#mH2H").innerHTML=`<div class="emptystate">No schedule yet.</div>`;return;}
+  let wk=state.ui.mWeek;
+  if(!myWeeks.some(w=>w.week===wk))wk=(myWeeks.find(w=>w.week>=(state.ui.seasonWeek||1))||myWeeks[0]).week;
+  state.ui.mWeek=wk;
+  $("#mWeek").innerHTML=myWeeks.map(w=>`<option value="${w.week}"${w.week===wk?" selected":""}>Week ${w.week}</option>`).join("");
+
+  const wobj=myWeeks.find(w=>w.week===wk);
+  const pair=wobj.pairs.find(p=>p.includes(me));
+  const opp=pair[0]===me?pair[1]:pair[0];
+  const A=weekUnits(rosters[me],wk), B=weekUnits(rosters[opp],wk);
+  const played=wobj.done&&wobj.done[me]!=null&&wobj.done[opp]!=null;
+  const sim=simMatchup(A.starters,B.starters,3000);
+
+  const pct=Math.round(sim.p*100), word=oddsWord(sim.p);
+  const maxHi=Math.max(sim.a.hi,sim.b.hi)||1;
+  const bandBar=(s,cls)=>`<span class="rb-track" style="height:9px">
+      <span class="rb-fill ${cls}" style="left:${s.lo/maxHi*100}%;width:${Math.max(2,(s.hi-s.lo)/maxHi*100)}%"></span>
+      <span class="rb-dot" style="left:${s.med/maxHi*100}%"></span></span>`;
+
+  $("#mH2H").innerHTML=played
+    ? `<div class="h2hfinal"><div><div class="eyebrow">Final</div>
+         <div class="h2hscore ${wobj.done[me]>wobj.done[opp]?"win":"loss"}">${fmt(wobj.done[me])} – ${fmt(wobj.done[opp])}</div>
+         <div class="meta">You vs ${teamLabel(opp)} · week ${wk} is in the books</div></div></div>`
+    : `<div class="h2h">
+      <div class="h2hside">
+        <div class="h2hname">You</div>
+        <div class="h2hproj">${fmt(sim.a.mean)}</div>
+        <div class="meta">most likely ${fmt(sim.a.lo)} – ${fmt(sim.a.hi)}</div>
+        ${bandBar(sim.a,"mine")}
+      </div>
+      <div class="h2hmid">
+        <div class="winbig ${word.c}">${pct}%</div>
+        <div class="meta" style="text-align:center">chance you win</div>
+        <div class="chip ${word.c}" style="margin-top:6px">${word.t}</div>
+      </div>
+      <div class="h2hside right">
+        <div class="h2hname">${teamLabel(opp)}</div>
+        <div class="h2hproj">${fmt(sim.b.mean)}</div>
+        <div class="meta">most likely ${fmt(sim.b.lo)} – ${fmt(sim.b.hi)}</div>
+        ${bandBar(sim.b,"theirs")}
+      </div></div>
+      ${lineupCompare(A,B,opp)}`;
+
+  /* The old tab said "W" whenever the projection was higher, which is the single most misleading
+     thing a fantasy tool can do — it turns a 55/45 into a certainty and then stacks fourteen of
+     them into a standings table. Say what the projection is worth instead. */
+  $("#matchNote").innerHTML=played
+    ? `Week ${wk} has been played, so this is the real result, not a projection.`
+    : `Both lineups are simulated ${(3000).toLocaleString()} times. Each player carries a season-long error that persists all year
+       <i>and</i> a week-to-week swing, which is why a ${fmt(Math.abs(sim.a.mean-sim.b.mean))}-point projected edge is only ${pct}% and not a win.
+       ${SC.real?`Fixtures are your league's real schedule.`:`No league synced, so this is a generated round-robin — connect Sleeper on the League Setup tab for your real fixtures.`}
+       ${filled<0.9?`<b>The draft is only ${Math.round(filled*100)}% done</b>, so rosters are still filling out and these numbers will move a lot.`:""}`;
+
+  // ---- swing ----
+  const sw=A.starters.length?swingOf(A.starters,B.starters,1500):[];
+  const top=sw.filter(x=>x.proj>0);
+  const mx=Math.max(0.001,...top.map(x=>x.swing));
+  $("#mSwing").innerHTML=played?`<div class="meta">Week ${wk} is already final.</div>`
+    :!top.length?`<div class="emptystate">Draft some players and this fills in.</div>`
+    :`<p class="meta" style="margin:0 0 10px">Each bar is how far your win probability moves between this player having a bad day and a good one.
+      A big projection isn't the same as a big influence — the game turns on the players whose range is widest,
+      because that's where the outcome is still undecided.</p>`
+    +top.slice(0,8).map(x=>`<div class="swingrow">
+        <span class="pos ${x.pl.pos}">${x.slot==="FLEX"||x.slot==="SUPERFLEX"?x.slot.slice(0,4):x.pl.pos}</span>
+        <span class="swname">${x.pl.name} ${injChip(x.pl)}</span>
+        <span class="meta num">${fmt(x.proj)} proj</span>
+        <span class="swbar"><span style="width:${x.swing/mx*100}%"></span></span>
+        <b class="num">${Math.round(x.swing*100)}%</b></div>`).join("")
+    +`<div class="meta" style="margin-top:8px">Read it as: if <b>${top[0].pl.name}</b> has a good day rather than a bad one, your chance of winning moves about <b>${Math.round(top[0].swing*100)} points</b>.</div>`;
+
+  // ---- season ----
+  const S=simSeason(400), mine=S[me];
+  $("#mSeasonCtx").textContent=`${SC.weeks.length} weeks · top ${SC.playoffTeams} make the playoffs`;
+  $("#myScheduleBox").innerHTML=SC.weeks.map(w=>{
+    const p=w.pairs.find(x=>x.includes(me));
+    if(!p)return `<div class="matchup"><span class="num meta" style="width:46px">Wk ${w.week}</span><span class="meta">— bye —</span></div>`;
+    const o=p[0]===me?p[1]:p[0];
+    const fin=w.done&&w.done[me]!=null&&w.done[o]!=null;
+    if(fin){const won=w.done[me]>w.done[o];
+      return `<div class="matchup${w.week===wk?" cur":""}" data-wk="${w.week}">
+        <span class="num meta" style="width:46px">Wk ${w.week}</span>
+        <span class="wl ${won?"W":"L"}">${won?"W":"L"}</span>
+        <span style="flex:1">vs ${teamLabel(o)}</span>
+        <span class="num">${fmt(w.done[me])}–${fmt(w.done[o])}</span></div>`;}
+    const s=simMatchup(weekUnits(rosters[me],w.week).starters,weekUnits(rosters[o],w.week).starters,600);
+    const q=Math.round(s.p*100);
+    return `<div class="matchup${w.week===wk?" cur":""}" data-wk="${w.week}">
+      <span class="num meta" style="width:46px">Wk ${w.week}</span>
+      <span style="flex:1">vs ${teamLabel(o)}</span>
+      <span class="wprob"><span style="width:${q}%" class="${q>=55?"good":q<=45?"bad":""}"></span></span>
+      <b class="num" style="width:38px;text-align:right">${q}%</b></div>`;
   }).join("");
-  // my schedule
-  const me=myIdx();
-  let myHtml="";
-  sched.forEach((week,wi)=>{
-    const wk=wi+1;
-    const m=week.find(p=>p.includes(me));
-    if(!m){myHtml+=`<div class="matchup"><span class="num meta">Wk ${wk}</span><span class="meta">— bye —</span></div>`;return;}
-    const opp=m[0]===me?m[1]:m[0];
-    const sm=weeklyScore(rosters[me],wk),so=weeklyScore(rosters[opp],wk);
-    const win=sm>=so;
-    myHtml+=`<div class="matchup">
-      <span class="num meta" style="width:44px">Wk ${wk}</span>
-      <span class="wl ${win?'W':'L'}">${win?'W':'L'}</span>
-      <span style="flex:1">vs ${opp===myIdx()?'You':'Team '+(opp+1)}</span>
-      <span class="num" style="color:${win?'var(--good)':'var(--crit)'}">${fmt(sm)}</span>
-      <span class="meta num">–</span>
-      <span class="num meta">${fmt(so)}</span></div>`;
-  });
-  $("#myScheduleBox").innerHTML=myHtml;
+  $$("#myScheduleBox [data-wk]").forEach(el=>el.onclick=()=>{state.ui.mWeek=+el.dataset.wk;renderMatchups();});
+
+  const order=[...Array(T).keys()].sort((x,y)=>S[y].playoff-S[x].playoff||S[y].wins-S[x].wins);
+  $("#standingsBody").innerHTML=order.map(i=>{
+    const r=S[i], g=Math.max(1,r.games), po=Math.round(r.playoff*100);
+    return `<tr${i===me?' style="background:var(--accent-soft)"':''}>
+      <td>${i===me?"★ ":""}${teamLabel(i)}</td>
+      <td class="r num">${r.wins.toFixed(1)}-${(g-r.wins).toFixed(1)}</td>
+      <td class="r num meta">${fmt(r.pf/g)}</td>
+      <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
+  }).join("");
+}
+/* Slot-by-slot, because "you're projected 118 to 105" doesn't tell you where the game is won.
+   Each row is the same lineup position on both sides with the gap between them. */
+function lineupCompare(A,B,opp){
+  const n=Math.max(A.starters.length,B.starters.length);
+  if(!n)return "";
+  const rows=[];
+  for(let i=0;i<n;i++){
+    const a=A.starters[i], b=B.starters[i];
+    const pa=a?a.base*a.mult:0, pb=b?b.base*b.mult:0, d=pa-pb;
+    rows.push(`<tr>
+      <td class="r num${d>0?" won":""}">${a?fmt(pa):"—"}</td>
+      <td class="lc-nm r">${a?a.pl.name+" "+injChip(a.pl):'<span class="meta">empty</span>'}</td>
+      <td class="lc-slot">${(a||b).slot.replace("SUPERFLEX","SFLX").replace("IDP_FLEX","IDP")}</td>
+      <td class="lc-nm">${b?b.pl.name+" "+injChip(b.pl):'<span class="meta">empty</span>'}</td>
+      <td class="num${d<0?" won":""}">${b?fmt(pb):"—"}</td></tr>`);
+  }
+  return `<div class="tblwrap" style="margin-top:16px"><table class="lcmp">
+    <thead><tr><th colspan="2" class="r">You</th><th></th><th colspan="2">${teamLabel(opp)}</th></tr></thead>
+    <tbody>${rows.join("")}</tbody></table></div>`;
 }
 
 /* ---- PROJECTIONS tab ---- */
@@ -5693,6 +6010,12 @@ function init(){
   segWire("#s_pview",v=>{state.ui.pview=v;renderPlayersTab();save();});
   segWire("#s_pdetail",v=>{state.ui.pdetail=+v;renderPlayersTab();save();});
   $("#pexport").onclick=exportProjCSV;
+  $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
+  const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
+    const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
+    if(ws[j]!=null){state.ui.mWeek=ws[j];renderMatchups();}};
+  $("#mPrev").onclick=()=>stepWeek(-1);
+  $("#mNext").onclick=()=>stepWeek(1);
   $("#presetall").onclick=()=>{
     if(!confirm("Throw away every projection edit you have made and go back to the ESPN + Sleeper consensus?"))return;
     state.players.forEach(p=>{delete p.so;p.override=null;});renderAll();flash("All edits cleared");};
