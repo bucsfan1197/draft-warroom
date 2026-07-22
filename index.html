@@ -77,7 +77,11 @@
   /* `.seg` clips its overflow, so a segmented control with many options loses the last buttons
      rather than wrapping. These two are the long ones; let them wrap at ANY width, not just on
      phones. Scoped by id on purpose — making every .seg wrap collapses the short ones. */
-  #s_clock,#s_adp{flex-wrap:wrap;height:auto}
+  /* Any segmented control inside a setup field can outgrow its grid column — .seg clips its
+     overflow, so the last option just vanishes. This shipped: adding "Keeper" as a third format
+     pushed "Dynasty" outside its own control. Scoped to .field so the short segs elsewhere
+     (which collapse if their display changes) are untouched. */
+  .field .seg,#s_clock,#s_adp{flex-wrap:wrap;height:auto}
   /* ---- trade calculator ---- */
   /* a textarea doesn't fill its box on its own — without this it sits at its default ~20 cols */
   #labGive,#labGet,#keepList,#capList,#lab3r0,#lab3r1,#lab3r2{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
