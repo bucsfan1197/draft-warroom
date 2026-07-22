@@ -167,6 +167,7 @@
   .mc-zero{stroke:var(--ink);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-dasharray:3 3;opacity:.55}
   .mchart-lab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-2);margin-top:2px}
   .mchart-lab .mc-tie{font-weight:700}
+  .kv.faded{opacity:.5}
   .needline{display:block;font-size:10.5px;color:var(--ink-2);line-height:1.3}
   .dchart{width:100%;height:140px;display:block}
   .dc-band{fill:color-mix(in srgb,var(--accent) 15%,transparent)}
@@ -876,12 +877,19 @@
       </div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
+      <div class="panel"><div class="hd"><h2>Where your season stands</h2>
+        <span id="pushCtx" class="pickcounter" style="margin-left:auto"></span></div>
+        <div class="bd" id="pushBox"></div></div>
+    </div>
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
       <div class="panel"><div class="hd"><h2>Rest-of-season value</h2><span id="rosCtx" class="pickcounter" style="margin-left:auto"></span></div><div class="bd" id="rosBox"></div></div>
       <div class="panel"><div class="hd"><h2>League buzz &amp; alerts</h2></div><div class="bd" id="buzzBox"></div></div>
       </div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
-      <div class="panel"><div class="hd"><h2>Waiver targets</h2></div><div class="bd" id="waiverBox"></div></div>
+      <div class="panel"><div class="hd"><h2>Waiver targets</h2>
+        <span class="pickcounter" style="margin-left:auto">Ranked by what they add to <i>your</i> lineup</span></div>
+        <div class="bd" id="waiverBox"></div></div>
       <div class="panel"><div class="hd"><h2>Trade value board</h2></div><div class="bd" id="tradeBox"></div></div>
     </div>
   </section>
@@ -2181,7 +2189,17 @@ async function syncTick(first,slotMsg){
 
 /* ===================== MONTE CARLO DRAFT SIMULATOR ===================== */
 let SIMCACHE={key:null,results:null,ms:0,sims:0};
-function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+/* A seedable stream, because comparing two simulated seasons is only meaningful if both saw the
+   same luck. Pricing a waiver claim means running the season with and without the player and
+   subtracting; at a few hundred iterations the noise in each run is worth a couple of points of
+   playoff odds, which is larger than most of the effects being measured. Re-seeding to the same
+   value before each run makes the difference attributable to the roster change and nothing else.
+   Left on Math.random by default so ordinary rendering keeps varying. */
+let RNG=null;
+function seedRng(s){ let a=(s>>>0)||1; RNG=()=>{ a^=a<<13;a>>>=0;a^=a>>17;a^=a<<5;a>>>=0; return a/4294967296; }; }
+function unseedRng(){ RNG=null; }
+function rnd(){ return RNG?RNG():Math.random(); }
+function gauss(){let u=0,v=0;while(!u)u=rnd();while(!v)v=rnd();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
 /* ---- HOW A SEASON IS SAMPLED ----
    Two different uncertainties get confused constantly, and confusing them makes a simulator
    overconfident in both directions at once:
@@ -3034,6 +3052,37 @@ function selfTest(){
       }
       add("Start/sit only suggests legal swaps",bad===0&&swaps>0,
           swaps?`${swaps} candidate swaps checked, ${bad} illegal`:"no swaps available to check");
+    }
+    /* Waivers and drops must both be judged on marginal value, and the two must agree. Ranking
+       the bench by raw points said "drop Brock Bowers" — the lowest scorer on the bench but the
+       only cover at tight end — in order to claim a $1 kicker, while keeping a third running back
+       who could never crack the lineup. Cost-to-lose inverts that, and it has to stay inverted. */
+    if(state.picks.length){
+      const rr=teamRoster(myIdx());
+      if(rr.length>4){
+        const from=Math.max(1,state.ui.seasonWeek||1);
+        const {slots}=fillLineup(rr);
+        const start=new Set(slots.filter(s=>s.pl).map(s=>s.pl.id));
+        const bench=rr.filter(p=>!start.has(p.id));
+        if(bench.length>1){
+          const dc=dropCandidate(rr,from,18);
+          const costs=bench.map(p=>({p,c:marginalROS(p,rr.filter(x=>x.id!==p.id),from,18)}));
+          const worst=costs.slice().sort((a,b)=>a.c-b.c)[0];
+          const cheapestByPts=bench.slice().sort((a,b)=>rosPts(a,from)-rosPts(b,from))[0];
+          add("The drop is the man you can most afford to lose",dc&&dc.id===worst.p.id,
+              `${dc?dc.name:"none"} costs ${worst.c.toFixed(1)} pts${
+                cheapestByPts.id!==worst.p.id?` — ranking by points would have cut ${cheapestByPts.name} instead`:``}`);
+          // a starter must never be offered as the drop
+          add("Never drops someone you're starting",!dc||!start.has(dc.id),
+              dc?`${dc.name} is on the bench`:"nobody to drop");
+        }
+      }
+      // and every waiver suggestion must be a genuine upgrade, priced against the same horizon
+      const wbT=waiverBoard(teamRoster(myIdx()),Math.max(1,state.ui.seasonWeek||1),18,6);
+      add("Waiver targets are upgrades, not rankings",
+          wbT.rows.every(r=>r.gain>0)&&wbT.rows.every(r=>r.bid>=0),
+          wbT.rows.length?`${wbT.rows.length} targets, smallest +${wbT.rows[wbT.rows.length-1].gain.toFixed(1)} pts`
+                         :"nothing on the wire cracks the lineup");
     }
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -5071,35 +5120,80 @@ function renderInSeason(){
   }
   ss.innerHTML+=`<div class="note" style="margin-top:12px">${advice.join(" ")||"✅ This is your optimal lineup for week "+w+"."}</div>`;
 
-  // ---- waiver targets: biggest upgrade over your CURRENT worst starter at that position ----
-  const drafted=draftedIds();
-  const mineByPos={};roster.forEach(p=>{(mineByPos[p.pos]=mineByPos[p.pos]||[]).push(p);});
-  const worstAt=pos=>{const a=(mineByPos[pos]||[]).slice().sort((x,y)=>pts(x)-pts(y));return a.length?pts(a[0]):0;};
-  const cands=state.players.filter(p=>!drafted.has(p.id)&&["QB","RB","WR","TE"].includes(p.pos))
-    .map(p=>({p,up:pts(p)-worstAt(p.pos)})).filter(x=>x.up>0).sort((a,b)=>b.up-a.up).slice(0,10);
-  // WEEK-AWARE: if a starting slot is stuck with a bye player (or empty) this week, lead with players who fill THAT hole
+  /* ---- waiver targets, priced as UPGRADES ----
+     The old board ranked free agents by projected points against "the worst player you roster at
+     that position", counting deep bench. Measured in week 12 that gave a running-back baseline of
+     zero on a roster that happened to hold none, so every free-agent RB showed a fake +90, and it
+     used full-season totals with six weeks left. Three wrong answers stacked: wrong baseline,
+     wrong horizon, no idea which slot the player would actually occupy.
+     Now: what he adds to the lineup you'd really start, week by week, from here to the end. */
+  const wbTo=18;
+  const wb=waiverBoard(roster,w,wbTo,10);
   const holes=L.slots.filter(s=>!s.pl||s.pl.bye===w);
-  const holePos=[...new Set(holes.map(s=>s.pl?s.pl.pos:(["FLEX","SUPERFLEX"].includes(s.slot)?"RB":s.slot)))];
-  let holeHtml="";
-  if(holePos.length){
-    const fills=holePos.map(pos=>{
-      const best=state.players.filter(p=>!drafted.has(p.id)&&p.pos===pos&&p.bye!==w)
-        .sort((a,b)=>wkPts(b,w)-wkPts(a,w)).slice(0,2);
-      return {pos,best};
-    }).filter(f=>f.best.length);
-    if(fills.length)holeHtml=`<h3 class="eyebrow" style="margin-bottom:6px">🚨 Week ${w} bye holes — stream these</h3>`
-      +fills.map(f=>f.best.map(p=>
-        `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)} <span class="meta">${p.team}</span></span>
-          <span class="chip crit">fills your ${f.pos} · ${wkPts(p,w).toFixed(1)} pts wk ${w}</span></div>`).join("")).join("")
-      +`<h3 class="eyebrow" style="margin:14px 0 6px">Season-long upgrades</h3>`;
-  }
-  $("#waiverBox").innerHTML=(holeHtml||"")+(cands.length?cands.map(x=>
-    `<div class="kv"><span><span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name}${injChip(x.p)} <span class="meta">${x.p.team}</span></span>
-      <span class="chip good">+${Math.round(x.up)} over your worst ${x.p.pos}</span></div>`).join("")
-    +`<div class="note" style="margin-top:10px">Ranked by upgrade over the weakest player you actually roster at that spot — not a generic replacement level.</div>`
-    :`<div class="emptystate">Nothing on the wire beats your roster.</div>`);
+  const holeNote=holes.length
+    ? `<div class="note warn-note" style="margin-bottom:10px"><b>${holes.length}</b> starting spot${holes.length>1?"s":""} ${holes.length>1?"are":"is"} empty or on bye this week — the board already values that.</div>` : "";
+  $("#waiverBox").innerHTML=holeNote+(wb.rows.length?wb.rows.map(r=>`
+    <div class="kv${r.noise?" faded":""}">
+      <span><span class="pos ${r.p.pos}">${r.p.pos}</span> ${r.p.name}${injChip(r.p)}
+        <span class="meta">${r.p.team}</span>
+        ${r.noise?'<span class="chip" title="Smaller than the error in the projection it came from">too close to call</span>':''}
+        <span class="needline">+${r.gain.toFixed(1)} pts to your starting lineup, weeks ${w}–${wbTo}${
+          r.drop?` · costs you ${r.drop.name}`:``}</span></span>
+      <span style="text-align:right;white-space:nowrap"><b>$${r.bid}</b>
+        <span class="meta">${r.bidPct}% of what's left</span></span></div>`).join("")
+    +`<div class="note" style="margin-top:10px"><b>These are upgrades, not rankings.</b> A player is only worth what he adds to the
+       lineup you actually start — a fourth good receiver is worth almost nothing, and a fill-in for an empty slot is worth a lot.
+       ${wb.drop?`A claim would cost you <b>${wb.drop.name}</b>, the man whose loss hurts least — which is not the same as your lowest scorer.`:``}
+       <b>Bids</b> are priced off the next name down: if he does nearly the same job for a dollar, the right bid is nearly a dollar,
+       however good the player looks. Shown as a share of your <b>remaining</b> $${wb.remaining}.</div>`
+    :`<div class="emptystate">Nothing on the wire would crack your starting lineup.</div>`);
+
+  /* ---- where the season stands ----
+     Two things the market keeps apart. Scenario tools enumerate win/loss paths and ignore scoring
+     entirely; simulators hand you a percentage with no story attached. Both fall out of the same
+     run, so you get the number AND what it depends on. The all-play record is the third piece:
+     you played one opponent a week, and it asks how you'd have done against everyone, which is
+     the only way to tell a bad team from a bad draw. */
+  (()=>{
+    const box=$("#pushBox"); if(!box)return;
+    const SCp=seasonSchedule(), T=state.settings.teams;
+    const allR=[...Array(T).keys()].map(teamRoster);
+    if(!roster.length){box.innerHTML=`<div class="emptystate">Sync or draft a roster and this fills in.</div>`;return;}
+    const S=simSeason(400), mine=S[myIdx()];
+    const ap=allPlayRecord(SCp,allR,myIdx());
+    const wn=winsNeeded(SCp,myIdx(),300);
+    const need=(()=>{
+      for(let k=0;k<wn.rate.length;k++) if(wn.rate[k]!=null&&wn.rate[k]>=0.5)
+        return {k,p:wn.rate[k]};
+      return null;
+    })();
+    const odds=Math.round(mine.playoff*100);
+    $("#pushCtx").textContent=`${SCp.playoffTeams} of ${T} make it`;
+    const apPct=Math.round(ap.pct*100), seed=[...Array(T).keys()].sort((a,b)=>S[b].playoff-S[a].playoff).indexOf(myIdx())+1;
+    box.innerHTML=`
+      <div class="levrow" style="margin-bottom:12px">
+        <div class="levbox ${odds>=60?"win":odds<=25?"lose":""}"><div class="eyebrow">Playoff odds</div>
+          <div class="levnum">${odds}%</div><div class="meta">${seed}${["st","nd","rd"][seed-1]||"th"} best in the league</div></div>
+        <div class="levbox"><div class="eyebrow">Projected finish</div>
+          <div class="levnum">${mine.wins.toFixed(1)}</div><div class="meta">wins from ${Math.max(1,mine.games)} games</div></div>
+        <div class="levbox"><div class="eyebrow">Against everyone</div>
+          <div class="levnum">${apPct}%</div><div class="meta">if you played all ${T-1} each week</div></div>
+      </div>
+      ${need&&wn.left>0
+        ? `<div class="note"><b>You're in if you win ${need.k} of your last ${wn.left}.</b>
+             That gets you there ${Math.round(need.p*100)}% of the time.
+             ${need.k>0&&wn.rate[need.k-1]!=null?`Win ${need.k-1} and it falls to ${Math.round(wn.rate[need.k-1]*100)}%.`:``}</div>`
+        : wn.left>0?`<div class="note">No number of remaining wins gets you past a coin flip — you need help elsewhere in the league.</div>`:``}
+      <div class="meta" style="margin-top:10px">Your all-play record is <b>${ap.w}-${ap.l}</b>.
+      ${Math.abs(apPct-Math.round(mine.wins/Math.max(1,mine.games)*100))>=12
+        ? apPct>Math.round(mine.wins/Math.max(1,mine.games)*100)
+          ? `That's well ahead of your actual record — you've been losing games you'd usually win, and that tends to even out.`
+          : `That's well behind your actual record — you've been winning games you'd usually lose, so don't over-read the standings.`
+        : `That's in line with your record, so the standings are telling you the truth.`}</div>`;
+  })();
 
   // ---- trade value board ----
+  const drafted=draftedIds();
   const dyn=state.settings.format==="dynasty";
   const val=p=>dyn?dynValue(p):pts(p);
   const mine=roster.slice().sort((a,b)=>val(b)-val(a));
@@ -5461,12 +5555,13 @@ function seasonSchedule(){
 /* "Makes the playoffs" as a frequency over simulated seasons rather than a verdict read off one
    projection. Weeks already played are fact and are carried through unchanged. */
 let SEASONSIM={key:null,val:null};
-function simSeason(iters){
+function simSeason(iters,override){
   const T=state.settings.teams, SC=seasonSchedule(), N=iters||400;
   const key=JSON.stringify([T,state.picks.length,state.settings.format,state.settings.bestball,
     SC.real,state.ui.seasonWeek,Object.values(state.settings.roster)]);
-  if(SEASONSIM.key===key)return SEASONSIM.val;
-  const rosters=[...Array(T).keys()].map(teamRoster);
+  if(!override&&SEASONSIM.key===key)return SEASONSIM.val;   // a hypothetical must never be cached
+  const rosters=[...Array(T).keys()].map(i=>
+    (override&&override.teamIdx===i)?override.roster:teamRoster(i));
   const U={};
   SC.weeks.forEach(w=>{ U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters); });
   const made=new Array(T).fill(0), wins=new Array(T).fill(0), pfs=new Array(T).fill(0);
@@ -5487,7 +5582,8 @@ function simSeason(iters){
   }
   const val=[...Array(T).keys()].map(i=>({team:i,playoff:made[i]/N,wins:wins[i]/N,pf:pfs[i]/N,
     games:SC.weeks.reduce((n,wk)=>n+(wk.pairs.some(p=>p.includes(i))?1:0),0)}));
-  SEASONSIM={key,val}; return val;
+  if(!override)SEASONSIM={key,val};
+  return val;
 }
 function canFill(pos,slot){
   if(slot==="FLEX")return FLEX_POS.includes(pos);
@@ -5738,6 +5834,143 @@ function oddsWord(p){
 /* Split out so the tab can still show your schedule and the league table before you've
    drafted anyone — that part is meaningful from the moment the fixtures exist, even when
    the head-to-head above it isn't. */
+/* ================= WHAT A ROSTER MOVE IS ACTUALLY WORTH =================
+   Every waiver board in the market ranks free agents by projected points, which answers "who is
+   good" and not "who helps ME". A running back projected 40 points better than the field is worth
+   nothing to a team already starting two better ones, and a bye-week fill-in is worth a great deal
+   for exactly one week. The question a manager is really asking is whether the claim changes their
+   season, so that is what this measures: play the rest of the year out with the player and without
+   him, and report the difference in the odds of making the playoffs.
+
+   Both runs are seeded identically. Without that the two seasons see different luck and the
+   subtraction returns noise — at 250 iterations that noise is worth a couple of points of playoff
+   odds, comfortably larger than most real effects here. */
+const MOVE_SEED=20260722;
+function oddsWith(roster,iters){
+  seedRng(MOVE_SEED);
+  const r=simSeason(iters||250,{teamIdx:myIdx(),roster})[myIdx()];
+  unseedRng();
+  return r?r.playoff:0;
+}
+function moveOdds(add,drop,iters){
+  const me=myIdx(), base=teamRoster(me);
+  let alt=base.slice();
+  if(drop)alt=alt.filter(p=>p.id!==drop.id);
+  if(add&&!alt.some(p=>p.id===add.id))alt=alt.concat([add]);
+  return oddsWith(alt,iters)-oddsWith(base,iters);
+}
+/* ---- Marginal value: the number every waiver board should be ranked by and none is ----
+   What a player adds to the lineup you ACTUALLY START, week by week, over the weeks that are
+   left. A receiver projected forty points clear of the field is worth nothing to a team already
+   starting two better ones, and a bye-week fill-in is worth a lot for exactly one week. Ranking
+   free agents by their own projection answers "who is good"; this answers "who helps me", and
+   they are different lists. */
+function lineupWeekPts(roster,w){
+  const {slots}=fillLineup(roster.filter(p=>p.bye!==w));
+  return slots.reduce((s,x)=>s+(x.pl?wkPts(x.pl,w):0),0);
+}
+function marginalROS(add,roster,from,to){
+  const withAdd=roster.concat([add]);
+  let g=0;
+  for(let w=from;w<=to;w++) g+=lineupWeekPts(withAdd,w)-lineupWeekPts(roster,w);
+  return g;
+}
+/* Below this, the difference is smaller than the error in the projections it came from, and
+   ranking on it is ranking on noise. Derived from the player's own measured outcome band rather
+   than a number I picked — the same 11-season spread that drives his floor and ceiling. */
+function belowNoise(pl,gain,from){
+  const r=rosRange(pl,from), half=Math.max(1,(r[1]-r[0])/2);
+  return gain < 0.12*half;
+}
+/* Who you'd actually have to drop. A claim isn't free — it costs your least useful body, and on a
+   full roster that cost is part of the price. Never suggests dropping someone who is currently
+   starting for you. */
+function dropCandidate(roster,fromWeek,toWeek){
+  const {slots}=fillLineup(roster);
+  const starting=new Set(slots.filter(s=>s.pl).map(s=>s.pl.id));
+  const bench=roster.filter(p=>!starting.has(p.id));
+  if(!bench.length)return null;
+  /* Ranked by what LOSING him costs, which is the same marginal measure the adds use — not by
+     his raw projection. Those disagree in exactly the case that matters: a backup tight end can
+     be the lowest-scoring man on the bench and still the least droppable, because he is the only
+     cover at a thin position and a fifth receiver is cover for nothing. Ranking the bench by
+     points said "drop Brock Bowers to claim a kicker", which is how you lose a season. */
+  const to=toWeek||18;
+  return bench.map(p=>({p,cost:marginalROS(p,roster.filter(x=>x.id!==p.id),fromWeek,to)}))
+              .sort((a,b)=>a.cost-b.cost)[0].p;
+}
+function waiverBoard(roster,from,to,limit){
+  const drafted=draftedIds();
+  const size=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  const drop=roster.length>=size?dropCandidate(roster,from,to):null;
+  const base=drop?roster.filter(p=>p.id!==drop.id):roster;   // the claim costs him, so price it that way
+  const fa=state.players.filter(p=>!drafted.has(p.id)&&inLeague(p));
+  // Only bother scoring plausible pieces; the tail can't reach a starting slot.
+  const short=fa.sort((a,b)=>rosPts(b,from)-rosPts(a,from)).slice(0,90);
+  const rows=short.map(p=>({p,gain:marginalROS(p,base,from,to)}))
+                  .filter(x=>x.gain>0.05).sort((a,b)=>b.gain-a.gain).slice(0,limit||12);
+  /* FAAB priced off the alternative, not off the player. What a claim is worth is the gap
+     between him and whoever you could add for a dollar instead — if the next name down does
+     almost the same job, the right bid is almost nothing, however good he looks. The budget is
+     then split across those gaps. Stated as a share of REMAINING budget, because the published
+     advice everyone quotes is inconsistent about that and mostly means remaining. */
+  const totalGap=rows.reduce((s,r,i)=>s+Math.max(0,r.gain-(rows[i+1]?rows[i+1].gain:0)),0)||1;
+  const spent=state.picks.filter(p=>p.teamIdx===myIdx()).reduce((s,p)=>s+(p.faab||0),0);
+  const remaining=Math.max(0,(state.settings.faab||100)-spent);
+  rows.forEach((r,i)=>{
+    r.gap=Math.max(0,r.gain-(rows[i+1]?rows[i+1].gain:0));
+    r.bidPct=Math.round(r.gap/totalGap*100);
+    r.bid=Math.round(remaining*r.gap/totalGap);
+    r.noise=belowNoise(r.p,r.gain,from);
+    r.drop=drop;
+  });
+  return {rows,drop,remaining};
+}
+/* Luck-adjusted record. You played one opponent a week; this asks how you'd have done against
+   ALL of them, every week. It separates "bad team" from "bad draw", which the standings can't,
+   and per the market scan almost nothing ships it despite it being cheap to compute. */
+function allPlayRecord(SC,rosters,me){
+  let w=0,l=0;
+  SC.weeks.forEach(wk=>{
+    const played=wk.done&&wk.done[me]!=null;
+    const mine=played?wk.done[me]:lineupWeekPts(rosters[me],wk.week);
+    rosters.forEach((r,i)=>{
+      if(i===me)return;
+      const theirs=(played&&wk.done[i]!=null)?wk.done[i]:lineupWeekPts(r,wk.week);
+      if(mine>theirs)w++; else if(theirs>mine)l++;
+    });
+  });
+  return {w,l,pct:w+l?w/(w+l):0};
+}
+/* "You're in if you win two of your last four." The market scan found the two families of
+   playoff tool never meet: scenario tools enumerate win/loss paths but ignore scoring, and
+   simulators give you a percentage with no narrative. Both come out of the same run here —
+   count how many of your remaining games you won in the seasons where you made it. */
+function winsNeeded(SC,me,iters){
+  const T=state.settings.teams, N=iters||300;
+  const rosters=[...Array(T).keys()].map(teamRoster);
+  const U={}; SC.weeks.forEach(w=>{U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters);});
+  const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
+  const from=state.ui.seasonWeek||1;
+  const left=SC.weeks.filter(x=>x.week>=from&&x.pairs.some(p=>p.includes(me))).length;
+  const madeAt=new Array(left+1).fill(0), sawAt=new Array(left+1).fill(0);
+  for(let it=0;it<N;it++){
+    const w=new Array(T).fill(0), pf=new Array(T).fill(0); let myWins=0;
+    SC.weeks.forEach(wk=>wk.pairs.forEach(([a,b])=>{
+      let sa,sb;
+      if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){sa=wk.done[a];sb=wk.done[b];}
+      else {sa=drawScore(U[wk.week][a]||[]);sb=drawScore(U[wk.week][b]||[]);}
+      pf[a]+=sa;pf[b]+=sb;
+      if(sa>sb)w[a]++;else if(sb>sa)w[b]++;else{w[a]+=.5;w[b]+=.5;}
+      if(wk.week>=from&&(a===me||b===me)){ const meWon=(a===me)?sa>sb:sb>sa; if(meWon)myWins++; }
+    }));
+    const k=Math.min(left,Math.round(myWins));
+    sawAt[k]++;
+    if([...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])).slice(0,nSeeds).includes(me))madeAt[k]++;
+  }
+  const rate=madeAt.map((m,i)=>sawAt[i]>=8?m/sawAt[i]:null);
+  return {left,rate,sawAt};
+}
 function renderSeasonOutlook(SC,rosters,me,wk){
   const T=state.settings.teams;
   const S=simSeason(400), mine=S[me];
