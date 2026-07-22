@@ -72,6 +72,16 @@
   .syncrow #syncBtn{width:auto;padding:9px 20px}
   /* grid children default to min-width:auto and refuse to shrink — this is what blows out narrow screens */
   .grid-draft>*{min-width:0}
+  /* ---- first-run walkthrough ---- */
+  .onbwrap{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto}
+  .onbcard{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;
+    padding:22px;max-width:520px;width:100%;box-shadow:var(--shadow)}
+  .onbstep{display:flex;flex-direction:column;gap:2px;padding:10px 0;border-top:1px solid var(--line)}
+  .onbstep b{font-size:14px}
+  .onbstep span{font-size:13px;color:var(--ink-2);line-height:1.5}
+  .onbbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .onbbtns .btn{flex:1;min-width:150px}
   /* ---- phone / draft-day-in-your-hand layout ---- */
   @media(max-width:760px){
     .wrap{padding:0 10px 40px}
@@ -546,6 +556,7 @@
               <div class="syncrow" style="margin-top:8px">
                 <button class="ghost" id="scoringImportBtn">⚙ Import this league's scoring &amp; roster</button>
                 <button class="ghost" id="selfTestBtn">🧪 Run self-test</button>
+                <button class="ghost" id="introBtn">👋 Show the intro</button>
               </div>
               <div id="selfTestOut" class="hide" style="margin-top:8px"></div>
               <div id="leagueStatus" class="meta" style="margin-top:6px">Uses your past drafts (via Sleeper) to predict what each manager actually does.</div>
@@ -1565,7 +1576,35 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function fmt(n){return (Math.round(n*10)/10).toFixed(1);}
 function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show");clearTimeout(f._t);f._t=setTimeout(()=>f.classList.remove("show"),1600);}
 
-function renderAll(){applyFormatUI();renderClock();syncPickTimer();renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();renderTeamTab();renderInSeason();renderMatchups();renderBacktest();renderDynasty();renderPlayersTab();renderReplBox();renderDataAge();save();}
+/* Rendering nine tabs on every click meant eight of them were built into hidden DOM and thrown
+   away. Each tab now declares its own renderers; renderAll draws the visible one and marks the
+   rest dirty, and showTab draws a dirty tab the moment you open it. The pick clock and header
+   stay global because the timer can auto-draft while you're reading another tab. */
+const TAB_RENDER={
+  draft:   ()=>{renderRecs();renderAvail();renderMyRoster();renderNeed();renderTiers();},
+  team:    ()=>renderTeamTab(),
+  matchups:()=>renderMatchups(),
+  backtest:()=>renderBacktest(),
+  season:  ()=>renderInSeason(),
+  dynasty: ()=>renderDynasty(),
+  players: ()=>renderPlayersTab(),
+  setup:   ()=>renderReplBox(),
+  trade:   ()=>{}                       // trade panels are built on demand by the buttons
+};
+let TABDIRTY=Object.keys(TAB_RENDER).reduce((a,k)=>(a[k]=1,a),{});
+function activeTab(){
+  const s=$$("section[id^='tab-']").find(x=>!x.classList.contains("hide"));
+  return s?s.id.slice(4):"draft";
+}
+function renderTab(name){ const f=TAB_RENDER[name]; if(!f)return; f(); delete TABDIRTY[name]; }
+function renderAll(){
+  applyFormatUI(); renderClock(); syncPickTimer(); renderDataAge();
+  const t=activeTab();
+  Object.keys(TAB_RENDER).forEach(k=>{ if(k!==t)TABDIRTY[k]=1; });
+  renderTab(t);
+  save();
+}
+function renderEveryTab(){ Object.keys(TAB_RENDER).forEach(renderTab); }   // used by the self-test
 
 function renderClock(){
   if(state.settings.auction){
@@ -1842,9 +1881,63 @@ function renderDataAge(){
                    :`<span style="opacity:.6">data ${txt}</span>`;
 }
 
+/* ---- LAYOUT PROBE ----
+   The logic checks all passed while the Sleeper ADP button was invisible: `.seg` is overflow:hidden
+   and the row was too narrow, so working controls were clipped out of existence. Logic tests can't
+   see that. This measures the rendered geometry instead — controls collapsed to nothing, children
+   sitting outside a clipping parent, or the page scrolling sideways. It reports on the CURRENT
+   viewport, so running it on a phone checks the phone. */
+function elDesc(el){
+  const id=el.id?"#"+el.id:"";
+  const cls=el.className&&typeof el.className==="string"?"."+el.className.trim().split(/\s+/)[0]:"";
+  const txt=(el.textContent||"").trim().replace(/\s+/g," ").slice(0,16);
+  return (el.tagName.toLowerCase()+id+cls+(txt?` "${txt}"`:"")).slice(0,52);
+}
+/* A `var(--typo)` that was never defined fails silently: the property just doesn't apply, so a
+   panel renders transparent and unreadable while every geometry check still passes. Compare every
+   variable the stylesheet USES against every variable it DEFINES. */
+function cssVarAudit(){
+  const defined=new Set(), used=new Set();
+  const walk=rules=>{ for(const r of rules){
+    if(r.style){ for(const p of r.style) if(p.startsWith("--")) defined.add(p);
+      (r.cssText.match(/var\(\s*--[a-z0-9_-]+/gi)||[]).forEach(m=>used.add(m.replace(/var\(\s*/i,"").toLowerCase())); }
+    if(r.cssRules) walk(r.cssRules); } };
+  for(const ss of document.styleSheets){ try{ walk(ss.cssRules); }catch(e){} }
+  return [...used].filter(v=>!defined.has(v));
+}
+function layoutProbe(){
+  const out=[];
+  const shown=el=>el.offsetParent!==null||getComputedStyle(el).position==="fixed";
+  // 1. a control that rendered to zero width is unusable even though it "exists"
+  document.querySelectorAll("button,select,input,.seg").forEach(el=>{
+    if(!shown(el))return;
+    const r=el.getBoundingClientRect();
+    if(r.height>0&&r.width<18) out.push(`collapsed → ${elDesc(el)} is ${Math.round(r.width)}px wide`);
+  });
+  // 2. children clipped out of a container that hides its overflow (the exact Sleeper-button bug)
+  document.querySelectorAll(".seg,.segwrap,.row,.controls").forEach(box=>{
+    if(!shown(box))return;
+    const cs=getComputedStyle(box);
+    if(cs.overflowX!=="hidden"&&cs.overflow!=="hidden")return;
+    const br=box.getBoundingClientRect();
+    if(box.scrollWidth>box.clientWidth+2)
+      out.push(`clipped → ${elDesc(box)} needs ${box.scrollWidth}px but has ${box.clientWidth}px`);
+    [...box.children].forEach(c=>{
+      const cr=c.getBoundingClientRect();
+      if(cr.width&&(cr.right>br.right+1.5||cr.left<br.left-1.5))
+        out.push(`clipped → ${elDesc(c)} sits outside ${elDesc(box)}`);
+    });
+  });
+  // 3. the page itself must never scroll sideways (tables scroll inside their own containers)
+  const de=document.documentElement;
+  if(de.scrollWidth>de.clientWidth+1)
+    out.push(`page scrolls sideways (${de.scrollWidth}px of content in ${de.clientWidth}px)`);
+  return out;
+}
 /* ---- SELF-TEST: catches the class of bugs that silently shipped before (stale field
    propagation, blank tabs, illegal rosters, cap violations, JS errors). Run it any time. ---- */
 function selfTest(){
+  const onb=document.getElementById("onbWrap"); if(onb)onb.remove();   // the intro overlay would sit on top of every geometry check
   const box=$("#selfTestOut"); box.classList.remove("hide");
   box.innerHTML=`<div class="note">Running self-test…</div>`;
   const R=[], errs=[]; const onerr=e=>errs.push(e.message); window.addEventListener("error",onerr);
@@ -1869,7 +1962,31 @@ function selfTest(){
       const v=[...document.querySelectorAll('section[id^="tab-"]')].filter(x=>!x.classList.contains("hide"));
       if(v.length!==1||v[0].innerText.replace(/\s+/g,' ').trim().length<40) badTab=t.textContent.trim(); });
     add("Every tab opens with content",!badTab,badTab?`"${badTab}" is blank`:`${tabs.length} tabs`);
+    // 2b. LAYOUT: does every tab actually fit on screen, with no control clipped or collapsed?
+    const lay=[];
+    tabs.forEach(t=>{ t.click(); layoutProbe().forEach(i=>lay.push(`${t.textContent.trim()}: ${i}`)); });
+    const badVars=cssVarAudit();
+    add("No undefined CSS variables",badVars.length===0,badVars.length?badVars.join(", "):"every var(--x) is defined");
+    add(`Layout is sound at ${window.innerWidth}px`,lay.length===0,
+        lay.length?lay.slice(0,3).join(" · ")+(lay.length>3?` (+${lay.length-3} more)`:""):`${tabs.length} tabs, nothing clipped`);
+    // 2c. TRADE ENGINE: bracket resolves at every playoff size, picks are valued sanely
+    const wkOf=(T,best)=>Array.from({length:T},(_,i)=>{const a=new Array(25).fill(0);
+      for(let w=0;w<25;w++)a[w]=(i===best?1000:100-i);return a;});
+    const brOk=[2,4,6,8,12].every(n=>{const s=[...Array(n).keys()];
+      return playBracket(s,wkOf(n,0),15)===0&&playBracket(s,wkOf(n,n-1),15)===n-1;});
+    add("Playoff bracket resolves at every league size",brOk,"2/4/6/8/12 seeds, favourite and upset");
+    const wasFmt=state.settings.format; state.settings.format="dynasty";
+    const y=CUR_SEASON(), PV=p=>dynValue(p);
+    const p1=pickValue({season:y+1,round:1},PV), p2=pickValue({season:y+1,round:2},PV), pFar=pickValue({season:y+3,round:1},PV);
+    // a pick must be priced in the same currency as the players it's traded for
+    const PP=p=>pts(p), refP=Math.max(...state.players.map(PP)), refD=Math.max(...state.players.map(PV));
+    const scaleOk=Math.abs(pickValue({season:y+1,round:1},PP)/refP-p1/refD)<0.25;
+    state.settings.format=wasFmt;
+    add("Draft picks valued in the right order",p1>p2&&p1>pFar&&p2>0,
+        `1st ${Math.round(p1)} > 2nd ${Math.round(p2)}, and a ${y+3} 1st (${Math.round(pFar)}) is worth less than a ${y+1} 1st`);
+    add("Pick values match the active value scale",scaleOk,"same relative worth in points and in dynasty value");
     // 3. mock drafts across formats: legal + no cap violations
+    showTab("draft");     // drafting happens on the draft tab; hidden tabs render lazily now
     const SEG=(id,v)=>{const b=[...document.getElementById(id).querySelectorAll('button')].find(x=>x.dataset.v===v);if(b)b.click();};
     const MOCK=()=>[...document.querySelectorAll('button')].find(b=>/mock draft/i.test(b.textContent));
     const S={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,BENCH:6};
@@ -1961,11 +2078,91 @@ function lineupOnSlots(players,slots,valFn){
   slots.filter(s=>s==="SUPERFLEX").forEach(()=>pick(SUPER_POS));
   return {total,chosen};
 }
+// Endowment effect: a real manager needs MEANINGFUL value back, not a rounding error, and
+// won't ship his single best player for depth pieces. ONE definition, shared by the finder
+// and the manual evaluator, so both answer "would they accept?" by the same standard.
+function acceptCheck(myGain,theirGain,takingTheirBest){
+  const fair=theirGain>=Math.max(1.5,0.25*myGain);
+  const bestBlock=!!takingTheirBest&&theirGain<0.6*myGain;
+  let why;
+  if(!fair)      why = theirGain<=0 ? "it makes their team worse" : "the value back is too thin for what they give up";
+  else if(bestBlock) why = "managers don't ship their best player unless the return is close to even";
+  return {ok:fair&&!bestBlock, fair, bestBlock, why};
+}
+/* ---- Draft picks as dynasty trade assets ----
+   Half of real dynasty trading is picks, and a pick can't be valued by lineupOnSlots because it
+   occupies no slot. It's valued as the asset it will BECOME: the expected dynasty rank a pick at
+   that slot returns, looked up against THIS league's own value curve (so it scales with scoring
+   and roster size), then discounted for the years you wait. The wait discount falls out of the
+   team window that already drives dynValue — a contender discounts a 2028 pick hard, a rebuilder
+   barely does. */
+const CUR_SEASON=()=>new Date().getFullYear();
+const ORD=n=>n===1?"1st":n===2?"2nd":n===3?"3rd":n+"th";
+// Expected dynasty rank returned by a pick at [best slot, worst slot] of each round.
+const PICK_RANK={1:[12,55],2:[70,120],3:[140,190],4:[200,260],5:[240,300]};
+/* A pick has to be priced in the SAME currency as the players it's traded for, or the engine
+   compares dynasty value against season points and hands out picks like confetti. So the value
+   curve is always built from the ACTIVE value function — dynasty value, season points, ceiling-
+   tilted best-ball value, or rest-of-season points in-season, whichever is in play. */
+const PICK_CURVES=new WeakMap();
+function pickCurveFor(V){
+  let c=PICK_CURVES.get(V);
+  if(!c){ c=state.players.filter(p=>p&&p.pos!=="K"&&p.pos!=="DST").map(V)
+            .filter(x=>isFinite(x)).sort((a,b)=>b-a);
+          PICK_CURVES.set(V,c); }
+  return c;
+}
+// Fraction of your window that still lies ahead when the pick actually arrives.
+function pickDelay(seasonsOut){
+  const w=WINDOW_W[state.settings.window]||WINDOW_W.balanced, tot=w.reduce((a,b)=>a+b,0);
+  let s=0; for(let i=Math.min(seasonsOut,w.length);i<w.length;i++)s+=w[i];
+  return tot?s/tot:0.4;
+}
+function pickValue(pk,V){
+  const curve=pickCurveFor(V||(p=>dynValue(p)));
+  if(!curve.length)return 0;
+  const r=PICK_RANK[pk.round]||PICK_RANK[5];
+  // a future pick's slot is unknown, so it's worth the mid-round outcome
+  const rank=pk.slot?r[0]+(r[1]-r[0])*((Math.min(12,pk.slot)-1)/11):(r[0]+r[1])/2;
+  let v=curve[Math.max(0,Math.min(curve.length-1,Math.round(rank)-1))]
+        *pickDelay(Math.max(1,pk.season-CUR_SEASON()));
+  if(isSF()&&pk.round===1)v*=1.08;   // superflex: early picks return QBs
+  return v;
+}
+function pickAsset(season,round,orig,origName){
+  return {id:`pick:${season}:${round}:${orig}`,isPick:true,pos:"PICK",
+    name:`${season} ${ORD(round)}`+(origName?` (via ${origName})`:""),season,round,orig};
+}
+// One value scale for anything tradeable, so picks and players can sit in the same pool.
+function assetVal(V){ return a=>a.isPick?pickValue(a,V):V(a); }
+function teamAssets(t){ return (t.players||[]).concat(t.picks||[]); }
+/* A side is worth its starting lineup, plus its picks, plus — in dynasty only — a discounted
+   share of the bench. Starters-only valuation is right for redraft, but in dynasty it made every
+   bench player look free: a 21-year-old stashed on your bench scored zero, so the engine would
+   happily ship him for a pick. Picks and prospects are both future assets and have to be
+   comparable. Redraft keeps the original starters-only behaviour. */
+const BENCH_W=0.35;
+function sideValue(assets,slots,V){
+  const players=assets.filter(a=>!a.isPick);
+  const {total,chosen}=lineupOnSlots(players,slots,V);
+  let v=total;
+  if(state.settings.format==="dynasty"){
+    const starting=new Set(chosen.map(p=>p.id));
+    players.forEach(p=>{ if(!starting.has(p.id)) v+=V(p)*BENCH_W; });
+  }
+  assets.forEach(a=>{ if(a.isPick)v+=pickValue(a,V); });
+  return v;
+}
+function bestPlayerOf(players,V){ const A=assetVal(V); return players.slice().sort((a,b)=>A(b)-A(a))[0]||null; }
 function tradeVal(){
-  if(state.settings.format==="dynasty") return p=>dynValue(p);
   const w=state.ui.seasonWeek||1;
   // mid-season, what a player is worth is the points he has LEFT, not a full season already partly gone
-  return w>1 ? (p=>rosPts(p,w)) : (p=>pts(p)*availROS(p));
+  const raw=state.settings.format==="dynasty" ? (p=>dynValue(p))
+          : w>1 ? (p=>rosPts(p,w)) : (p=>pts(p)*availROS(p));
+  // The search evaluates tens of thousands of lineups; without this, dynValue alone (four aging-curve
+  // lookups per call) turned a one-second search into sixteen. Values are pure for a given search.
+  const memo=new Map();
+  return p=>{ let v=memo.get(p.id); if(v===undefined){ v=raw(p); memo.set(p.id,v); } return v; };
 }
 async function tradeLoadLeagues(){
   const user=($("#syncUser").value||"").trim()||localStorage.getItem("ffwr_syncuser")||"";
@@ -2001,92 +2198,213 @@ async function tradeLoadRosters(leagueId){
       rosterId:r.roster_id, owner:r.owner_id, name:nameOf[r.owner_id]||("Team "+r.roster_id),
       players:(r.players||[]).map(sid=>bySid[String(sid)]).filter(Boolean),
       unmatched:(r.players||[]).filter(sid=>!bySid[String(sid)]).length}));
+    await tradeLoadPicks(leagueId,lg,rosters);
+    await tradeLoadSchedule(leagueId,lg);
     const sel=$("#tradeMe");
-    sel.innerHTML=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name} (${t.players.length})</option>`).join("");
+    sel.innerHTML=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name} (${t.players.length}${t.picks&&t.picks.length?" +"+t.picks.length+" picks":""})</option>`).join("");
     sel.classList.remove("hide"); $("#tradeFindBtn").classList.remove("hide");
     // guess which team is yours
     const myUser=Object.keys(nameOf).find(id=>nameOf[id].toLowerCase()===(($("#syncUser").value||"").trim().toLowerCase()));
     const mi=TRADE.teams.findIndex(t=>t.owner===myUser); TRADE.me=mi>=0?mi:0; sel.value=String(TRADE.me);
     sel.onchange=()=>{TRADE.me=+sel.value;};
-    $("#tradeCtx").textContent=`${TRADE.teams.length} teams · ${TRADE.slots.join("/")}`;
+    TRADE.leagueIsDynasty=!!(lg&&lg.settings&&lg.settings.type===2);
+    $("#tradeCtx").innerHTML=`${TRADE.teams.length} teams · ${TRADE.slots.join("/")}`
+      +(TRADE.leagueIsDynasty&&state.settings.format!=="dynasty"
+        ?` <span class="chip warn">This is a dynasty league but the app is set to redraft — switch the format in League Setup so players are valued over multiple years, not just this season.</span>`:"");
     try{evalPopulate();}catch(e){}
     tradeStatus(`Loaded <b>${lg.name}</b> — ${TRADE.teams.length} rosters. Pick your team and hit Find trades.`,"var(--good)");
   }catch(e){tradeStatus("Couldn't load rosters: "+e,"var(--crit)");}
+}
+// Every roster starts owning its own picks for the next 3 rookie drafts; /traded_picks then
+// reassigns the ones that have already changed hands (that endpoint ONLY lists traded picks,
+// so the defaults have to be seeded first or most rosters would look pickless).
+async function tradeLoadPicks(leagueId,lg,rosters){
+  TRADE.picks={}; TRADE.hasPicks=false;
+  TRADE.teams.forEach(t=>t.picks=[]);
+  const dyn=(lg&&lg.settings&&lg.settings.type===2)||state.settings.format==="dynasty";
+  if(!dyn)return;                                   // redraft picks aren't assets
+  const rounds=Math.max(1,Math.min(5,(lg&&lg.settings&&lg.settings.draft_rounds)||4));
+  const y=CUR_SEASON(), seasons=[y+1,y+2,y+3];
+  const own={};
+  (rosters||[]).forEach(r=>seasons.forEach(s=>{
+    for(let rd=1;rd<=rounds;rd++) own[`${s}|${rd}|${r.roster_id}`]=r.roster_id; }));
+  try{
+    const tp=await SJ(`https://api.sleeper.app/v1/league/${leagueId}/traded_picks`);
+    (tp||[]).forEach(t=>{const k=`${t.season}|${t.round}|${t.roster_id}`;
+      if(own[k]!==undefined&&t.owner_id!=null)own[k]=t.owner_id;});
+  }catch(e){}
+  const byRoster={}, nameByRoster={};
+  TRADE.teams.forEach(t=>nameByRoster[t.rosterId]=t.name);
+  Object.keys(own).forEach(k=>{
+    const [s,rd,orig]=k.split("|").map(Number), o=own[k];
+    (byRoster[o]=byRoster[o]||[]).push(pickAsset(s,rd,orig,orig!==o?nameByRoster[orig]:null));
+  });
+  TRADE.teams.forEach(t=>{
+    t.picks=(byRoster[t.rosterId]||[]).sort((a,b)=>a.season-b.season||a.round-b.round);
+  });
+  TRADE.picks=byRoster; TRADE.hasPicks=true;
+}
+/* The league's REAL remaining schedule. A synthetic round-robin says every team plays every
+   other; your actual title odds depend on which specific opponents you still have to beat, how
+   many playoff spots this league pays out, and the record you already own. Sleeper exposes all
+   of it: /matchups/{week} pairs rosters by matchup_id, and weeks already played carry points. */
+async function tradeLoadSchedule(leagueId,lg){
+  TRADE.schedule=null;
+  try{
+    const st=(lg&&lg.settings)||{};
+    const playoffStart=Math.max(2,Math.min(18,st.playoff_week_start||15));
+    const playoffTeams=Math.max(2,Math.min(TRADE.teams.length,st.playoff_teams||6));
+    const regEnd=playoffStart-1;
+    const idxOf={}; TRADE.teams.forEach((t,i)=>idxOf[t.rosterId]=i);
+    const weeks=await Promise.all(
+      Array.from({length:regEnd},(_,i)=>SJ(`https://api.sleeper.app/v1/league/${leagueId}/matchups/${i+1}`).catch(()=>null)));
+    const sched=[], done={};
+    weeks.forEach((wk,i)=>{
+      const w=i+1;
+      if(!Array.isArray(wk)||!wk.length){sched[w]=null;return;}
+      const byM={};
+      wk.forEach(m=>{ const idx=idxOf[m.roster_id]; if(idx===undefined||m.matchup_id==null)return;
+        (byM[m.matchup_id]=byM[m.matchup_id]||[]).push({idx,pts:+m.points||0}); });
+      const pairs=[], scored={};
+      Object.values(byM).forEach(g=>{
+        if(g.length===2)pairs.push({a:g[0].idx,b:g[1].idx});
+        g.forEach(x=>{ if(x.pts>0)scored[x.idx]=x.pts; });
+      });
+      sched[w]=pairs.length?pairs:null;
+      if(Object.keys(scored).length>=2)done[w]=scored;      // a week with real points is in the books
+    });
+    if(sched.some(Boolean)) TRADE.schedule={sched,done,regEnd,playoffStart,playoffTeams};
+  }catch(e){ TRADE.schedule=null; }
 }
 // ---- Manual evaluator: judge a specific offer, any package size ----
 function evalPopulate(){
   const me=TRADE.teams[TRADE.me]; if(!me)return;
   const oppSel=$("#evalOpp");
   oppSel.innerHTML=TRADE.teams.map((t,i)=>i===TRADE.me?"":`<option value="${i}">${t.name}</option>`).join("");
-  const V=tradeVal();
-  const fill=(sel,list)=>{sel.innerHTML=list.slice().sort((a,b)=>V(b)-V(a))
-    .map(p=>`<option value="${p.id}">${p.pos} ${p.name} (${Math.round(V(p))})</option>`).join("");};
-  fill($("#evalGive"),me.players);
+  const V=tradeVal(), A=assetVal(V);
+  const fill=(sel,list)=>{sel.innerHTML=list.slice().sort((a,b)=>A(b)-A(a))
+    .map(p=>`<option value="${p.id}">${p.isPick?"🎟 ":p.pos+" "}${p.name} (${Math.round(A(p))})</option>`).join("");};
+  fill($("#evalGive"),teamAssets(me));
   const oi=+oppSel.value||TRADE.teams.findIndex((t,i)=>i!==TRADE.me);
-  if(TRADE.teams[oi])fill($("#evalGet"),TRADE.teams[oi].players);
-  oppSel.onchange=()=>{const o=+oppSel.value; if(TRADE.teams[o])fill($("#evalGet"),TRADE.teams[o].players);};
+  if(TRADE.teams[oi])fill($("#evalGet"),teamAssets(TRADE.teams[oi]));
+  oppSel.onchange=()=>{const o=+oppSel.value; if(TRADE.teams[o])fill($("#evalGet"),teamAssets(TRADE.teams[o]));};
 }
 function evalTrade(){
   const out=$("#evalOut");
   if(!TRADE.teams.length){out.innerHTML=`<div class="note">Load your league rosters above first.</div>`;return;}
   const me=TRADE.teams[TRADE.me], oi=+$("#evalOpp").value, opp=TRADE.teams[oi];
-  const ids=sel=>[...$(sel).selectedOptions].map(o=>+o.value);
-  const give=me.players.filter(p=>ids("#evalGive").includes(p.id));
-  const get=opp?opp.players.filter(p=>ids("#evalGet").includes(p.id)):[];
-  if(!give.length||!get.length){out.innerHTML=`<div class="note">Select at least one player on each side.</div>`;return;}
+  // ids are mixed: players are numbers, picks are "pick:season:round:orig" strings
+  const ids=sel=>new Set([...$(sel).selectedOptions].map(o=>o.value));
+  const mineAll=teamAssets(me), theirAll=opp?teamAssets(opp):[];
+  const gIds=ids("#evalGive"), tIds=ids("#evalGet");
+  const give=mineAll.filter(p=>gIds.has(String(p.id)));
+  const get=theirAll.filter(p=>tIds.has(String(p.id)));
+  if(!give.length||!get.length){out.innerHTML=`<div class="note">Select at least one asset on each side.</div>`;return;}
   const V=tradeVal(), slots=TRADE.slots.length?TRADE.slots:["QB","RB","RB","WR","WR","TE","FLEX","K","DST"];
-  const mineAfter=me.players.filter(p=>!give.includes(p)).concat(get);
-  const theirAfter=opp.players.filter(p=>!get.includes(p)).concat(give);
-  const myGain=lineupOnSlots(mineAfter,slots,V).total-lineupOnSlots(me.players,slots,V).total;
-  const theirGain=lineupOnSlots(theirAfter,slots,V).total-lineupOnSlots(opp.players,slots,V).total;
+  const mineAfter=mineAll.filter(p=>!give.includes(p)).concat(get);
+  const theirAfter=theirAll.filter(p=>!get.includes(p)).concat(give);
+  const myGain=sideValue(mineAfter,slots,V)-sideValue(mineAll,slots,V);
+  const theirGain=sideValue(theirAfter,slots,V)-sideValue(theirAll,slots,V);
   const base=simTitle(TRADE.teams.map(t=>t.players),slots,400);
   const after=simTitle(TRADE.teams.map((t,i)=>i===TRADE.me?mineAfter:(i===oi?theirAfter:t.players)),slots,400);
   const dOdds=after-base, dyn=state.settings.format==="dynasty";
-  const verdict=myGain>3&&dOdds>=2?["ACCEPT","good","This clearly improves your team."]
-    :myGain>0&&dOdds>=0?["LEAN ACCEPT","good","Small but real gain."]
-    :myGain<-3||dOdds<=-2?["DECLINE","crit","This makes your team worse."]
+  // How much of that swing is real? Two independent 400-run sims carry their own error bars.
+  const noise=oddsNoise(base,400,after,400);
+  /* What counts as "better" depends on the format, and the two signals disagree constantly.
+     In REDRAFT the whole point is winning this season, so a title-odds move that clears the
+     simulation's own margin of error settles it. In DYNASTY a deal reshapes three years while
+     barely touching this season's odds, so value decides — and judged relative to what the
+     roster is worth, because dynasty value and season points aren't the same scale. */
+  const rel=myGain/Math.max(1,Math.abs(sideValue(mineAll,slots,V)));
+  const big=Math.abs(rel)>=0.02, realMove=Math.abs(dOdds)>=noise;
+  const verdict=(!dyn&&realMove)
+    ? (dOdds>0?["ACCEPT","good","Your title odds go up by more than the simulation's margin of error."]
+             :["DECLINE","crit","Your title odds drop by more than the simulation's margin of error."])
+    : (big&&rel>0)?["ACCEPT","good","This clearly improves your team."]
+    : myGain>0?["LEAN ACCEPT","good","Small but real gain."]
+    : (big&&rel<0)?["DECLINE","crit","This makes your team worse."]
     :["NEUTRAL","warn","Roughly a wash — only do it if you like the players."];
-  const willThey=theirGain>0.5?`<span class="chip good">They likely accept (+${Math.round(theirGain)} for them)</span>`
-    :`<span class="chip crit">They likely decline (${Math.round(theirGain)} for them)</span>`;
+  const acc=acceptCheck(myGain,theirGain,get.includes(bestPlayerOf(theirAll,V)));
+  const willThey=acc.ok?`<span class="chip good">They likely accept (+${Math.round(theirGain)} for them)</span>`
+    :`<span class="chip crit">They likely decline (${theirGain>=0?"+":""}${Math.round(theirGain)} for them)</span> <span class="meta">— ${acc.why}</span>`;
   out.innerHTML=`<div class="rec top"><div class="r1"><span class="nm">${verdict[0]}</span>
       <span class="chip ${verdict[1]}" style="margin-left:8px">${verdict[2]}</span></div>
     <div class="cardmeta">You give <b>${give.map(p=>p.name).join(" + ")}</b> · you get <b>${get.map(p=>p.name).join(" + ")}</b></div>
     <div class="why">Your starting lineup <b style="color:${myGain>=0?'var(--good)':'var(--crit)'}">${myGain>=0?"+":""}${Math.round(myGain)}</b> ${dyn?"dynasty value":"pts"} ·
       title odds <b>${base}% → <span style="color:${dOdds>=0?'var(--good)':'var(--crit)'}">${after}%</span></b>
-      ${Math.abs(dOdds)<2?'<span class="meta">(within simulation noise)</span>':''}<br>${willThey}</div>
-    <div class="note" style="margin-top:8px">Roster spots: you ${give.length>get.length?`free up ${give.length-get.length}`:get.length>give.length?`use ${get.length-give.length} more`:"stay even"}.
-      ${give.length>get.length?"Consolidating talent into fewer, better starters is usually good — just make sure your bench can cover byes.":""}</div></div>`;
+      <span class="meta" title="95% range from 400 simulated seasons">±${noise}</span>
+      ${Math.abs(dOdds)<noise?'<span class="meta">(inside the simulation\'s margin of error — treat as unchanged)</span>':''}<br>${willThey}</div>
+    ${(()=>{const gp=give.filter(p=>!p.isPick).length, tp=get.filter(p=>!p.isPick).length;   // picks take no roster spot
+      return `<div class="note" style="margin-top:8px">Roster spots: you ${gp>tp?`free up ${gp-tp}`:tp>gp?`use ${tp-gp} more`:"stay even"}.
+      ${gp>tp?"Consolidating talent into fewer, better starters is usually good — just make sure your bench can cover byes.":""}</div>`;})()}</div>`;
 }
+// All packages of size 1..maxN from a pool. Packages of 3+ are drawn only from the top `deepN`
+// assets — a 3-player package built out of a manager's 14th-best asset isn't a real trade, and
+// allowing it multiplies the search space for nothing.
+function combosOf(pool,maxN,deepN){
+  const out=[];
+  const rec=(start,cur)=>{
+    if(cur.length)out.push(cur.slice());
+    if(cur.length>=maxN)return;
+    const lim=cur.length>=2?Math.min(pool.length,deepN):pool.length;
+    for(let i=start;i<lim;i++){ cur.push(pool[i]); rec(i+1,cur); cur.pop(); }
+  };
+  rec(0,[]); return out;
+}
+/* The tradeable pool for one side. Taking a flat top-14 by value silently made picks unreachable:
+   on a real dynasty roster every pick ranks below the 14th-best player, so no pick could ever be
+   offered. Reserve slots for the best picks instead. */
+function tradePool(assets,A){
+  const by=(a,b)=>A(b)-A(a);
+  const players=assets.filter(a=>!a.isPick).sort(by).slice(0,12);
+  const picks=assets.filter(a=>a.isPick).sort(by).slice(0,4);
+  return players.concat(picks).sort(by);
+}
+const PAIR_CAP=6000;   // lineup evaluations per opponent — a full search stays near a second
 function findTrades(){
   if(!TRADE.teams.length){tradeStatus("Load your league first.","var(--warn)");return;}
-  const V=tradeVal(), slots=TRADE.slots.length?TRADE.slots:["QB","RB","RB","WR","WR","TE","FLEX","K","DST"];
+  const t0=performance.now();
+  const V=tradeVal(), A=assetVal(V), slots=TRADE.slots.length?TRADE.slots:["QB","RB","RB","WR","WR","TE","FLEX","K","DST"];
   const me=TRADE.teams[TRADE.me];
-  const base=lineupOnSlots(me.players,slots,V).total;
-  const cands=[];
-  const myPool=me.players.slice().sort((a,b)=>V(b)-V(a)).slice(0,16);
+  const mineAll=teamAssets(me);
+  const base=sideValue(mineAll,slots,V);
+  const cands=[]; let truncated=0;
+  const sumA=l=>l.reduce((s,x)=>s+A(x),0);
+  const myPool=tradePool(mineAll,A);
+  const giveCombos=combosOf(myPool,3,9).map(g=>({l:g,v:sumA(g)}));
   TRADE.teams.forEach((opp,oi)=>{
     if(oi===TRADE.me||!opp.players.length)return;
-    const oBase=lineupOnSlots(opp.players,slots,V).total;
-    const oPool=opp.players.slice().sort((a,b)=>V(b)-V(a)).slice(0,16);
-    const combos=[];
-    myPool.forEach(a=>oPool.forEach(b=>combos.push([[a],[b]])));                      // 1-for-1
-    myPool.forEach((a,i)=>myPool.slice(i+1).forEach(a2=>oPool.forEach(b=>combos.push([[a,a2],[b]]))));  // 2-for-1
-    myPool.slice(0,9).forEach((a,i)=>myPool.slice(i+1,9).forEach(a2=>
-      oPool.slice(0,9).forEach((b,j)=>oPool.slice(j+1,9).forEach(b2=>combos.push([[a,a2],[b,b2]])))));   // 2-for-2
-    combos.forEach(([give,get])=>{
-      const mineAfter=me.players.filter(p=>!give.includes(p)).concat(get);
-      const theirAfter=opp.players.filter(p=>!get.includes(p)).concat(give);
-      const myGain=lineupOnSlots(mineAfter,slots,V).total-base;
-      const theirGain=lineupOnSlots(theirAfter,slots,V).total-oBase;
-      // Endowment effect: a manager needs MEANINGFUL value back, not a rounding error, and
-      // won't ship their single best player for depth pieces. Filters out fantasy fleeces.
-      const theirBest=oPool[0];
-      const takingTheirBest=get.includes(theirBest);
-      const fair=theirGain>=Math.max(1.5,0.25*myGain);
-      if(myGain>0.5&&fair&&!(takingTheirBest&&theirGain<0.6*myGain))
+    const theirAll=teamAssets(opp);
+    const oBase=sideValue(theirAll,slots,V);
+    const oPool=tradePool(theirAll,A);
+    const getCombos=combosOf(oPool,3,9).map(g=>({l:g,v:sumA(g)})).sort((a,b)=>a.v-b.v);
+    const vals=getCombos.map(g=>g.v);
+    const lowerBound=x=>{let lo=0,hi=vals.length;while(lo<hi){const m=(lo+hi)>>1;if(vals[m]<x)lo=m+1;else hi=m;}return lo;};
+    // Only packages of roughly comparable value can survive the acceptance test, so pair each
+    // give-package against a value window instead of the whole cross product.
+    const pairs=[];
+    for(const g of giveCombos){
+      const lo=lowerBound(g.v*0.62-4), hi=lowerBound(g.v*1.55+4);
+      for(let i=lo;i<hi;i++){
+        const t=getCombos[i];
+        if(g.l.length+t.l.length>5)continue;                 // nobody negotiates a 3-for-3
+        pairs.push({g,t,near:Math.abs(g.v-t.v)/Math.max(1,Math.max(g.v,t.v))});
+      }
+    }
+    pairs.sort((a,b)=>a.near-b.near);
+    if(pairs.length>PAIR_CAP){truncated+=pairs.length-PAIR_CAP;pairs.length=PAIR_CAP;}
+    for(const {g,t} of pairs){
+      const give=g.l, get=t.l;
+      const mineAfter=mineAll.filter(p=>!give.includes(p)).concat(get);
+      const theirAfter=theirAll.filter(p=>!get.includes(p)).concat(give);
+      const myGain=sideValue(mineAfter,slots,V)-base;
+      const theirGain=sideValue(theirAfter,slots,V)-oBase;
+      if(myGain>0.5&&acceptCheck(myGain,theirGain,get.includes(oPool[0])).ok)
         cands.push({oi,oppName:opp.name,give,get,myGain,theirGain,mineAfter,theirAfter});
-    });
+    }
   });
+  TRADE.lastSearch={ms:Math.round(performance.now()-t0),considered:cands.length,truncated};
+  TRADE.lastCands=cands;                       // kept for inspection/debugging
   cands.sort((a,b)=>(b.myGain+b.theirGain*0.35)-(a.myGain+a.theirGain*0.35));
   const top=[];const seen=new Set(),perOpp={};
   for(const c of cands){ const k=c.oi+"|"+c.get.map(p=>p.id).join(",");
@@ -2107,41 +2425,81 @@ function renderTrades(list,base,slots,V,baseline){
       <div class="r1"><span class="nm">${c.oppName}</span></div>
       <div class="cardmeta">You get <b>${c.get.map(p=>p.name).join(" + ")}</b> · You give <b>${c.give.map(p=>p.name).join(" + ")}</b></div>
       ${(()=>{const rk=usageRanks();
-        const buys=c.get.filter(p=>{const g=usageSignal(p,rk);return g&&g.d>=8;}).map(p=>p.name.split(" ").slice(-1)[0]);
-        const sells=c.give.filter(p=>{const g=usageSignal(p,rk);return g&&g.d<=-8;}).map(p=>p.name.split(" ").slice(-1)[0]);
+        const buys=c.get.filter(p=>{if(p.isPick)return false;const g=usageSignal(p,rk);return g&&g.d>=8;}).map(p=>p.name.split(" ").slice(-1)[0]);
+        const sells=c.give.filter(p=>{if(p.isPick)return false;const g=usageSignal(p,rk);return g&&g.d<=-8;}).map(p=>p.name.split(" ").slice(-1)[0]);
         let h="";
         if(buys.length)h+=`<span class="chip good">📈 buy-low: ${buys.join(", ")} — usage outruns his production</span> `;
         if(sells.length)h+=`<span class="chip warn">📉 sell-high: ${sells.join(", ")} — production outruns his usage</span>`;
         return h?`<div style="margin:4px 0">${h}</div>`:"";})()}
       <div class="why">Your starting lineup <b style="color:var(--good)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"pts"} · their side <b>+${Math.round(c.theirGain)}</b> (so it's plausibly accepted).
-        ${odds?(Math.abs(odds.after-odds.before)>=2?` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b>.`:` Title odds unchanged (${odds.before}%).`):""}</div>
+        ${odds?(()=>{const nz=oddsNoise(odds.before,400,odds.after,400);
+          return Math.abs(odds.after-odds.before)>=nz
+            ? ` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b> <span class="meta">±${nz}</span>.`
+            : ` Title odds unchanged (${odds.before}% <span class="meta">±${nz}</span>).`;})():""}</div>
     </div>`;}).join("")
-    +`<div class="note">Both sides are valued on <b>your league's actual starting slots</b> (${slots.join("/")}) using ${dyn?"age-adjusted dynasty value":"projected points"}. Only deals that help both teams are shown — a trade the other manager would never accept is worthless. Title odds come from 400 simulated seasons of the real league — a full 14-week head-to-head schedule plus a 3-round playoff bracket; moves under 2 points are within simulation noise and shown as unchanged.</div>`;
+    +`<div class="note">Both sides are valued on <b>your league's actual starting slots</b> (${slots.join("/")}) using ${dyn?"age-adjusted dynasty value":"projected points"}${TRADE.hasPicks?", with future rookie picks valued as the dynasty asset they're expected to return":""}. Only deals that help both teams are shown — a trade the other manager would never accept is worthless. Title odds come from 400 simulated seasons ${TRADE.schedule?`on <b>your league's real remaining schedule</b> (through week ${TRADE.schedule.regEnd}, top ${TRADE.schedule.playoffTeams} make the playoffs, bracket from week ${TRADE.schedule.playoffStart}) with weeks already played counted as real results`:"on a synthetic round-robin (couldn't reach the league schedule)"}; swings inside the ± band are simulation noise, not signal.${TRADE.lastSearch?` <span class="meta">Searched ${TRADE.lastSearch.considered.toLocaleString()} viable packages in ${TRADE.lastSearch.ms}ms${TRADE.lastSearch.truncated?` (${TRADE.lastSearch.truncated.toLocaleString()} long-shot combinations skipped)`:""}.</span>`:""}</div>`;
 }
-// Season simulation on the real league rosters: how do your title odds change?
-// Samples each starter's season from its own boom/bust distribution, 500 runs.
+/* Simulation error bar. A title percentage from N random seasons is a sample proportion, so it
+   carries a standard error of sqrt(p(1-p)/N); comparing two of them compounds it. Anything
+   smaller than this band is noise, not a finding — so the UI says so instead of implying
+   spurious precision. Returns a 95% half-width in percentage points. */
+function oddsNoise(p1,n1,p2,n2){
+  const v=x=>{const q=Math.min(Math.max(x/100,0.005),0.995);return q*(1-q);};
+  const se=Math.sqrt(v(p1)/(n1||400)+(p2==null?0:v(p2)/(n2||400)));
+  return Math.max(1,Math.round(1.96*se*100));
+}
+// Standard fantasy seeding: pad to a power of two, top seeds get the byes, re-seed each round.
+function playBracket(seeds,wk,startW){
+  let alive=seeds.slice(), w=startW, guard=0;
+  const rank=new Map(seeds.map((s,i)=>[s,i]));
+  while(alive.length>1&&guard++<6){
+    const n=alive.length, p=1<<Math.floor(Math.log2(n));
+    const nGames=(p===n)?n/2:(n-p);
+    const byes=alive.slice(0,n-2*nGames), rest=alive.slice(n-2*nGames), winners=[];
+    for(let i=0;i<rest.length/2;i++){
+      const a=rest[i], b=rest[rest.length-1-i];
+      winners.push((wk[a][w]||0)>=(wk[b][w]||0)?a:b);
+    }
+    alive=byes.concat(winners).sort((x,y)=>rank.get(x)-rank.get(y));
+    w++;
+  }
+  return alive[0];
+}
 function simTitle(rosters,slots,iters){
-  // Real season: 14-week head-to-head schedule, top-6 seeds, then a 3-week playoff bracket.
-  // (Previously this was just "highest season total wins", which ignored the schedule entirely.)
   const T=rosters.length, N=iters||400; let titles=0;
-  const lineups=rosters.map(r=>lineupOnSlots(r,slots,p=>pts(p)).chosen.map(p=>{
+  const S=TRADE.schedule;
+  const regEnd=S?S.regEnd:14, pStart=S?S.playoffStart:15;
+  const nSeeds=Math.min(T,S?S.playoffTeams:6);
+  const from=Math.max(1,Math.min(regEnd+1,state.ui.seasonWeek||1));
+  const lastW=pStart+3;
+  // picks are assets, not starters — they never score
+  const lineups=rosters.map(r=>lineupOnSlots((r||[]).filter(p=>p&&!p.isPick),slots,p=>pts(p)).chosen.map(p=>{
     const d=p.dist; return {base:pts(p)/17, sd:d?(d.c-d.f)/2.08:0.18};}));
+  // Weeks already played are FACT, not simulation: carry the real record and points forward.
+  const rec0=new Array(T).fill(0), pf0=new Array(T).fill(0);
+  if(S){
+    for(let w=1;w<from;w++){
+      const res=S.done[w], pairs=S.sched[w];
+      if(!res)continue;
+      (pairs||[]).forEach(({a,b})=>{ const pa=res[a],pb=res[b];
+        if(pa==null||pb==null)return; if(pa>pb)rec0[a]++; else if(pb>pa)rec0[b]++; else {rec0[a]+=0.5;rec0[b]+=0.5;} });
+      Object.keys(res).forEach(k=>pf0[+k]+=res[k]);
+    }
+  }
   for(let it=0;it<N;it++){
-    const wk=lineups.map(L=>{const a=new Array(17);
-      for(let w=0;w<17;w++){let sc=0;for(const x of L)sc+=x.base*Math.max(0.1,1+gauss()*x.sd);a[w]=sc;}
+    const wk=lineups.map(L=>{const a=new Array(lastW+1).fill(0);
+      for(let w=from;w<=lastW;w++){let sc=0;for(const x of L)sc+=x.base*Math.max(0.1,1+gauss()*x.sd);a[w]=sc;}
       return a;});
-    const rec=new Array(T).fill(0), pf=new Array(T).fill(0);
-    for(let w=0;w<14;w++){
-      for(let i=0;i<T;i++){ const opp=(i+1+w)%T; if(opp===i)continue;
-        if(wk[i][w]>wk[opp][w])rec[i]+=0.5; }      // each pairing counted from both sides
+    const rec=rec0.slice(), pf=pf0.slice();
+    for(let w=from;w<=regEnd;w++){
+      const pairs=(S&&S.sched[w])||null;
+      if(pairs){ pairs.forEach(({a,b})=>{ if(wk[a][w]>wk[b][w])rec[a]++; else if(wk[b][w]>wk[a][w])rec[b]++; }); }
+      else { for(let i=0;i<T;i++){ const opp=(i+w)%T; if(opp!==i&&wk[i][w]>wk[opp][w])rec[i]+=0.5; } }
       for(let t=0;t<T;t++)pf[t]+=wk[t][w];
     }
-    const seeds=[...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])).slice(0,Math.min(6,T));
-    if(seeds.length<4){ if(seeds[0]===TRADE.me)titles++; continue; }
-    const g=(a,b,w)=>wk[a][w]>=wk[b][w]?a:b;
-    const q1=g(seeds[2],seeds[seeds.length>5?5:3],14), q2=g(seeds[3],seeds[seeds.length>4?4:3],14);
-    const s1=g(seeds[0],q2,15), s2=g(seeds[1],q1,15);
-    if(g(s1,s2,16)===TRADE.me)titles++;
+    const seeds=[...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])).slice(0,nSeeds);
+    if(seeds.length<2){ if(seeds[0]===TRADE.me)titles++; continue; }
+    if(playBracket(seeds,wk,pStart)===TRADE.me)titles++;
   }
   return Math.round(titles/N*100);
 }
@@ -2160,6 +2518,17 @@ const INJ_ROS ={IR:0.55,PUP:0.6,Sus:0.65,NA:0.6,DNR:0.5};
 function availWeek(pl){const m=pl.inj?INJ_WEEK[pl.inj]:undefined;return m===undefined?1:m;}
 function availROS(pl){const m=pl.inj?INJ_ROS[pl.inj]:undefined;return m===undefined?1:m;}
 function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w)*availWeek(pl); }
+/* A projection is a midpoint, not a promise. Every player already carries an outcome
+   distribution (floor/ceil from 11 seasons of actual spread by position and ADP rank); these
+   surface it as an explicit range so a 12.0 with a 4–23 spread never reads like a safe 12.
+   Independent players' ranges are combined in quadrature, not summed — a full lineup is far
+   more predictable than any one player in it. */
+function wkRange(pl,w){ const v=wkPts(pl,w), d=pl.dist; return d?[v*d.f,v*d.c]:[v*0.6,v*1.5]; }
+function rosRange(pl,fromWeek){ const v=rosPts(pl,fromWeek), d=pl.dist; return d?[v*d.f,v*d.c]:[v*0.6,v*1.5]; }
+function bandOf(ranges,mid){
+  let lo=0,hi=0; ranges.forEach(([a,b],i)=>{const m=(a+b)/2;lo+=(m-a)**2;hi+=(b-m)**2;});
+  return [mid-Math.sqrt(lo), mid+Math.sqrt(hi)];
+}
 function weeklyLineup(roster,w){
   const R=state.settings.roster;
   const score=p=>wkPts(p,w);
@@ -2189,13 +2558,15 @@ function renderInSeason(){
     $("#waiverBox").innerHTML="";$("#tradeBox").innerHTML="";return; }
   const L=weeklyLineup(roster,w);
   const total=L.slots.reduce((a,s)=>a+(s.pl?wkPts(s.pl,w):0),0);
-  ss.innerHTML=`<div class="kv"><span class="meta">Projected total</span><span><b>${fmt(total)}</b> pts</span></div>`
+  const band=bandOf(L.slots.filter(s=>s.pl&&s.pl.bye!==w).map(s=>wkRange(s.pl,w)),total);
+  ss.innerHTML=`<div class="kv"><span class="meta">Projected total</span><span><b>${fmt(total)}</b> pts
+      <span class="meta" title="Likely range once every starter's boom/bust spread is combined">${fmt(band[0])}–${fmt(band[1])}</span></span></div>`
    + L.slots.map(s=>{
       const p=s.pl;
       if(!p)return `<div class="kv"><span><b class="num">${slotLabel(s.slot)}</b></span><span class="chip crit">empty</span></div>`;
-      const bye=p.bye===w;
+      const bye=p.bye===w, r=wkRange(p,w);
       return `<div class="kv"><span><b class="num">${slotLabel(s.slot)}</b> <span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span>
-        <span>${bye?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b>`}</span></div>`;}).join("")
+        <span>${bye?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b> <span class="meta">${r[0].toFixed(1)}–${r[1].toFixed(1)}</span>`}</span></div>`;}).join("")
    + (L.bench.length?`<h3 class="eyebrow" style="margin:14px 0 6px">Bench</h3>`+L.bench.slice(0,8).map(p=>
       `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span><span class="meta">${p.bye===w?"BYE":wkPts(p,w).toFixed(1)}</span></div>`).join(""):"");
   // sit/start advice: bench player out-projecting a starter
@@ -2259,14 +2630,14 @@ function rosPts(pl,fromWeek){
 function renderROS(w,roster,drafted){
   const box=$("#rosBox"); if(!box)return;
   const ctx=$("#rosCtx"); if(ctx)ctx.textContent=`weeks ${w}–18`;
-  const mine=roster.map(p=>({p,v:rosPts(p,w),mine:true}));
+  const mine=roster.map(p=>({p,v:rosPts(p,w),r:rosRange(p,w),mine:true}));
   const avail=state.players.filter(x=>!drafted.has(x.id)&&["QB","RB","WR","TE"].includes(x.pos))
-    .map(p=>({p,v:rosPts(p,w),mine:false}));
+    .map(p=>({p,v:rosPts(p,w),r:rosRange(p,w),mine:false}));
   const all=mine.concat(avail).sort((a,b)=>b.v-a.v).slice(0,14);
   box.innerHTML=all.map((x,i)=>`<div class="kv"><span><b class="num">${i+1}</b> <span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name}${injChip(x.p)}
       ${x.mine?'<span class="chip good">yours</span>':'<span class="chip">free agent</span>'}</span>
-    <span class="meta"><b>${x.v.toFixed(0)}</b> pts left</span></div>`).join("")
-   +`<div class="note" style="margin-top:10px">Ranked by points remaining from week ${w} to 18 — byes already removed and each week adjusted for the opponent. This is the number that matters for trades and waivers mid-season, not full-season totals.</div>`;
+    <span class="meta"><b>${x.v.toFixed(0)}</b> pts left <span class="meta">${x.r[0].toFixed(0)}–${x.r[1].toFixed(0)}</span></span></div>`).join("")
+   +`<div class="note" style="margin-top:10px">Ranked by points remaining from week ${w} to 18 — byes already removed and each week adjusted for the opponent. This is the number that matters for trades and waivers mid-season, not full-season totals. The smaller number pair is the realistic low–high range, from 11 seasons of how far actual results land from projections at that position and draft cost.</div>`;
 }
 /* ---- LEAGUE BUZZ: what the market is reacting to right now + alerts on your own roster ---- */
 async function renderBuzz(roster){
@@ -2336,7 +2707,7 @@ function renderTeamReport(){
   if(psos<=0.96)todo.push(`Your starters face a <b>tough weeks 15–17</b> slate — favor easy-playoff players from here.`);
   el.innerHTML=`
    <div class="kv"><span><b style="font-size:24px" class="tier ${gcls}">${grade}</b> <span class="meta">projected starting lineup</span></span>
-     <span class="meta"><b>${fmt(myPts)}</b> pts · ${others.length?`#${rank} of ${others.length+1}`:"—"} · ${myPts>=avg?"+":""}${fmt(myPts-avg)} vs league avg</span></div>
+     <span class="meta"><b>${fmt(myPts)}</b> pts <span class="meta" title="Realistic low–high once every starter's boom/bust spread is combined">${(()=>{const b=bandOf(filled.map(s=>{const d=s.pl.dist,v=pts(s.pl);return d?[v*d.f,v*d.c]:[v*.6,v*1.5];}),myPts);return fmt(b[0])+"–"+fmt(b[1]);})()}</span> · ${others.length?`#${rank} of ${others.length+1}`:"—"} · ${myPts>=avg?"+":""}${fmt(myPts-avg)} vs league avg</span></div>
    <div class="kv"><span class="meta">Strongest spot</span><span>${strong?`<b>${slotLabel(strong.slot)}</b> ${strong.pl.name} <span class="meta">(${sgn(strong.edge)} over replacement)</span>`:"—"}</span></div>
    <div class="kv"><span class="meta">Weakest spot</span><span>${weak?`<b>${slotLabel(weak.slot)}</b> ${weak.pl.name} <span class="meta">(${sgn(weak.edge)} over replacement)</span>`:"—"}</span></div>
    <div class="kv"><span class="meta">Playoff schedule (wk 15–17)</span><span class="chip ${psosTxt[1]}">${psosTxt[0]} · ${psos.toFixed(2)}×</span></div>
@@ -2844,6 +3215,7 @@ function wireSetup(){
   // league opponent modeling
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
   $("#selfTestBtn").onclick=()=>selfTest();
+  $("#introBtn").onclick=()=>showOnboarding();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   $("#tradeFindBtn").onclick=()=>findTrades();
@@ -2876,6 +3248,7 @@ function showTab(name){
   $$(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===name));
   // derive from the DOM so a new tab can never be silently left out of this list
   $$("section[id^='tab-']").forEach(s=>s.classList.toggle("hide",s.id!=="tab-"+name));
+  if(typeof state!=="undefined"&&state&&TABDIRTY[name])renderTab(name);   // draw it on first open
 }
 
 /* ---- theme ---- */
@@ -2907,6 +3280,39 @@ function wireHeaderTable(){
     const k=th.dataset.psort;if(state.ui.psort===k)state.ui.pdir*=-1;else{state.ui.psort=k;state.ui.pdir=(k==="name"||k==="pos"||k==="team")?1:-1;}renderPlayersTab();
   });
 }
+/* ---- FIRST-RUN WALKTHROUGH ----
+   Opening this cold is nine tabs of numbers with no hint where to start. Shown once, dismissed
+   forever, and re-openable from League Setup. Deliberately plain-language: it says what to do,
+   not what the engine does. */
+const ONB_KEY="ffwr_onboarded";
+function onboardingHTML(){
+  return `<div class="onbwrap" id="onbWrap" role="dialog" aria-modal="true" aria-label="Welcome">
+    <div class="onbcard">
+      <div class="eyebrow">Welcome</div>
+      <h2 style="margin:2px 0 6px">Your draft war room</h2>
+      <p class="why" style="margin-bottom:14px">Three things to know, then you're set.</p>
+      <div class="onbstep"><b>1 · Set up your league</b><span>Teams, your draft slot and scoring. In a Sleeper league? Import it in one click and everything matches automatically.</span></div>
+      <div class="onbstep"><b>2 · Draft</b><span>On your turn you get the best available pick with a plain-English reason. Log other managers' picks as they go, or flip on Mock draft to practise against the computer.</span></div>
+      <div class="onbstep"><b>3 · Play the season</b><span>After the draft, <b>In-Season</b> handles start/sit and waivers, and <b>Trades</b> finds deals — and judges any offer someone sends you.</span></div>
+      <div class="onbbtns">
+        <button class="btn primary" id="onbGo">Set up my league</button>
+        <button class="btn" id="onbSkip">Skip — show me the board</button>
+      </div>
+      <div class="note" style="margin-top:10px">You can reopen this any time from League Setup.</div>
+    </div></div>`;
+}
+function showOnboarding(){
+  if(document.getElementById("onbWrap"))return;
+  document.body.insertAdjacentHTML("beforeend",onboardingHTML());
+  const close=()=>{const w=document.getElementById("onbWrap");if(w)w.remove();
+    try{localStorage.setItem(ONB_KEY,"1");}catch(e){}};
+  document.getElementById("onbSkip").onclick=close;
+  document.getElementById("onbGo").onclick=()=>{close();showTab("setup");};
+  document.getElementById("onbWrap").addEventListener("click",e=>{if(e.target.id==="onbWrap")close();});
+  document.addEventListener("keydown",function esc(e){
+    if(e.key==="Escape"){close();document.removeEventListener("keydown",esc);}});
+}
+function maybeOnboard(){ try{ if(!localStorage.getItem(ONB_KEY))showOnboarding(); }catch(e){} }
 function boot(){
   loadSetupInputs();
   buildPosFilters("#posFilters","posFilter",renderAvail);
@@ -2914,6 +3320,7 @@ function boot(){
   $("#hideDrafted").classList.toggle("on",state.ui.hideDrafted);
   $("#mockBtn").classList.toggle("mockon",!!state.ui.mock);
   renderAll();
+  maybeOnboard();
 }
 function init(){
   state=load();
