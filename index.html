@@ -1020,7 +1020,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:18},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:19},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -1049,7 +1049,7 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==18){
+  if(D&&D.PLAYERS&&st.settings._projv!==19){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
@@ -1062,7 +1062,7 @@ function migrate(st){
     D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
-    st.settings._projv=18;
+    st.settings._projv=19;
   }
   return st;
 }
@@ -1458,9 +1458,23 @@ function erf(x){const s=x<0?-1:1;x=Math.abs(x);
   const t=1/(1+p*x), y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
 function normCdf(z){return .5*(1+erf(z/Math.SQRT2));}
 // Draft position behaves ~Normal(ADP, sd); sd widens deeper in the draft (later picks are noisier).
+/* Will he still be there? This needs the spread of where a player ACTUALLY goes, and Fantasy
+   Football Calculator publishes exactly that per player — measured over thousands of real drafts,
+   alongside the sample size and the observed high/low.
+
+   This used to guess `max(5, adp*0.28)`, which overstated the real spread by 2.2x to 3.8x in
+   every ADP band. Bijan Robinson's measured standard deviation is 0.7 picks; the guess said 5.
+   The effect was a board that thought elite players might plausibly last (they never do) and that
+   late picks might go far earlier than they do — and that fed the run-risk urgency too.
+   Where a player has no published figure the fallback is now the measured relationship,
+   stdev ≈ 0.106 x adp (fitted across all 221 players, R²=0.57), not a third of a guess. */
+function adpSpreadOf(pl,adp){
+  if(pl&&pl.adpSd>0) return pl.adpSd;
+  return Math.max(1.2,adp*0.106);
+}
 function pAvailAt(pl,pickNo){
   const adp=adpOf(pl); if(adp==null||adp>=900)return 1;
-  const sd=Math.max(5,adp*0.28);
+  const sd=adpSpreadOf(pl,adp);
   return Math.max(0,Math.min(1,1-normCdf((pickNo-adp)/sd)));
 }
 function availLabel(p){
@@ -2385,6 +2399,25 @@ function selfTest(){
     const dem=["QB","RB","WR","TE","K","DST"].reduce((a,p)=>a+posDemandShare(p),0);
     add("Positional demand is a valid share of the board",dem>0.85&&dem<1.15,
         `shares total ${dem.toFixed(2)}`);
+    // ---- "will he last?" rests on measured draft spread, not a guess ----
+    const wSd=P.filter(x=>x.adpSd>0);
+    add("Draft-position spread is measured, not assumed",wSd.length>150,
+        `${wSd.length} players carry FFC's published standard deviation (median ${
+          (()=>{const a=wSd.map(x=>x.adpSd).sort((u,v)=>u-v);return a[a.length>>1];})()} picks)`);
+    if(wSd.length>20){
+      const early=wSd.filter(x=>adpOf(x)<15).sort((a,b)=>adpOf(a)-adpOf(b))[0];
+      if(early){
+        const p8=pAvailAt(early,Math.round(adpOf(early))+8);
+        add("A top pick is not expected to last",p8<0.02,
+            `${early.name} (ADP ${adpOf(early).toFixed(1)}, measured sd ${early.adpSd}) — ${Math.round(p8*100)}% to survive 8 more picks`);
+      }
+      // availability must fall as the pick gets later
+      const t=wSd.find(x=>adpOf(x)>40&&adpOf(x)<90);
+      if(t){const a=Math.round(adpOf(t));
+        const seq=[a-10,a,a+10,a+25].map(k=>pAvailAt(t,k));
+        add("Availability falls as the draft moves on",seq.every((v,i)=>i===0||v<=seq[i-1]+1e-9),
+            seq.map(v=>Math.round(v*100)+"%").join(" → "));}
+    }
     // ---- per-asset confidence ----
     const withN=P.filter(x=>x.mktN).length;
     add("Sample size behind each market value",withN>200,

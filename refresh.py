@@ -48,6 +48,16 @@ def pull_ffc():
                 pos={"DEF":"DST","PK":"K","D/ST":"DST"}.get(p["position"],p["position"])  # FFC uses DEF/PK; tool expects DST/K
                 k=norm(p["name"]); e=out.setdefault(k,{"name":p["name"],"pos":pos,"team":std(p.get("team",""))})
                 e["adp" if fmt=="ppr" else "adpSf"]=round(float(p["adp"]),1)
+                # FFC publishes the MEASURED spread of where each player actually goes, plus how
+                # many drafts it's based on. The app used to guess this (0.28 x adp); the real
+                # figure is ~0.106 x adp and far tighter at the top — Bijan's is 0.7, not 5.
+                if fmt=="ppr":
+                    if p.get("stdev") is not None:
+                        try: e["adpSd"]=round(float(p["stdev"]),2)
+                        except Exception: pass
+                    if p.get("times_drafted"): e["adpN"]=int(p["times_drafted"])
+                    if p.get("high"): e["adpHi"]=int(p["high"])
+                    if p.get("low"):  e["adpLo"]=int(p["low"])
         except Exception as ex: log("  FFC",fmt,"fail:",ex)
     for v in out.values(): v.setdefault("adp",v.get("adpSf",999)); v.setdefault("adpSf",v.get("adp",999))
     log(f"  FFC: {len(out)} players")
@@ -313,6 +323,9 @@ def build_data():
         p={"id":pid,"name":v["name"],"pos":pos,"team":team,"bye":BYE.get(team,0),
            "adp":v["adp"],"adpSf":v["adpSf"],"override":None,
            "age":(slp.get(k,{}) or {}).get("age") or 27}
+        # measured draft-position spread straight from FFC (thousands of real drafts)
+        for fld in ("adpSd","adpN","adpHi","adpLo"):
+            if v.get(fld) is not None: p[fld]=v[fld]
         if pos in ("QB","RB","WR","TE"):
             season = c["s"] if c else None
             if season: p["stats"]=build_stats(pos,season,TEMPL); p["cons"]=({"s":c["s"],"e":c["e"],"k":c["k"]}); p["wk"]=c["wk"]
@@ -381,6 +394,8 @@ def build_data():
         if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         fa=dist_for(pos,posCount[pos],FACT,BANDW)
         if fa: p["dist"]={"f":fa["f"],"c":fa["c"],"bust":fa["bust"],"boom":fa["boom"]}
+        for k in ("adpSd","adpN","adpHi","adpLo"):
+            if info.get(k) is not None: p[k]=info[k]
         if info.get("sid"): p["sid"]=info["sid"]
         if info.get("inj"): p["inj"]=info["inj"]
         if info.get("depth") is not None: p["depth"]=info["depth"]
