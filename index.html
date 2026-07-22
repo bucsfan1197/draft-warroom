@@ -426,6 +426,11 @@
       </div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
+      <div class="panel"><div class="hd"><h2>Rest-of-season value</h2><span id="rosCtx" class="pickcounter" style="margin-left:auto"></span></div><div class="bd" id="rosBox"></div></div>
+      <div class="panel"><div class="hd"><h2>League buzz &amp; alerts</h2></div><div class="bd" id="buzzBox"></div></div>
+      </div>
+    </div>
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
       <div class="panel"><div class="hd"><h2>Waiver targets</h2></div><div class="bd" id="waiverBox"></div></div>
       <div class="panel"><div class="hd"><h2>Trade value board</h2></div><div class="bd" id="tradeBox"></div></div>
     </div>
@@ -2001,6 +2006,8 @@ function findTrades(){
     const combos=[];
     myPool.forEach(a=>oPool.forEach(b=>combos.push([[a],[b]])));                      // 1-for-1
     myPool.forEach((a,i)=>myPool.slice(i+1).forEach(a2=>oPool.forEach(b=>combos.push([[a,a2],[b]]))));  // 2-for-1
+    myPool.slice(0,9).forEach((a,i)=>myPool.slice(i+1,9).forEach(a2=>
+      oPool.slice(0,9).forEach((b,j)=>oPool.slice(j+1,9).forEach(b2=>combos.push([[a,a2],[b,b2]])))));   // 2-for-2
     combos.forEach(([give,get])=>{
       const mineAfter=me.players.filter(p=>!give.includes(p)).concat(get);
       const theirAfter=opp.players.filter(p=>!get.includes(p)).concat(give);
@@ -2015,7 +2022,7 @@ function findTrades(){
     if(seen.has(k))continue;
     if((perOpp[c.oi]||0)>=2)continue;        // spread suggestions across managers
     seen.add(k); perOpp[c.oi]=(perOpp[c.oi]||0)+1; top.push(c); if(top.length>=6)break; }
-  const baseline=simTitle(TRADE.teams.map(t=>t.players),slots,1500);
+  const baseline=simTitle(TRADE.teams.map(t=>t.players),slots,400);
   renderTrades(top,base,slots,V,baseline);
 }
 function renderTrades(list,base,slots,V,baseline){
@@ -2031,28 +2038,38 @@ function renderTrades(list,base,slots,V,baseline){
       <div class="why">Your starting lineup <b style="color:var(--good)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"pts"} · their side <b>+${Math.round(c.theirGain)}</b> (so it's plausibly accepted).
         ${odds?(Math.abs(odds.after-odds.before)>=2?` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b>.`:` Title odds unchanged (${odds.before}%).`):""}</div>
     </div>`;}).join("")
-    +`<div class="note">Both sides are valued on <b>your league's actual starting slots</b> (${slots.join("/")}) using ${dyn?"age-adjusted dynasty value":"projected points"}. Only deals that help both teams are shown — a trade the other manager would never accept is worthless. Title odds come from 1,500 simulated seasons of the real league; moves under 2 points are within simulation noise and shown as unchanged.</div>`;
+    +`<div class="note">Both sides are valued on <b>your league's actual starting slots</b> (${slots.join("/")}) using ${dyn?"age-adjusted dynasty value":"projected points"}. Only deals that help both teams are shown — a trade the other manager would never accept is worthless. Title odds come from 400 simulated seasons of the real league — a full 14-week head-to-head schedule plus a 3-round playoff bracket; moves under 2 points are within simulation noise and shown as unchanged.</div>`;
 }
 // Season simulation on the real league rosters: how do your title odds change?
 // Samples each starter's season from its own boom/bust distribution, 500 runs.
 function simTitle(rosters,slots,iters){
-  const V=p=>pts(p); let wins=0;
-  for(let it=0;it<(iters||500);it++){
-    let best=-1,bestScore=-1;
-    for(let i=0;i<rosters.length;i++){
-      const L=lineupOnSlots(rosters[i],slots,V);
-      let sc=0;
-      for(const p of L.chosen){const d=p.dist,sd=d?(d.c-d.f)/2.08:0.18;
-        sc+=pts(p)*Math.max(0.15,1+gauss()*sd*0.9);}
-      if(sc>bestScore){bestScore=sc;best=i;}
+  // Real season: 14-week head-to-head schedule, top-6 seeds, then a 3-week playoff bracket.
+  // (Previously this was just "highest season total wins", which ignored the schedule entirely.)
+  const T=rosters.length, N=iters||400; let titles=0;
+  const lineups=rosters.map(r=>lineupOnSlots(r,slots,p=>pts(p)).chosen.map(p=>{
+    const d=p.dist; return {base:pts(p)/17, sd:d?(d.c-d.f)/2.08:0.18};}));
+  for(let it=0;it<N;it++){
+    const wk=lineups.map(L=>{const a=new Array(17);
+      for(let w=0;w<17;w++){let sc=0;for(const x of L)sc+=x.base*Math.max(0.1,1+gauss()*x.sd);a[w]=sc;}
+      return a;});
+    const rec=new Array(T).fill(0), pf=new Array(T).fill(0);
+    for(let w=0;w<14;w++){
+      for(let i=0;i<T;i++){ const opp=(i+1+w)%T; if(opp===i)continue;
+        if(wk[i][w]>wk[opp][w])rec[i]+=0.5; }      // each pairing counted from both sides
+      for(let t=0;t<T;t++)pf[t]+=wk[t][w];
     }
-    if(best===TRADE.me)wins++;
+    const seeds=[...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])).slice(0,Math.min(6,T));
+    if(seeds.length<4){ if(seeds[0]===TRADE.me)titles++; continue; }
+    const g=(a,b,w)=>wk[a][w]>=wk[b][w]?a:b;
+    const q1=g(seeds[2],seeds[seeds.length>5?5:3],14), q2=g(seeds[3],seeds[seeds.length>4?4:3],14);
+    const s1=g(seeds[0],q2,15), s2=g(seeds[1],q1,15);
+    if(g(s1,s2,16)===TRADE.me)titles++;
   }
-  return Math.round(wins/(iters||500)*100);
+  return Math.round(titles/N*100);
 }
 function tradeTitleDelta(c,slots,baseline){
   const after=TRADE.teams.map((t,i)=>i===TRADE.me?c.mineAfter:(i===c.oi?c.theirAfter:t.players));
-  return {before:baseline,after:simTitle(after,slots,1500)};
+  return {before:baseline,after:simTitle(after,slots,400)};
 }
 
 /* ===================== IN-SEASON: start/sit, waivers, trade value =====================
@@ -2140,12 +2157,58 @@ function renderInSeason(){
   const val=p=>dyn?dynValue(p):pts(p);
   const mine=roster.slice().sort((a,b)=>val(b)-val(a));
   const avail=state.players.filter(p=>!drafted.has(p.id)).sort((a,b)=>val(b)-val(a)).slice(0,6);
+  renderROS(w,roster,drafted);
+  renderBuzz(roster);
   $("#tradeBox").innerHTML=`<h3 class="eyebrow" style="margin-bottom:6px">Your roster${dyn?" (dynasty value)":""}</h3>`
     +mine.slice(0,10).map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
     +`<h3 class="eyebrow" style="margin:12px 0 6px">Best available</h3>`
     +avail.map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
     +`<div class="note" style="margin-top:10px">Compare the numbers on both sides of a trade. ${dyn?"Dynasty values are age-adjusted over a 4-year window.":"Redraft values are this season's projected points."}</div>`;
 }
+
+/* ---- REST OF SEASON: what a player is worth from here on, not for a season already partly gone ---- */
+function rosPts(pl,fromWeek){
+  let t=0; for(let w=Math.max(1,fromWeek);w<=18;w++) t+=wkPts(pl,w);
+  return t;
+}
+function renderROS(w,roster,drafted){
+  const box=$("#rosBox"); if(!box)return;
+  const ctx=$("#rosCtx"); if(ctx)ctx.textContent=`weeks ${w}–18`;
+  const mine=roster.map(p=>({p,v:rosPts(p,w),mine:true}));
+  const avail=state.players.filter(x=>!drafted.has(x.id)&&["QB","RB","WR","TE"].includes(x.pos))
+    .map(p=>({p,v:rosPts(p,w),mine:false}));
+  const all=mine.concat(avail).sort((a,b)=>b.v-a.v).slice(0,14);
+  box.innerHTML=all.map((x,i)=>`<div class="kv"><span><b class="num">${i+1}</b> <span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name}${injChip(x.p)}
+      ${x.mine?'<span class="chip good">yours</span>':'<span class="chip">free agent</span>'}</span>
+    <span class="meta"><b>${x.v.toFixed(0)}</b> pts left</span></div>`).join("")
+   +`<div class="note" style="margin-top:10px">Ranked by points remaining from week ${w} to 18 — byes already removed and each week adjusted for the opponent. This is the number that matters for trades and waivers mid-season, not full-season totals.</div>`;
+}
+/* ---- LEAGUE BUZZ: what the market is reacting to right now + alerts on your own roster ---- */
+async function renderBuzz(roster){
+  const box=$("#buzzBox"); if(!box)return;
+  const hurt=roster.filter(p=>p.inj);
+  const alerts=hurt.length?`<h3 class="eyebrow" style="margin-bottom:6px">⚠ Your roster</h3>`
+    +hurt.map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span>
+       <span class="meta">${rosPts(p,state.ui.seasonWeek||1).toFixed(0)} pts left</span></div>`).join(""):"";
+  if(BUZZ.cache){box.innerHTML=alerts+BUZZ.cache;return;}
+  box.innerHTML=alerts+`<div class="note">Loading league-wide adds/drops…</div>`;
+  try{
+    const [add,drop]=await Promise.all([
+      SJ("https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=48&limit=12"),
+      SJ("https://api.sleeper.app/v1/players/nfl/trending/drop?lookback_hours=48&limit=6")]);
+    const bySid={};state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
+    const row=(x,cls,label)=>{const p=bySid[String(x.player_id)];if(!p)return"";
+      return `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)} <span class="meta">${p.team}</span></span>
+        <span class="chip ${cls}">${label} ${(x.count/1000).toFixed(1)}k</span></div>`;};
+    BUZZ.cache=`<h3 class="eyebrow" style="margin:12px 0 6px">🔥 Most added (48h)</h3>`
+      +add.map(x=>row(x,"good","+")).join("")
+      +`<h3 class="eyebrow" style="margin:12px 0 6px">📉 Most dropped</h3>`
+      +drop.map(x=>row(x,"warn","−")).join("")
+      +`<div class="note" style="margin-top:10px">Live add/drop counts across all Sleeper leagues — the fastest read on breaking news (injuries, depth-chart changes) before rankings update.</div>`;
+    box.innerHTML=alerts+BUZZ.cache;
+  }catch(e){ box.innerHTML=alerts+`<div class="note">Couldn't load league buzz right now.</div>`; }
+}
+const BUZZ={cache:null};
 
 /* ---- MY TEAM tab ---- */
 /* ---- Team report card: where you actually stand, and what to fix ---- */
