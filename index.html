@@ -80,7 +80,7 @@
   #s_clock,#s_adp{flex-wrap:wrap;height:auto}
   /* ---- trade calculator ---- */
   /* a textarea doesn't fill its box on its own — without this it sits at its default ~20 cols */
-  #labGive,#labGet,#keepList{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
+  #labGive,#labGet,#keepList,#lab3r0,#lab3r1,#lab3r2{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
     padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);
     color:var(--ink);resize:vertical;min-height:96px}
   .labside{margin-top:6px;display:flex;flex-direction:column;gap:3px;min-height:20px}
@@ -112,7 +112,7 @@
     .grid-draft{grid-template-columns:1fr!important;gap:12px}
     .sticky-col{position:static}                 /* sticky wastes vertical room on a phone */
     /* the calculator's two panes stack on a phone, and 16px stops iOS zooming on focus */
-    #labGive,#labGet,#keepList{font-size:16px}
+    #labGive,#labGet,#keepList,#lab3r0,#lab3r1,#lab3r2{font-size:16px}
     .labopts{gap:8px}
     .labopts label{flex:1 1 100%}
     .clock{flex-wrap:wrap;gap:8px;padding:12px}
@@ -444,7 +444,27 @@
     <div class="panel">
       <div class="hd"><h2>Trade calculator</h2><span id="labCtx" class="pickcounter" style="margin-left:auto"></span></div>
       <div class="bd">
-        <div class="grid-draft" style="grid-template-columns:1fr 1fr;gap:12px">
+        <div class="labopts" style="margin:0 0 10px">
+          <label>Teams <span class="seg" id="lab_mode">
+            <button data-v="2" class="on">Two</button><button data-v="3">Three</button></span></label>
+        </div>
+        <div id="lab3" class="hide">
+          <div class="grid-draft" style="grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <div><h3 class="eyebrow" style="margin-bottom:6px">Team A receives</h3>
+              <select id="lab3t0" style="width:100%;margin-bottom:6px"></select>
+              <textarea id="lab3r0" rows="5" spellcheck="false" placeholder="Assets this team gets"></textarea>
+              <div id="lab3o0" class="labside"></div></div>
+            <div><h3 class="eyebrow" style="margin-bottom:6px">Team B receives</h3>
+              <select id="lab3t1" style="width:100%;margin-bottom:6px"></select>
+              <textarea id="lab3r1" rows="5" spellcheck="false" placeholder="Assets this team gets"></textarea>
+              <div id="lab3o1" class="labside"></div></div>
+            <div><h3 class="eyebrow" style="margin-bottom:6px">Team C receives</h3>
+              <select id="lab3t2" style="width:100%;margin-bottom:6px"></select>
+              <textarea id="lab3r2" rows="5" spellcheck="false" placeholder="Assets this team gets"></textarea>
+              <div id="lab3o2" class="labside"></div></div>
+          </div>
+        </div>
+        <div id="lab2" class="grid-draft" style="grid-template-columns:1fr 1fr;gap:12px">
           <div>
             <h3 class="eyebrow" style="margin-bottom:6px">You give <span id="labGiveN" class="meta"></span></h3>
             <textarea id="labGive" rows="6" spellcheck="false" placeholder="One per line:&#10;Ja'Marr Chase&#10;2027 1st&#10;2028 early 2nd"></textarea>
@@ -2229,6 +2249,30 @@ function selfTest(){
     state.settings.format=wf2; LABC={key:null};
     add("Superflex raises quarterback prices",qbSF>qb1*1.05,
         qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    // ---- three-team trades ----
+    // No league is loaded during a self-test, so exercise the pieces on synthetic rosters:
+    // conservation (nothing created or destroyed) is the invariant that matters.
+    (()=>{
+      const pool=P.filter(x=>!x.idp&&x.pos!=="K"&&x.pos!=="DST").slice(0,30);
+      if(pool.length<9){add("Three-team trades conserve every asset",false,"not enough players");return;}
+      const fake=[0,1,2].map(i=>({name:"T"+i,rosterId:i,players:pool.slice(i*10,i*10+10),picks:[]}));
+      const idxs=[0,1,2];
+      const owned=[].concat(...fake.map((t,slot)=>teamAssets(t).map(a=>({a,owner:slot}))));
+      // cycle: each team receives the next team's best
+      const recv=[[owned.find(x=>x.owner===1)],[owned.find(x=>x.owner===2)],[owned.find(x=>x.owner===0)]];
+      const gone=new Set(recv.flat().map(m=>String(m.a.id)));
+      const after=fake.map((t,slot)=>teamAssets(t).filter(a=>!gone.has(String(a.id)))
+        .concat(recv[slot].map(m=>m.a)));
+      const beforeIds=new Set(fake.flatMap(t=>teamAssets(t).map(a=>String(a.id))));
+      const afterIds=new Set(after.flat().map(a=>String(a.id)));
+      const sameSize=after.every((r,i)=>r.length===teamAssets(fake[i]).length);
+      const conserved=beforeIds.size===afterIds.size&&[...beforeIds].every(id=>afterIds.has(id));
+      const noSelf=recv.every((r,slot)=>r.every(m=>m.owner!==slot));
+      add("Three-team trades conserve every asset",conserved&&sameSize&&noSelf,
+          `${beforeIds.size} assets in, ${afterIds.size} out, roster sizes unchanged, nobody receives their own player`);
+    })();
+    const p3=parseAssetLine("2027 1st");
+    add("Three-team mode has its own matcher",typeof lab3Match==="function"&&typeof lab3Compute==="function"&&!!p3,"");
     // ---- IDP ----
     const wasRoster=JSON.parse(JSON.stringify(state.settings.roster));
     const defenders=P.filter(x=>x.idp);
@@ -2293,13 +2337,16 @@ function selfTest(){
     showTab("draft");     // drafting happens on the draft tab; hidden tabs render lazily now
     const SEG=(id,v)=>{const b=[...document.getElementById(id).querySelectorAll('button')].find(x=>x.dataset.v===v);if(b)b.click();};
     const MOCK=()=>[...document.querySelectorAll('button')].find(b=>/mock draft/i.test(b.textContent));
-    const S={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,BENCH:6};
+    // the IDP slots must be stated explicitly, or these cases inherit whatever the user had
+    // set and quietly stop testing the format they claim to test
+    const S={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:6};
     const cases=[["Redraft","redraft",false,S],["Superflex","redraft",false,Object.assign({},S,{SUPERFLEX:1})],
                  ["Dynasty","dynasty",false,S],
-                 ["Best ball","redraft",true,{QB:1,RB:2,WR:3,TE:1,FLEX:1,SUPERFLEX:0,K:0,DST:0,BENCH:10}]];
+                 ["Best ball","redraft",true,{QB:1,RB:2,WR:3,TE:1,FLEX:1,SUPERFLEX:0,K:0,DST:0,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:10}],
+                 ["IDP","redraft",false,Object.assign({},S,{DL:2,LB:3,DB:2,IDP_FLEX:1})]];
     cases.forEach(([label,fmt,bb,roster])=>{
       SEG("s_format",fmt); SEG("s_bestball",bb?"1":"0");
-      Object.assign(state.settings.roster,roster);
+      Object.assign(state.settings.roster,roster); syncPosList();
       state.settings.teams=12; state.settings.slot=6;
       if(state.ui.mock)MOCK().click();
       state.picks=[];SIMCACHE={key:null};renderAll();MOCK().click();
@@ -2310,7 +2357,7 @@ function selfTest(){
         if(!b)break;b.click();n++;}
       const comp={};teamRoster(myIdx()).forEach(x=>comp[x.pos]=(comp[x.pos]||0)+1);
       const TG=rosterTargets(),RR=state.settings.roster;
-      const legal=(comp.QB||0)>=RR.QB&&(comp.RB||0)>=RR.RB&&(comp.WR||0)>=RR.WR&&(comp.TE||0)>=RR.TE&&(comp.K||0)>=RR.K&&(comp.DST||0)>=RR.DST;
+      const legal=["QB","RB","WR","TE","K","DST","DL","LB","DB"].every(pz=>(comp[pz]||0)>=(RR[pz]||0));
       const over=Object.keys(comp).filter(x=>comp[x]>(TG.mx[x]||0));
       add(`${label}: legal roster, no over-cap`, legal&&!over.length&&teamRoster(myIdx()).length===size,
           Object.entries(comp).map(([k,v])=>k+v).join(" ")+(over.length?` — OVER: ${over.join(",")}`:""));
@@ -2516,6 +2563,7 @@ async function tradeLoadRosters(leagueId){
       +(TRADE.leagueIsDynasty&&state.settings.format!=="dynasty"
         ?` <span class="chip warn">This is a dynasty league but the app is set to redraft — switch the format in League Setup so players are valued over multiple years, not just this season.</span>`:"");
     try{evalPopulate();}catch(e){}
+    try{lab3Fill();}catch(e){}
     tradeStatus(`Loaded <b>${lg.name}</b> — ${TRADE.teams.length} rosters. Pick your team and hit Find trades.`,"var(--good)");
   }catch(e){tradeStatus("Couldn't load rosters: "+e,"var(--crit)");}
 }
@@ -2851,9 +2899,131 @@ function labRenderSide(list,elId,nId){
       state.ui.labPin[sel.dataset.side+sel.dataset.idx]=+sel.value; labCompute(); };
   });
 }
+/* ---- THREE-TEAM TRADES ----
+   Almost nothing free handles these, and the reason is ownership: in a three-way you can't tell
+   what a team GIVES without knowing who owns what. A synced league answers that, so the input is
+   just "what does each team receive" and everything each team gives is derived — which also makes
+   the deal impossible to state inconsistently. Every asset must be owned by one of the three and
+   land somewhere other than home. */
+function lab3Sel(){ return [0,1,2].map(i=>{const el=$("#lab3t"+i);return el?+el.value:-1;}); }
+function lab3Pool(idxs){
+  const out=[];
+  idxs.forEach((ti,slot)=>{ const t=TRADE.teams[ti]; if(!t)return;
+    teamAssets(t).forEach(a=>out.push({a,owner:slot,ownerIdx:ti})); });
+  return out;
+}
+function lab3Match(line,pool){
+  const q=nrm(String(line||"").replace(/\s+/g," ").trim());
+  if(!q) return null;
+  const pk=parseAssetLine(line);
+  if(pk&&pk.kind==="pick"){
+    const hit=pool.find(x=>x.a.isPick&&x.a.season===pk.season&&x.a.round===pk.round);
+    return hit?{...hit,label:hit.a.name}:{missing:line.trim()};
+  }
+  let best=null,bs=0;
+  pool.forEach(x=>{
+    if(x.a.isPick)return;
+    const n=nrm(x.a.name); let sc=0;
+    const pt=n.split(" "), last=pt[pt.length-1];
+    if(n===q)sc=100; else if(q.indexOf(" ")<0&&last===q)sc=92;
+    else if(n.startsWith(q))sc=86; else if(n.indexOf(q)>=0)sc=78;
+    else if(q.split(" ").every(t=>pt.some(y=>y.startsWith(t))))sc=72;
+    if(sc>bs){bs=sc;best=x;}
+  });
+  return best?{...best,label:best.a.name}:{missing:line.trim()};
+}
+function lab3Compute(){
+  const out=$("#labOut"); if(!out)return;
+  const ctx=$("#labCtx"); if(ctx)ctx.textContent="three-team trade";
+  if(!TRADE.teams.length){
+    out.innerHTML=`<div class="note">A three-team trade needs to know <b>who owns what</b> — otherwise there's no way to tell what each team is giving up. Load your league rosters in the Trade finder below, then come back.</div>`;
+    return;
+  }
+  const idxs=lab3Sel();
+  if(new Set(idxs).size<3){
+    out.innerHTML=`<div class="note">Pick three <b>different</b> teams.</div>`; return;
+  }
+  const pool=lab3Pool(idxs);
+  const recv=[[],[],[]], problems=[], claimed=new Map();
+  [0,1,2].forEach(slot=>{
+    const txt=($("#lab3r"+slot)||{}).value||"";
+    txt.split("\n").forEach(line=>{
+      if(!line.trim())return;
+      const m=lab3Match(line,pool);
+      if(!m||m.missing){problems.push(`“${(m&&m.missing)||line.trim()}” isn't on any of these three rosters`);return;}
+      const key=String(m.a.id);
+      if(claimed.has(key)){problems.push(`${m.label} is listed twice`);return;}
+      if(m.owner===slot){problems.push(`${m.label} already belongs to ${TRADE.teams[idxs[slot]].name}`);return;}
+      claimed.set(key,slot); recv[slot].push(m);
+    });
+  });
+  const teams=idxs.map(i=>TRADE.teams[i]);
+  const V=tradeVal(), slots=TRADE.slots.length?TRADE.slots:["QB","RB","RB","WR","WR","TE","FLEX","K","DST"];
+  const before=teams.map(t=>teamAssets(t));
+  const gone=new Set([...claimed.keys()]);
+  const after=teams.map((t,slot)=>
+    teamAssets(t).filter(a=>!gone.has(String(a.id))).concat(recv[slot].map(m=>m.a)));
+  const deltas=teams.map((t,i)=>sideValue(after[i],slots,V)-sideValue(before[i],slots,V));
+  [0,1,2].forEach(slot=>{
+    labRenderSide(recv[slot].map(m=>m.a.isPick
+      ? {kind:"pick",season:m.a.season,round:m.a.round,tier:"mid",label:m.a.name}
+      : {kind:"player",player:m.a,cands:[],idx:0,side:"x"+slot}), "#lab3o"+slot, null);
+  });
+  const anyAssets=recv.some(r=>r.length);
+  if(!anyAssets&&problems.length){      // nothing landed — show why, not a verdict on an empty deal
+    out.innerHTML=`<div class="rec"><div class="note">⚠️ ${problems.join(" · ")}</div>
+      <div class="note" style="margin-top:8px">Type what each team <b>receives</b>. Every asset has to belong to one of the three teams and go somewhere other than home.</div></div>`;
+    return;
+  }
+  if(!anyAssets&&!problems.length){
+    out.innerHTML=`<div class="note">Type what each team <b>receives</b>, one asset per line. Who gives what is worked out from the rosters, so you can't state the deal inconsistently. Every asset has to belong to one of the three teams and go somewhere other than home.</div>`;
+    return;
+  }
+  const meSlot=idxs.indexOf(TRADE.me);
+  const myDelta=meSlot>=0?deltas[meSlot]:deltas[0];
+  const scale=Math.max(1,...before.map(b=>Math.abs(sideValue(b,slots,V))));
+  const tol=Math.max(0,+($("#labTol").value||5))/100;
+  const verdict=Math.abs(myDelta)<=tol*scale*0.15
+      ?["FAIR","warn","Roughly neutral for you."]
+      :myDelta>0?["YOU WIN","good","You come out ahead of where you started."]
+                :["YOU LOSE","crit","You end up worse than you started."];
+  /* A three-way only happens if all three say yes, but YOUR outcome is already the headline —
+     what matters here is which of the OTHER two would balk. The bar is a small share of a
+     roster's total worth, not 1% of it: at 1% a genuine 80-point gain read as a refusal. */
+  const bar=Math.max(1.5,0.002*scale);
+  const holdouts=deltas.map((d,i)=>({name:teams[i].name,d,slot:i}))
+    .filter(x=>x.slot!==meSlot&&x.d<=bar);
+  let odds="";
+  if(!problems.length&&anyAssets){
+    const rosters=TRADE.teams.map((t,i)=>{const k=idxs.indexOf(i);return k>=0?after[k].filter(a=>!a.isPick):t.players;});
+    const b4=simTitle(TRADE.teams.map(t=>t.players),slots,400), af=simTitle(rosters,slots,400);
+    const nz=oddsNoise(b4,400,af,400);
+    odds=`<div class="kv"><span>Your title odds <span class="meta">(all three rosters change, so a deal that arms a rival can cost you even when your own side gains)</span></span>
+      <span class="num">${b4}% → <b style="color:${af>=b4?'var(--good)':'var(--crit)'}">${af}%</b> <span class="meta">±${nz}</span></span></div>`;
+  }
+  out.innerHTML=`
+    <div class="rec top">
+      <div class="r1"><span class="nm">${verdict[0]}</span>
+        <span class="chip ${verdict[1]}" style="margin-left:8px">${verdict[2]}</span></div>
+      <div class="labdecomp">
+        ${deltas.map((d,i)=>`<div class="kv"><span>${teams[i].name}${idxs[i]===TRADE.me?" <b>(you)</b>":""}
+          <span class="meta">gives ${before[i].filter(a=>gone.has(String(a.id))).length}, gets ${recv[i].length}</span></span>
+          <span class="num" style="color:${d>=0?'var(--good)':'var(--crit)'}">${d>=0?"+":""}${Math.round(d)}</span></div>`).join("")}
+        ${odds}
+      </div>
+      ${problems.length?`<div class="note" style="margin-top:8px">⚠️ ${problems.join(" · ")}</div>`:""}
+      <div class="note" style="margin-top:8px">
+        ${holdouts.length
+          ? `${holdouts.map(h=>`<b>${h.name}</b> (${h.d>=0?"+":""}${Math.round(h.d)})`).join(" and ")} ${holdouts.length>1?"have":"has"} no reason to do this. A three-way needs <b>all three</b> managers to gain — send something their way or the deal dies.`
+          : `All three teams come out ahead, which is what makes a three-way actually sendable.`}
+      </div>
+      <div class="note" style="margin-top:8px">${labSettingsLine()}</div>
+    </div>`;
+}
 /* The verdict, and — more importantly — WHY. Every free calculator prints two numbers and
    stops; the decomposition below is the part that actually helps you argue the trade. */
 function labCompute(){
+  if(state.ui.labMode===3) return lab3Compute();
   const out=$("#labOut"); if(!out)return;
   const give=labResolve($("#labGive").value,"g"), get=labResolve($("#labGet").value,"t");
   labRenderSide(give,"#labGiveOut","#labGiveN"); labRenderSide(get,"#labGetOut","#labGetN");
@@ -3203,12 +3373,35 @@ function wireKeepers(){
   $$("#keepEsc button").forEach(x=>x.classList.toggle("on",+x.dataset.v===c.esc));
   $$("#keepYears button").forEach(x=>x.classList.toggle("on",+x.dataset.v===c.years));
 }
+function lab3Fill(){
+  if(!TRADE.teams.length)return;
+  const opts=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name}</option>`).join("");
+  const pref=[TRADE.me, ...TRADE.teams.map((_,i)=>i).filter(i=>i!==TRADE.me)];
+  [0,1,2].forEach(k=>{
+    const sel=$("#lab3t"+k); if(!sel)return;
+    const keep=sel.value;
+    sel.innerHTML=opts;
+    sel.value=(keep!==""&&keep!=null&&sel.querySelector(`option[value="${keep}"]`))?keep:String(pref[k]!=null?pref[k]:k);
+  });
+}
 function wireTradeLab(){
   const g=$("#labGive"), t=$("#labGet"); if(!g||!t)return;
   let deb=null;
   const run=()=>{ clearTimeout(deb); deb=setTimeout(()=>{ state.ui.labPin={}; labCompute(); },160); };
   // typing changes which player each line means, so pinned choices reset with the text
   g.oninput=run; t.oninput=run;
+  $$("#lab_mode button").forEach(b=>b.onclick=()=>{
+    state.ui.labMode=+b.dataset.v;
+    $$("#lab_mode button").forEach(x=>x.classList.toggle("on",x===b));
+    $("#lab2").classList.toggle("hide",state.ui.labMode===3);
+    $("#lab3").classList.toggle("hide",state.ui.labMode!==3);
+    lab3Fill(); labCompute(); save();
+  });
+  [0,1,2].forEach(i=>{
+    const ta=$("#lab3r"+i), sel=$("#lab3t"+i);
+    if(ta){let d=null;ta.oninput=()=>{clearTimeout(d);d=setTimeout(labCompute,160);};}
+    if(sel)sel.onchange=()=>labCompute();
+  });
   $$("#lab_src button").forEach(b=>b.onclick=()=>{
     state.ui.labSrc=b.dataset.v;
     $$("#lab_src button").forEach(x=>x.classList.toggle("on",x===b));
@@ -3239,6 +3432,11 @@ function wireTradeLab(){
   }
   if(state.ui.labSrc)$$("#lab_src button").forEach(x=>x.classList.toggle("on",x.dataset.v===state.ui.labSrc));
   if(state.ui.labPickAdj)$("#labPickAdj").value=state.ui.labPickAdj;
+  if(state.ui.labMode===3){
+    $$("#lab_mode button").forEach(x=>x.classList.toggle("on",x.dataset.v==="3"));
+    $("#lab2").classList.add("hide"); $("#lab3").classList.remove("hide");
+  }
+  lab3Fill();
 }
 function findTrades(){
   if(!TRADE.teams.length){tradeStatus("Load your league first.","var(--warn)");return;}
