@@ -215,7 +215,9 @@
   .mini{border:1px solid var(--line-2);background:var(--panel);color:var(--ink);border-radius:7px;padding:4px 9px;font-size:12px;font-weight:700}
   .mini:hover{border-color:var(--accent);color:var(--accent)}
   .mini.dr{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-  .scrollbox{max-height:560px;overflow:auto}
+  /* The player board is what you actually work in, so let it use the height it has instead of
+     stopping dead at 560px and leaving a void under it. */
+  .scrollbox{max-height:min(70vh,760px);overflow:auto}
 
   /* roster */
   .slotrow{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line)}
@@ -372,6 +374,11 @@
   .tbl tbody tr{transition:background .12s ease}
   .tbl tbody tr:hover{background:color-mix(in srgb,var(--panel-2) 60%,transparent)}
   .tblwrap{border-radius:10px}
+  #availTable td,#availTable th{padding:6px 7px}
+  #availTable th.r,#availTable td.r{padding-left:4px}
+  /* the floor-ceil range is context, not a headline — keep it legible but let it be narrow */
+  #availTable .rng{display:block;font-size:10px;color:var(--ink-2);font-variant-numeric:tabular-nums;line-height:1.25}
+  .thsub{display:block;font-size:8.5px;letter-spacing:.06em;opacity:.75;font-weight:600}
 
   /* ---- Chips read as state, not decoration ---- */
   .chip{border-radius:7px;padding:2px 8px;font-weight:700}
@@ -387,6 +394,10 @@
   .note{background:color-mix(in srgb,var(--panel-2) 55%,transparent);border:1px solid var(--line);
         border-radius:9px;padding:10px 12px;line-height:1.55}
 
+  /* The freshness chip sat inside the tab strip and read like a greyed-out tab. Move it out to
+     sit with the other status controls. */
+  .datachip{margin-left:auto;align-self:center;white-space:nowrap;font-size:11px;
+    padding:3px 9px;border-radius:20px;background:var(--panel-2);border:1px solid var(--line)}
   /* ---- Picks so far ---- */
   #pickLog{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
   .logrow{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px}
@@ -431,7 +442,7 @@
       <button class="tab hide" data-tab="cap" id="capTabBtn">Contracts</button>
       <button class="tab" data-tab="season">In-Season</button>
       <button class="tab" data-tab="trade">Trades</button>
-      <span id="dataAge" class="meta" style="margin-left:auto;align-self:center;white-space:nowrap"></span>
+      <span id="dataAge" class="meta datachip"></span>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
@@ -478,9 +489,8 @@
                 <th data-sort="name">Player</th>
                 <th data-sort="pos">Pos</th>
                 <th class="r" data-sort="age">Age</th>
-                <th class="r" data-sort="proj">Proj</th>
-                <th class="r">Floor–Ceil</th>
-                <th class="r" data-sort="vorp" id="vorpHead" title="How many points this player beats a free agent by">vs free agent</th>
+                <th class="r" data-sort="proj">Proj<span class="thsub">low – high</span></th>
+                <th class="r" data-sort="vorp" id="vorpHead" title="How many points this player beats a free agent by">Better by</th>
                 <th class="r" data-sort="adp" id="adpHead">ADP</th>
                 <th></th>
               </tr></thead>
@@ -1636,7 +1646,7 @@ function availLabel(p){
   if(p>=.75)return {t:"✅ Safe to wait",cls:"ok"};
   if(p>=.45)return {t:"⚖️ Could go either way",cls:"warn"};
   if(p>=.20)return {t:"⏳ Probably gone",cls:"warn"};
-  return {t:"🔥 Won't last",cls:"crit"};
+  return {t:"🔥 Gone before your next pick",cls:"crit"};
 }
 
 /* ---- OPPORTUNITY (usage) MODEL ----
@@ -2132,7 +2142,7 @@ function renderClock(){
   el.className="clock"+(isMe&&!done?" you":"");
   const mockBadge=state.ui.mock?` · <span style="color:var(--accent);font-weight:700">🤖 Mock</span>`:"";
   el.innerHTML=`<div style="flex:1">
-     <div class="eyebrow">${done?"Draft complete":`Pick ${p+1} · Round ${round}.${String(inRound).padStart(2,"0")}`} · ${Math.min(state.picks.length,total)}/${total} made${mockBadge}</div>
+     <div class="eyebrow">${done?"Draft complete":`Pick ${p+1} · Round ${round}.${String(inRound).padStart(2,"0")}`} · ${Math.min(state.picks.length,total)} of ${total} picks gone${mockBadge}</div>
      <div class="big">${done?"✅ Draft complete":(isMe?"🎯 You're on the clock":(state.ui.mock?"🤖 ":"")+"Team "+(tIdx+1)+" picking")}</div>
    </div>
    ${state.picks.length?`<button class="ghost" id="undoBtn">↶ Undo${state.ui.mock?" my pick":""}</button>`:""}`;
@@ -2315,7 +2325,7 @@ function renderAvail(){
     else{av=a[key];bv=b[key];}
     return dir*(av-bv);
   });
-  const vh=$("#vorpHead");if(vh)vh.textContent=isDyno()?"vs free agent (multi-year)":"vs free agent";
+  const vh=$("#vorpHead");if(vh)vh.textContent=isDyno()?"Better by (yrs)":"Better by";
   const auct=state.settings.auction, actx=auct?auctionCtx():null;
   const ah=$("#adpHead");if(ah)ah.textContent=auct?"$ Val":"ADP";
   $("#availCount").textContent=auct?`${rows.length} shown · $ values${actx.infl!==1?` · inflation ${actx.infl.toFixed(2)}×`:''}`:`${rows.length} shown · ADP: ${ADP_SRC[state.settings.adpSource||'ffc']} ${isSF()?'SF':'1QB'}`;
@@ -2344,8 +2354,7 @@ function renderAvail(){
       <td><span class="plname">${r.pl.name}</span> ${injChip(r.pl)}<span class="meta">${r.pl.team}</span>${r.pl.bye?` <span class="bye">bye ${r.pl.bye}</span>`:''}</td>
       <td><span class="pos ${r.pl.pos}">${r.pl.pos}</span></td>
       <td class="r num" style="color:${ageCol}">${r.age||'—'}</td>
-      <td class="r num">${fmt(r.proj)}</td>
-      <td class="r num meta" style="font-size:11px">${r.pl.dist?`${fmt(floorOf(r.pl))}–${fmt(ceilOf(r.pl))}`:'—'}</td>
+      <td class="r num"><span>${fmt(r.proj)}</span>${r.pl.dist?`<span class="rng">${fmt(floorOf(r.pl))}–${fmt(ceilOf(r.pl))}</span>`:''}</td>
       <td class="r num" style="color:${r.vorp>0?'var(--good)':'var(--ink-2)'}">${r.vorp>0?'+':''}${fmt(r.vorp)}</td>
       <td class="r num${auct?'':' meta'}">${lastCol}</td>
       <td class="r">${btn}</td>
@@ -2526,7 +2535,19 @@ function layoutProbe(){
         out.push(`clipped → ${elDesc(c)} sits outside ${elDesc(box)}`);
     });
   });
-  // 3. the page itself must never scroll sideways (tables scroll inside their own containers)
+  /* 3. A table that has to scroll sideways on a full-size screen is a broken layout, not a
+     feature. The probe deliberately lets .tblwrap scroll — which is right on a phone — and that
+     blind spot let a renamed column header ("VORP" to "vs free agent") push the last column off
+     the edge of the main player board without anything failing. On a wide viewport, the board
+     should fit. */
+  if(window.innerWidth>=1100){
+    document.querySelectorAll(".tblwrap").forEach(w=>{
+      if(!shown(w))return;
+      if(w.scrollWidth>w.clientWidth+2)
+        out.push(`clipped → ${elDesc(w)} needs ${w.scrollWidth}px of width but has ${w.clientWidth}px`);
+    });
+  }
+  // 4. the page itself must never scroll sideways (tables scroll inside their own containers)
   const de=document.documentElement;
   if(de.scrollWidth>de.clientWidth+1)
     out.push(`page scrolls sideways (${de.scrollWidth}px of content in ${de.clientWidth}px)`);
