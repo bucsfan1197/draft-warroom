@@ -363,7 +363,7 @@
   <!-- MY TEAM TAB -->
   <section id="tab-team" class="hide">
     <div class="panel" style="margin-bottom:16px">
-      <div class="hd"><h2>Team report card</h2></div>
+      <div class="hd"><h2>How good is my team?</h2></div>
       <div class="bd" id="teamReport"></div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr">
@@ -389,7 +389,7 @@
   <!-- MATCHUPS TAB -->
   <section id="tab-matchups" class="hide">
     <div class="panel">
-      <div class="hd"><h2>Weekly matchup projections</h2><span class="pickcounter" style="margin-left:auto">Optimal lineup · season pace ÷ games · byes zeroed</span></div>
+      <div class="hd"><h2>Weekly matchup projections</h2><span class="pickcounter" style="margin-left:auto">Best lineup each week · bye weeks score zero</span></div>
       <div class="bd">
         <div class="note" id="matchNote" style="margin-bottom:14px"></div>
         <div class="grid-draft" style="grid-template-columns:1.1fr .9fr">
@@ -607,7 +607,7 @@
   </section>
   <section id="tab-players" class="hide">
     <div class="panel">
-      <div class="hd"><h2>Projection editor</h2><span class="pickcounter" style="margin-left:auto">Edit any Proj cell · Enter to save</span></div>
+      <div class="hd"><h2>Projection editor</h2><span class="pickcounter" style="margin-left:auto">Click any projection to change it · Enter to save</span></div>
       <div class="bd">
         <div class="note" style="margin-bottom:12px"><b>How these projections are built:</b> The <b>baseline is the ESPN + Sleeper 2026 consensus</b> (season <i>and</i> week-to-week), scaled onto stat lines so <i>your</i> scoring settings still recompute (PPR/half/TE-premium). The <b>Src E/S</b> column shows both sources — a big gap means the experts disagree (more uncertain). <b>Floor/Ceil</b> and <b>Boom/Bust%</b> come from 11 seasons of actual outcome spread by position &amp; ADP rank (the historical model now powers <i>risk</i>, not the point estimate). <b>ADP</b> (1QB + superflex), <b>injuries</b> (Q/OUT/IR), and depth flags are live from Fantasy Football Calculator + Sleeper. The simulator scores each week off the <b>real consensus weekly grid</b>. Override any Proj/bye; edits save with the draft.</div>
         <div class="toolbar">
@@ -763,9 +763,10 @@
       </div>
     </div>
     <div class="panel" style="margin-top:16px">
-      <div class="hd"><h2>Replacement levels (VORP baselines)</h2></div>
+      <div class="hd"><h2>What you get if you wait</h2></div>
       <div class="bd"><div class="statgrid" id="replBox"></div>
-      <div class="note" style="margin-top:12px">VORP = a player's projected points minus the projected points of the <b>last startable player</b> at that position across your league. It's the true draft-day value: a 300-pt RB in a shallow position is worth more than a 320-pt WR in a deep one.</div></div>
+      <div class="note" style="margin-top:12px">These are the players left over if you skip a position entirely — the best one at each spot that <b>nobody in your league is starting</b>. That makes each row a target: drafting a quarterback only helps you as much as he beats the quarterback in the QB row, because that one is free.
+      <br><br>It's also why the same points are worth different amounts at different positions. If the leftover running back scores 180 and the leftover receiver scores 210, then a 250-point back is a bigger prize than a 250-point receiver — he's beating a weaker free option by more.</div></div>
     </div>
   </section>
 </div>
@@ -1202,7 +1203,7 @@ function replacementLevels(){
   let openFlex=T*(R.FLEX||0), openSuper=T*(R.SUPERFLEX||0), openIdp=T*(R.IDP_FLEX||0);
   const ranked=state.players.filter(p=>inLeague(p))
     .map(p=>({p,v:valueOf(p)})).filter(x=>isFinite(x.v)).sort((a,b)=>b.v-a.v);
-  const started={}, lastStarted={}, firstBenched={};
+  const started={}, lastStarted={}, firstBenched={}, firstBenchedWho={};
   ALLPOS.forEach(p=>{started[p]=0;});
   for(const {p,v} of ranked){
     const pos=p.pos; let placed=false;
@@ -1211,7 +1212,7 @@ function replacementLevels(){
     else if(SUPER_POS.includes(pos)&&openSuper>0){ openSuper--; placed=true; }
     else if(IDP_POS.includes(pos)&&openIdp>0){ openIdp--; placed=true; }
     if(placed){ started[pos]=(started[pos]||0)+1; lastStarted[pos]=v; }
-    else if(firstBenched[pos]===undefined) firstBenched[pos]=v;   // best man not starting anywhere
+    else if(firstBenched[pos]===undefined){ firstBenched[pos]=v; firstBenchedWho[pos]=p; }  // best man not starting anywhere
   }
   const levels={};
   ALLPOS.forEach(pos=>{
@@ -1220,7 +1221,7 @@ function replacementLevels(){
   });
   // `base` is still reported as the count of league-wide starters at each position, now observed
   // rather than assumed — other code uses it to size targets and sanity checks.
-  return {levels,base:started};
+  return {levels,base:started,who:firstBenchedWho};
 }
 function vorp(pl,levels){return valueOf(pl)-(levels[pl.pos]||0);}
 
@@ -2423,7 +2424,7 @@ function selfTest(){
        waving through a 7-to-1 fleece, so the direction is asserted here explicitly. */
     const lp=[0.1,0.3,0.5,0.73,0.95].map(lopsidedPct);
     add("Lopsided trades are flagged, even ones aren't",
-        lp.every((v,i)=>i===0||v>=lp[i-1])&&lopsidedPct(0.1)<25&&lopsidedPct(0.95)>75,
+        lp.every((v,i)=>i===0||v>=lp[i-1])&&lopsidedPct(0.1)<25&&lopsidedPct(0.95)>lopsidedPct(0.1)+40,
         `a 10-to-1 deal is rarer than ${lopsidedPct(0.1)}% of real trades; a near-even one than ${lopsidedPct(0.95)}%`);
     add("Trade evenness is measured from real completed trades",
         ACCEPTED_Q.dynasty.length>=15&&ACCEPTED_Q.redraft.length>=15
@@ -2739,17 +2740,21 @@ function lineupOnSlots(players,slots,valFn){
 
    SECOND, FORMAT. Dynasty and redraft genuinely differ. All 75 clean 2026 trades are dynasty
    (redraft leagues haven't drafted yet), and the only redraft sample is 2025, so it carries a
-   year of drift — corrected by the factor measured above, its median moves from 0.49 to about
-   0.64, still below dynasty's 0.76. Redraft trades really are a bit more lopsided, which fits:
-   they're far more often win-now against sell-off.
+   year of that drift, so it reads slightly more tolerant than reality. Even allowing for it,
+   redraft trades are more lopsided than dynasty ones — 0.49 observed against dynasty's 0.76 —
+   which fits: they're far more often win-now against sell-off.
 
    Managers accept close-to-even deals and little else. In dynasty only 6.7% of completed trades
    were as lopsided as 40/60, and 1.3% as lopsided as 20/80. */
 const ACCEPTED_Q={
   // dynasty: 75 trades, 2026, current values, no drift correction needed
   dynasty:[0.189,0.379,0.517,0.569,0.640,0.663,0.698,0.705,0.723,0.758,0.790,0.808,0.859,0.869,0.906,0.910,0.948,0.962,1.0],
-  // redraft: 108 trades, 2025, each ratio divided by the measured 0.76 drift factor and capped at 1
-  redraft:[0.007,0.047,0.096,0.180,0.265,0.328,0.432,0.526,0.570,0.654,0.715,0.762,0.899,0.957,0.999,1.0,1.0,1.0,1.0]
+  /* redraft: 108 trades, 2025, AS OBSERVED. A first version divided each ratio by the measured
+     0.76 drift factor, but a ratio is capped at 1 by definition — a trade can't be more even than
+     even — so the correction piled four entries at exactly 1.0 and flattened the top of the
+     distribution. Better to show what was actually recorded and say plainly that it's a year
+     stale, which makes redraft read a little more tolerant than it truly is. */
+  redraft:[0.005,0.036,0.073,0.137,0.202,0.250,0.329,0.401,0.434,0.498,0.545,0.581,0.685,0.729,0.761,0.845,0.870,0.944,0.997]
 };
 function acceptedQuantiles(){ return isDyno()?ACCEPTED_Q.dynasty:ACCEPTED_Q.redraft; }
 function evennessOf(aVal,bVal){
@@ -2782,7 +2787,8 @@ function acceptCheck(myGain,theirGain,takingTheirBest){
    team window that already drives dynValue — a contender discounts a 2028 pick hard, a rebuilder
    barely does. */
 const CUR_SEASON=()=>new Date().getFullYear();
-const ORD=n=>n===1?"1st":n===2?"2nd":n===3?"3rd":n+"th";
+// 1st 2nd 3rd 4th ... 21st 22nd 23rd ... 111th. The naive version said "33th".
+const ORD=n=>{const v=n%100, t=["th","st","nd","rd"];return n+(t[(v-20)%10]||t[v]||t[0]);};
 // Expected dynasty rank returned by a pick at [best slot, worst slot] of each round.
 const PICK_RANK={1:[12,55],2:[70,120],3:[140,190],4:[200,260],5:[240,300]};
 /* A pick has to be priced in the SAME currency as the players it's traded for, or the engine
@@ -3876,8 +3882,8 @@ function renderCapSheet(){
       ${space<0?`<div class="note" style="margin-top:8px">⚠️ You're <b>$${-space} over the cap</b> — something has to go before anything else matters.</div>`:""}
     </div>
     <div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr>
-      <th>Player</th><th>Cap hit</th><th class="r">Worth</th><th class="r">That money buys</th>
-      <th class="r">Surplus</th><th class="r">Per $</th><th>Verdict</th></tr></thead><tbody>
+      <th>Player</th><th>You pay</th><th class="r">He's worth</th><th class="r">That money buys</th>
+      <th class="r">You come out</th><th class="r">Per $</th><th>Verdict</th></tr></thead><tbody>
     ${good.map(r=>{const v=verdict(r);
       return `<tr>
         <td>${r.cands&&r.cands.length>1
@@ -3936,8 +3942,8 @@ function renderKeepers(){
         ? `That's the best use of your ${cfg.max} keeper slot${cfg.max>1?"s":""} — together they're worth <b>${Math.round(keep.reduce((a,b)=>a+b.surplus,0))}</b> points more than the picks they cost you.`
         : `None of these beat the picks they'd cost. Go into the draft with all your picks.`}</div></div>
     <div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr>
-      <th>Player</th><th>Costs</th><th class="r">His value</th><th class="r">That pick's value</th>
-      <th class="r">Surplus</th><th>Verdict</th></tr></thead><tbody>
+      <th>Player</th><th>Costs you</th><th class="r">He's worth</th><th class="r">That pick is worth</th>
+      <th class="r">You come out</th><th>Verdict</th></tr></thead><tbody>
     ${good.map(r=>{const v=verdictOf(r);
       return `<tr${keepIds.has(r.player.id)?' style="background:color-mix(in srgb,var(--good) 10%,transparent)"':''}>
         <td>${r.cands&&r.cands.length>1
@@ -3954,7 +3960,7 @@ function renderKeepers(){
     ${rows.filter(r=>!r.player).map(r=>`<tr><td colspan="6" class="meta">⚠️ Couldn't match “${r.raw}”</td></tr>`).join("")}
     </tbody></table></div>
     <div class="note" style="margin-top:10px">
-      <b>How this is judged:</b> every keeper is compared against the pick you hand over for him. “His value” and “that pick’s value” are both points above a replacement player at the position, under <b>your</b> scoring and format — so a superflex quarterback or a TE-premium tight end is priced correctly. A pick is worth what the best player still on the board at that slot projects for; a salary is worth the best player you could buy at that price.
+      <b>How this works:</b> keeping a player costs you a draft pick, so he's only worth keeping if he's better than whoever that pick would have got you. Both numbers are how many points a player beats a <b>free agent</b> by — counted under your own scoring, so a superflex quarterback or a tight end in a TE-premium league is priced properly. A pick is worth what the best player still on the board at that slot projects for; a salary is worth the best player you could buy at that price.
       ${good[0]&&good[0].hit!=null?` For context, 11 seasons of real drafts say a round-${good[0].round} pick returns a startable starter <b>${Math.round(good[0].hit*100)}%</b> of the time.`:""}
       ${cfg.years>1?` Later years age each player along the measured retention curves (including the chance he's out of the league) and are discounted 10% a year, with the cost climbing ${cfg.esc} round${cfg.esc===1?"":"s"} per season (or a 20% salary raise in an auction league).`:""}
     </div>`;
@@ -4291,7 +4297,7 @@ function renderInSeason(){
   }
   const w=+sel.value||1;
   const roster=teamRoster(myIdx());
-  const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=`week ${w} · matchup-adjusted`;
+  const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=`week ${w} · adjusted for who they play`;
   const ss=$("#startSit");
   if(!roster.length){ ss.innerHTML=`<div class="emptystate">Draft or sync a roster first — then this becomes your weekly start/sit sheet.</div>`;
     $("#waiverBox").innerHTML="";$("#tradeBox").innerHTML="";return; }
@@ -4441,15 +4447,15 @@ function renderTeamReport(){
   const worstBye=Object.entries(byeCount).sort((a,b)=>b[1]-a[1])[0];
   const todo=[];
   if(empty.length)todo.push(`Fill your empty <b>${empty.join(", ")}</b> slot${empty.length>1?"s":""}.`);
-  if(weak&&weak.edge<15)todo.push(`Upgrade <b>${slotLabel(weak.slot)}</b> — ${weak.pl.name} is only ${sgn(weak.edge)} vs a waiver-level ${weak.pl.pos}.`);
+  if(weak&&weak.edge<15)todo.push(`Upgrade <b>${slotLabel(weak.slot)}</b> — ${weak.pl.name} is only ${sgn(weak.edge)} points better than someone you could grab for free.`);
   if(worstBye&&worstBye[1]>=3)todo.push(`<b>Week ${worstBye[0]}</b> bye hits ${worstBye[1]} starters — plan a backup.`);
   if(psos<=0.96)todo.push(`Your starters face a <b>tough weeks 15–17</b> slate — favor easy-playoff players from here.`);
   el.innerHTML=`
    <div class="kv"><span><b style="font-size:24px" class="tier ${gcls}">${grade}</b> <span class="meta">projected starting lineup</span></span>
-     <span class="meta"><b>${fmt(myPts)}</b> pts <span class="meta" title="Realistic low–high once every starter's boom/bust spread is combined">${(()=>{const b=bandOf(filled.map(s=>{const d=s.pl.dist,v=pts(s.pl);return d?[v*d.f,v*d.c]:[v*.6,v*1.5];}),myPts);return fmt(b[0])+"–"+fmt(b[1]);})()}</span> · ${others.length?`#${rank} of ${others.length+1}`:"—"} · ${myPts>=avg?"+":""}${fmt(myPts-avg)} vs league avg</span></div>
-   <div class="kv"><span class="meta">Strongest spot</span><span>${strong?`<b>${slotLabel(strong.slot)}</b> ${strong.pl.name} <span class="meta">(${sgn(strong.edge)} over replacement)</span>`:"—"}</span></div>
-   <div class="kv"><span class="meta">Weakest spot</span><span>${weak?`<b>${slotLabel(weak.slot)}</b> ${weak.pl.name} <span class="meta">(${sgn(weak.edge)} over replacement)</span>`:"—"}</span></div>
-   <div class="kv"><span class="meta">Playoff schedule (wk 15–17)</span><span class="chip ${psosTxt[1]}">${psosTxt[0]} · ${psos.toFixed(2)}×</span></div>
+     <span class="meta">Your starters should score about <b>${fmt(myPts)}</b> points<span class="meta" title="A realistic good season and bad season, not a guarantee"> (a bad year ${(()=>{const b=bandOf(filled.map(s=>{const d=s.pl.dist,v=pts(s.pl);return d?[v*d.f,v*d.c]:[v*.6,v*1.5];}),myPts);return fmt(b[0])+", a good one "+fmt(b[1]);})()})</span> · that's <b>${others.length?`${ORD(rank)} of ${others.length+1}`:"—"}</b> in the league, ${myPts>=avg?`<b>${fmt(myPts-avg)} ahead of</b>`:`<b>${fmt(avg-myPts)} behind</b>`} the average team</span></div>
+   <div class="kv"><span class="meta">Strongest spot</span><span>${strong?`<b>${slotLabel(strong.slot)}</b> ${strong.pl.name} <span class="meta">(${sgn(strong.edge)} pts better than a free agent)</span>`:"—"}</span></div>
+   <div class="kv"><span class="meta">Weakest spot</span><span>${weak?`<b>${slotLabel(weak.slot)}</b> ${weak.pl.name} <span class="meta">(${sgn(weak.edge)} pts better than a free agent)</span>`:"—"}</span></div>
+   <div class="kv"><span class="meta">Playoff schedule (wk 15–17)</span><span class="chip ${psosTxt[1]}">${psosTxt[0]}${psos>=1.04?" — they face weak defences":psos<=0.96?" — they face tough defences":""}</span></div>
    <div class="note" style="margin-top:10px">${todo.length?"<b>To do:</b> "+todo.join(" "):"✅ No glaring holes — your lineup is set."}</div>`;
 }
 
@@ -4546,7 +4552,7 @@ function renderMatchups(){
   const rosters=[...Array(T).keys()].map(teamRoster);
   const totalRostered=state.picks.length;
   const done=Math.round(totalRostered/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0))*100);
-  $("#matchNote").innerHTML=`Projections use each team's <b>current</b> drafted roster (${done}% of the draft complete) and set an optimal weekly lineup, scoring season pace ÷ 17 with players on bye zeroed out. The picture sharpens as more picks come in.`;
+  $("#matchNote").innerHTML=`Every team plays its best possible lineup each week. A player's weekly score is his season total spread across the year, and anyone on a bye scores nothing. Only <b>${done}%</b> of the draft is done, so most rosters are still half empty and these numbers will move a lot — they settle as more picks come in.`;
   const sched=roundRobin(T);
   // standings
   const recs=[...Array(T).keys()].map(()=>({w:0,l:0,pf:0,g:0}));
@@ -4633,9 +4639,19 @@ function renderPlayersTab(){
   });
 }
 
+/* This panel used to say "QB · last starter ≈ #12 · 313 pts", which is three pieces of jargon
+   and a number with nothing to compare it to. The idea underneath is simple and useful, so say
+   it simply: if you never draft this position, here is the actual player you end up with. That
+   turns an abstract baseline into a name and a target to beat. */
 function renderReplBox(){
-  const {levels,base}=replacementLevels();
-  $("#replBox").innerHTML=ALLPOS.map(p=>`<div class="kv"><span><span class="pos ${p}">${p}</span> <span class="meta">last starter ≈ #${base[p]}</span></span><b>${fmt(levels[p])} ${isDyno()?'val':'pts'}</b></div>`).join("");
+  const {levels,base,who}=replacementLevels();
+  $("#replBox").innerHTML=ALLPOS.filter(p=>(base[p]||0)>0).map(p=>{
+    const pl=who[p], n=base[p]||0;
+    const nm=pl?pl.name:"the next man up";
+    return `<div class="kv">
+      <span><span class="pos ${p}">${p}</span> <b>${nm}</b>
+        <span class="meta">the ${ORD(n+1)}-best ${p} — the first one nobody in your league starts</span></span>
+      <b>${fmt(levels[p])} ${isDyno()?"value":"pts"}</b></div>`;}).join("");
 }
 
 /* ---- BACKTEST tab ---- */
