@@ -89,6 +89,7 @@
     button,.draftbtn,.fbtn,.seg button{min-height:42px}   /* thumb-sized tap targets */
     input,select,textarea{font-size:16px}                  /* stops iOS zoom-on-focus */
     .syncrow input,.syncrow #syncBtn{min-width:100%;width:100%}
+    #s_adp{flex-wrap:wrap}   /* 5 sources won't fit one phone row */
     table{font-size:12px}
     th,td{padding:7px 6px}
     .rec{padding:14px}
@@ -510,7 +511,7 @@
             <div class="field"><label>Draft type</label>
               <div class="seg" id="s_snake"><button data-v="1" class="on">Snake</button><button data-v="0">Linear</button></div>
             </div>
-            <div class="field"><label>ADP source (match your draft site)</label>
+            <div class="field" style="grid-column:1/-1"><label>ADP source (match your draft site)</label>
               <div class="seg" id="s_adp"><button data-v="ffc" class="on">FFC</button><button data-v="espn">ESPN</button><button data-v="yahoo">Yahoo</button><button data-v="sleeper">Sleeper</button><button data-v="ecr">Experts</button><button data-v="custom" id="adpCustomBtn" class="hide">Custom</button></div>
             </div>
             <div class="field" style="grid-column:1/-1"><label>🔴 Sleeper live draft sync — auto-imports every pick</label>
