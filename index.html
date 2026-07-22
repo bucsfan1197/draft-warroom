@@ -67,8 +67,20 @@
   .ghost.mockon{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 
   /* Layout */
-  .grid-draft{display:grid;grid-template-columns:340px 1fr 300px;gap:16px;align-items:start;margin-top:18px}
-  @media(max-width:1150px){.grid-draft{grid-template-columns:1fr}}
+  /* The rails were fixed at 340 and 300, so every pixel the window lost came out of the board in
+     the middle — at 1280, a thoroughly ordinary laptop, it had 508px to draw 638px of columns and
+     clipped ADP off the edge. They flex now, giving the board first call on the space it needs
+     and shrinking themselves instead. */
+  .grid-draft{display:grid;
+              grid-template-columns:minmax(224px,340px) minmax(688px,1fr) minmax(204px,300px);
+              gap:16px;align-items:start;margin-top:18px}
+  /* The board's floor is what makes the rails yield. Giving the rails a minmax and leaving the
+     middle as plain 1fr did nothing: an fr track is content to shrink to nothing, so the rails
+     always took their maximum and the board kept the scraps. Naming the width the board actually
+     needs — the table plus the panel padding around it, not the table alone — is what forces the
+     negotiation the other way. Collapse a little earlier too, so the
+     three-column layout is only used at widths where all three genuinely fit. */
+  @media(max-width:1240px){.grid-draft{grid-template-columns:1fr}}
   .syncrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .syncrow input{flex:1;min-width:200px}
   .syncrow #syncBtn{width:auto;padding:9px 20px}
@@ -81,7 +93,13 @@
      overflow, so the last option just vanishes. This shipped: adding "Keeper" as a third format
      pushed "Dynasty" outside its own control. Scoped to .field so the short segs elsewhere
      (which collapse if their display changes) are untouched. */
-  .field .seg,#s_clock,#s_adp{flex-wrap:wrap;height:auto}
+  /* EVERY segmented control wraps, not a hand-picked list of them.
+     This rule has now been narrowed twice and been wrong twice: first it named #s_clock and #s_adp
+     by id, and #s_format clipped its "Dynasty" button; then it was scoped to `.field .seg`, and
+     #recMode — which lives in a panel header, not a field — pushed "Simulate" outside itself at
+     1280px. Each fix addressed the instance that happened to be reported. A control whose options
+     don't fit is unusable wherever it sits, so the rule belongs on the pattern. */
+  .seg{flex-wrap:wrap;height:auto}
 
   /* ---- Projections ----------------------------------------------------------------
      The range bar is the one mark that carries two facts at once: WHERE a player sits and HOW
@@ -347,7 +365,10 @@
   .slotrow{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line)}
   .slotrow:last-child{border-bottom:none}
   .slotlab{width:44px;flex-shrink:0}
-  .slotname{flex:1;font-weight:600;font-size:13px}
+  /* flex:1 alone won't shrink below the text's own width, so in a narrow rail a long name shoved
+     the points column past the edge of the page instead of giving way. min-width:0 lets it. */
+  .slotname{flex:1;min-width:0;font-weight:600;font-size:13px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .slotname.empty{color:var(--ink-2);font-weight:500;font-style:italic}
   .bye{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
 
@@ -2375,7 +2396,7 @@ function renderClock(){
   const mockBadge=state.ui.mock?` · <span style="color:var(--accent);font-weight:700">🤖 Mock</span>`:"";
   el.innerHTML=`<div style="flex:1">
      <div class="eyebrow">${done?"Draft complete":`Pick ${p+1} · Round ${round}.${String(inRound).padStart(2,"0")}`} · ${Math.min(state.picks.length,total)} of ${total} picks gone${mockBadge}</div>
-     <div class="big">${done?"✅ Draft complete":(isMe?"🎯 You're on the clock":(state.ui.mock?"🤖 ":"")+"Team "+(tIdx+1)+" picking")}</div>
+     <div class="big">${done?"✅ Draft complete":(isMe?"🎯 You're on the clock":(state.ui.mock?"🤖 ":"")+teamLabel(tIdx)+" picking")}</div>
    </div>
    ${state.picks.length?`<button class="ghost" id="undoBtn">↶ Undo${state.ui.mock?" my pick":""}</button>`:""}`;
   const u=$("#undoBtn");if(u)u.onclick=()=>{
@@ -2569,7 +2590,7 @@ function renderAvail(){
     abar.classList.remove("hide");
     if(state.ui.auctTeam==null)state.ui.auctTeam=myIdx();
     abar.innerHTML=`<span class="meta">Sold to</span>
-      <select id="auctTeam">${[...Array(state.settings.teams)].map((_,t)=>`<option value="${t}" ${t===state.ui.auctTeam?'selected':''}>${t===myIdx()?'★ You':'Team '+(t+1)}</option>`).join("")}</select>
+      <select id="auctTeam">${[...Array(state.settings.teams)].map((_,t)=>`<option value="${t}" ${t===state.ui.auctTeam?'selected':''}>${t===myIdx()?'★ You':teamLabel(t)}</option>`).join("")}</select>
       <span class="meta">for $</span><input id="auctPrice" type="number" min="0" style="width:58px" value="${state.ui.auctPrice||''}" placeholder="auto">
       <span class="meta">→ click a player's <b>Buy</b>. Blank = suggested value.</span>`;
     $("#auctTeam").onchange=e=>{state.ui.auctTeam=+e.target.value;};
@@ -2997,6 +3018,23 @@ function selfTest(){
        it had been moved. Geometry checks never caught it because it fit perfectly. */
     const strip=document.getElementById("tabs");
     const intruders=strip?[...strip.children].filter(el=>!el.classList.contains("tab")):[];
+    /* Every start/sit suggestion has to be a swap you could actually make. The In-Season tab used
+       to pick the best bench player and the worst starter and pair them with no eligibility check;
+       across twelve rosters and eighteen weeks that fired 199 times and was illegal 199 times,
+       always "start your backup QB over your kicker". Nothing caught it because the sentence read
+       perfectly. Now every candidate swap on the board is checked for slot eligibility. */
+    if(state.picks.length){
+      let swaps=0, bad=0;
+      for(let t=0;t<Math.min(3,state.settings.teams);t++){
+        const r=teamRoster(t); if(!r.length)continue;
+        const AU=weekUnits(r,1), BU=weekUnits(teamRoster((t+1)%state.settings.teams),1).starters;
+        if(!AU.starters.length||!AU.bench.length||!BU.length)continue;
+        startSitAdvice(AU,BU,120).moves.forEach(m=>{
+          swaps++; if(!canFill(m.inPl.pos,m.slot))bad++; });
+      }
+      add("Start/sit only suggests legal swaps",bad===0&&swaps>0,
+          swaps?`${swaps} candidate swaps checked, ${bad} illegal`:"no swaps available to check");
+    }
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
                         :`${strip?strip.children.length:0} tabs, no strays`);
@@ -3205,9 +3243,19 @@ function selfTest(){
     const cheapC=contractSurplus(cpl,10,1).total, dearC=contractSurplus(cpl,90,1).total;
     add("The same player is worth more on a cheaper contract",cheapC>dearC,
         cpl?`${cpl.name}: +${Math.round(cheapC)} at $10 vs ${Math.round(dearC)} at $90`:"");
+    /* Strictly rises, not "doesn't fall". The >= version passed a completely FLAT curve, which is
+       exactly what was happening: auction prices were so compressed that everything from $10 up
+       returned the same player, and this check waved it through while the surplus check next door
+       failed. An assertion that a broken system satisfies isn't testing anything. */
     const mkt=[5,20,50,90].map(d=>auctionValueAt(d));
-    add("Contract cost rises with salary",mkt.every((v,i)=>i===0||v>=mkt[i-1]-1e-9),
+    add("Contract cost rises with salary",mkt.every((v,i)=>i===0||v>mkt[i-1]),
         mkt.map(v=>Math.round(v)).join(" → "));
+    const topBid=(()=>{const A=auctionCtx(),best=state.players
+      .filter(p=>p.pos!=="K"&&p.pos!=="DST").sort((a,b)=>A.val(b)-A.val(a))[0];
+      return best?A.val(best):0;})();
+    const bud=state.settings.budget||200;
+    add("The best player costs a sane share of the budget",topBid>bud*0.15&&topBid<bud*0.6,
+        `top bid $${topBid} of a $${bud} budget (${Math.round(topBid/bud*100)}%)`);
     // the market comparison must be same-currency on both sides: an all-$1 roster is under market
     const wasCap=state.settings.salaryCap; state.settings.salaryCap=true;
     const sample=P.filter(x=>!x.idp&&x.pos!=="K"&&x.pos!=="DST").slice(0,12);
@@ -4987,14 +5035,40 @@ function renderInSeason(){
         <span>${bye?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b> <span class="meta">${r[0].toFixed(1)}–${r[1].toFixed(1)}</span>`}</span></div>`;}).join("")
    + (L.bench.length?`<h3 class="eyebrow" style="margin:14px 0 6px">Bench</h3>`+L.bench.slice(0,8).map(p=>
       `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span><span class="meta">${p.bye===w?"BYE":wkPts(p,w).toFixed(1)}</span></div>`).join(""):"");
-  // sit/start advice: bench player out-projecting a starter
-  const worstStarter=L.slots.filter(s=>s.pl&&s.pl.bye!==w).sort((a,b)=>wkPts(a.pl,w)-wkPts(b.pl,w))[0];
-  const bestBench=L.bench.filter(p=>p.bye!==w)[0];
+  /* This used to compare the highest-projected bench player against the lowest-projected starter
+     and suggest swapping them, with no check that the swap was legal. The lowest-projected starter
+     is essentially always the kicker and the best bench player is essentially always a backup
+     quarterback, so the advice it produced was "start Joe Burrow over Eddy Pineiro at K". Measured
+     across twelve rosters and eighteen weeks it fired 199 times and was illegal 199 times — it had
+     never once given a usable answer.
+
+     It also disagreed with the Matchups tab by construction: that one asks which lineup wins the
+     game, this one asked which lineup scores most, and shipping two engines that answer different
+     questions under the same heading is how you end up not trusting either. Both now run through
+     startSitAdvice, against the real opponent for the week whenever the schedule knows one. */
   const byes=L.slots.filter(s=>s.pl&&s.pl.bye===w).length;
   let advice=[];
   if(byes)advice.push(`<b>${byes}</b> starter${byes>1?"s are":" is"} on bye — fill from your bench or waivers.`);
-  if(worstStarter&&bestBench&&wkPts(bestBench,w)>wkPts(worstStarter.pl,w)+0.5)
-    advice.push(`Consider <b>${bestBench.name}</b> over <b>${worstStarter.pl.name}</b> at ${slotLabel(worstStarter.slot)} (+${(wkPts(bestBench,w)-wkPts(worstStarter.pl,w)).toFixed(1)} pts).`);
+  const SCw=seasonSchedule(), wkObj=SCw.weeks.find(x=>x.week===w);
+  const myPair=wkObj&&wkObj.pairs.find(p=>p.includes(myIdx()));
+  const oppIdx=myPair?(myPair[0]===myIdx()?myPair[1]:myPair[0]):null;
+  const A=weekUnits(roster,w);
+  const B=oppIdx!=null?weekUnits(teamRoster(oppIdx),w).starters:null;
+  if(A.starters.length&&A.bench.length&&B&&B.length){
+    const res=startSitAdvice(A,B,900);
+    const best=res.moves.filter(m=>m.gain>0.005)[0];
+    advice.push(best
+      ? `Start <b>${best.inPl.name}</b> over <b>${best.outPl.name}</b> at ${slotLabel(best.slot)} — <b>+${(best.gain*100).toFixed(1)}%</b> to win against ${teamLabel(oppIdx)}.`
+      : `No swap improves your odds against ${teamLabel(oppIdx)} — this is your best lineup for the game, not just the highest total.`);
+  } else if(A.starters.length&&A.bench.length){
+    // No opponent known for this week, so fall back to points — but only across LEGAL swaps.
+    let best=null;
+    A.bench.forEach(b=>A.starters.forEach(s=>{
+      if(!canFill(b.pl.pos,s.slot))return;
+      const d=(b.base*b.mult)-(s.base*s.mult);
+      if(d>0.5&&(!best||d>best.d))best={b,s,d};}));
+    if(best)advice.push(`Consider <b>${best.b.pl.name}</b> over <b>${best.s.pl.name}</b> at ${slotLabel(best.s.slot)} (+${best.d.toFixed(1)} pts).`);
+  }
   ss.innerHTML+=`<div class="note" style="margin-top:12px">${advice.join(" ")||"✅ This is your optimal lineup for week "+w+"."}</div>`;
 
   // ---- waiver targets: biggest upgrade over your CURRENT worst starter at that position ----
@@ -5172,7 +5246,7 @@ function renderTeamTab(){
   for(let i=0;i<T;i++){
     const r=teamRoster(i);
     board+=`<div class="teamcard ${i===myIdx()?'me':''}">
-      <h4>${i===myIdx()?'★ You':'Team '+(i+1)} <span class="num meta">${r.length}</span></h4>
+      <h4>${i===myIdx()?'★ You':teamLabel(i)} <span class="num meta">${r.length}</span></h4>
       ${r.length?r.map(p=>`<div class="pl"><span class="pos ${p.pos}" style="min-width:26px;font-size:9px">${p.pos}</span>${p.name}</div>`).join(''):'<div class="pl">—</div>'}
     </div>`;
   }
@@ -6423,7 +6497,19 @@ function auctionCtx(){
   const s=state.settings, lv=replacementLevels().levels;
   const total=s.teams*(s.budget||200), rosterSize=Object.values(s.roster).reduce((a,b)=>a+b,0);
   const pool=Math.max(1,total-s.teams*rosterSize);
-  let totalPV=0; state.players.forEach(p=>totalPV+=Math.max(0,vorp(p,lv))); totalPV=totalPV||1;
+  /* Only the players who actually get bought share the money. This summed value over the whole
+     790-man pool, including the six hundred nobody will ever roster, so the denominator was more
+     than four times too big and every price came out a fraction of what it should be — the best
+     player in a 12-team $200 league was priced at $8. That in turn made every salary above about
+     $10 identical to auctionValueAt(), which is what made contract surplus ignore the salary
+     entirely. Summing over the top teams x rosterSize is also what makes the split add up: the
+     dollars above everyone's $1 minimum are exactly the pool being divided. */
+  // ...and only players this league actually rosters. Leaving the IDP pool in the sum kept the
+  // denominator inflated even after limiting the count, because defenders carry their own scale.
+  const willBeDrafted=state.settings.teams*rosterSize;
+  const pv=state.players.filter(inLeague).map(p=>Math.max(0,vorp(p,lv)))
+             .sort((a,b)=>b-a).slice(0,willBeDrafted);
+  let totalPV=pv.reduce((a,b)=>a+b,0); totalPV=totalPV||1;
   const drafted=draftedIds();
   let spent=0; state.picks.forEach(pk=>spent+=(pk.price||0));
   let remVal=0; state.players.forEach(p=>{if(!drafted.has(p.id))remVal+=Math.max(1,1+Math.max(0,vorp(p,lv))/totalPV*pool);});
@@ -6442,7 +6528,7 @@ function doBuy(id,teamIdx,price){
   if(draftedIds().has(id))return;
   state.picks.push({playerId:id,teamIdx,price:Math.max(0,Math.round(price||0))});
   const pl=state.players[id];
-  flash(`${pl.name} → ${teamIdx===myIdx()?"you":"Team "+(teamIdx+1)} for $${Math.round(price||0)}`);
+  flash(`${pl.name} → ${teamIdx===myIdx()?"you":teamLabel(teamIdx)} for $${Math.round(price||0)}`);
   renderAll();
 }
 function doDraft(id){
@@ -6450,7 +6536,7 @@ function doDraft(id){
   const tIdx=teamForPick(currentPick());
   state.picks.push({playerId:id,teamIdx:tIdx});
   const pl=state.players[id];
-  flash(`${pl.name} → ${tIdx===myIdx()?'your team':'Team '+(tIdx+1)}`);
+  flash(`${pl.name} → ${tIdx===myIdx()?'your team':teamLabel(tIdx)}`);
   if(state.ui.mock)advanceOpponents();
   renderAll();
 }
