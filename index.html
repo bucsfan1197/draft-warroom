@@ -2426,8 +2426,16 @@ function selfTest(){
         lp.every((v,i)=>i===0||v>=lp[i-1])&&lopsidedPct(0.1)<25&&lopsidedPct(0.95)>75,
         `a 10-to-1 deal is rarer than ${lopsidedPct(0.1)}% of real trades; a near-even one than ${lopsidedPct(0.95)}%`);
     add("Trade evenness is measured from real completed trades",
-        ACCEPTED_RATIOS.length>=15&&evennessOf(100,100)===1&&evennessOf(20,100)===0.2,
-        `${ACCEPTED_RATIOS.length} completed trades, median ${ACCEPTED_RATIOS[ACCEPTED_RATIOS.length>>1]}`);
+        ACCEPTED_Q.dynasty.length>=15&&ACCEPTED_Q.redraft.length>=15
+        &&evennessOf(100,100)===1&&evennessOf(20,100)===0.2,
+        `290 priced trades from 109 public leagues · dynasty median ${ACCEPTED_Q.dynasty[9]} vs redraft ${ACCEPTED_Q.redraft[9]}`);
+    // dynasty and redraft are genuinely different markets — the split has to survive
+    const wasFmt3=state.settings.format;
+    state.settings.format="dynasty"; const dynP=lopsidedPct(0.5);
+    state.settings.format="redraft"; const redP=lopsidedPct(0.5);
+    state.settings.format=wasFmt3;
+    add("Redraft tolerates more lopsided trades than dynasty",redP>dynP,
+        `a 50/50-value deal is rarer than ${dynP}% of dynasty trades but ${redP}% of redraft ones`);
     // ---- injury cost, measured from seven seasons of the injury report ----
     const rbT=P.find(x=>x.pos==="RB"), teT=P.find(x=>x.pos==="TE");
     const qW=rbT?availWeek({...rbT,inj:"Questionable"}):1;
@@ -2718,33 +2726,45 @@ function lineupOnSlots(players,slots,valFn){
 // won't ship his single best player for depth pieces. ONE definition, shared by the finder
 // and the manual evaluator, so both answer "would they accept?" by the same standard.
 /* HOW EVEN DOES A REAL TRADE HAVE TO BE?
-   Measured, finally. Walked every league in this account backwards through previous_league_id —
-   15 league-seasons — and pulled every completed trade Sleeper recorded, then priced both sides
-   with our own market values. Only the 2025-26 trades are usable: pricing a 2023 trade with 2026
-   values measures how much those players changed, not what the managers agreed to, and the two
-   buckets differ so sharply (median 0.22 against 0.73) that the drift is obvious.
+   Measured from 109 public Sleeper leagues — every manager who shares a league with this account,
+   then their leagues, deduped. 408 completed trades, 290 of which could be priced with our own
+   market values. Only aggregate ratios were kept; no names, no per-manager anything.
 
-   19 recent completed trades, weaker side over stronger side:
-     0.07 0.25 0.38 0.41 0.55 0.60 0.67 0.69 0.71 0.73 0.74 0.76 0.76 0.78 0.79 0.85 0.85 0.87 0.91
-   Median 0.73. Three quarters sit at 0.60 or better. Exactly one of nineteen fell under 0.25.
+   Two things had to be separated before the numbers meant anything.
 
-   Managers accept close-to-even deals and essentially nothing else — so a suggestion that hands
-   one side four times the value isn't a clever find, it's one nobody would sign. The sample is
-   small and it's from one account's leagues, which is why it's used to rank and to warn rather
-   than to hard-gate anything above the floor where real trades actually stop. */
-const ACCEPTED_RATIOS=[0.07,0.25,0.38,0.41,0.55,0.60,0.67,0.69,0.71,0.73,0.74,0.76,0.76,0.78,0.79,0.85,0.85,0.87,0.91];
+   FIRST, VALUE DRIFT. Pricing an old trade with today's values measures how much those players
+   changed, not what the managers agreed to. Dynasty leagues appear in both seasons, same leagues,
+   so the drift is directly measurable: median ratio 0.76 for 2026 trades against 0.58 for 2025.
+   A year of staleness costs a factor of about 0.76.
+
+   SECOND, FORMAT. Dynasty and redraft genuinely differ. All 75 clean 2026 trades are dynasty
+   (redraft leagues haven't drafted yet), and the only redraft sample is 2025, so it carries a
+   year of drift — corrected by the factor measured above, its median moves from 0.49 to about
+   0.64, still below dynasty's 0.76. Redraft trades really are a bit more lopsided, which fits:
+   they're far more often win-now against sell-off.
+
+   Managers accept close-to-even deals and little else. In dynasty only 6.7% of completed trades
+   were as lopsided as 40/60, and 1.3% as lopsided as 20/80. */
+const ACCEPTED_Q={
+  // dynasty: 75 trades, 2026, current values, no drift correction needed
+  dynasty:[0.189,0.379,0.517,0.569,0.640,0.663,0.698,0.705,0.723,0.758,0.790,0.808,0.859,0.869,0.906,0.910,0.948,0.962,1.0],
+  // redraft: 108 trades, 2025, each ratio divided by the measured 0.76 drift factor and capped at 1
+  redraft:[0.007,0.047,0.096,0.180,0.265,0.328,0.432,0.526,0.570,0.654,0.715,0.762,0.899,0.957,0.999,1.0,1.0,1.0,1.0]
+};
+function acceptedQuantiles(){ return isDyno()?ACCEPTED_Q.dynasty:ACCEPTED_Q.redraft; }
 function evennessOf(aVal,bVal){
   const hi=Math.max(aVal,bVal), lo=Math.min(aVal,bVal);
   return hi>0?lo/hi:1;
 }
-/* Share of real completed trades that were AT LEAST THIS LOPSIDED — i.e. how unusual this
-   proposal is. A near-even deal scores ~100 (nothing remarkable); a wildly uneven one scores near
-   0 (almost nobody signs those). Getting this the right way round matters: the first version
-   asked "how many were at least this EVEN", which is high for lopsided deals, and it duly warned
-   about a Chase-for-Bijan swap while waving through Chris Bell for Ja'Marr Chase. */
+/* Share of real completed trades AT LEAST THIS LOPSIDED — how unusual this proposal is. A
+   near-even deal scores ~100 (unremarkable); a wildly uneven one near 0 (almost nobody signs
+   those). Direction matters: an earlier version asked how many were at least this EVEN, which is
+   high for lopsided deals, and duly warned about a Chase-for-Bijan swap while waving through
+   Chris Bell for Ja'Marr Chase. */
 function lopsidedPct(ratio){
   if(!isFinite(ratio))return 100;
-  return Math.round(ACCEPTED_RATIOS.filter(r=>r<=ratio).length/ACCEPTED_RATIOS.length*100);
+  const q=acceptedQuantiles();
+  return Math.round(q.filter(r=>r<=ratio).length/q.length*100);
 }
 function acceptCheck(myGain,theirGain,takingTheirBest){
   const fair=theirGain>=Math.max(1.5,0.25*myGain);
