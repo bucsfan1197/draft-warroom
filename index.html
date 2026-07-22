@@ -888,9 +888,21 @@
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
       <div class="panel"><div class="hd"><h2>Waiver targets</h2>
-        <span class="pickcounter" style="margin-left:auto">Ranked by what they add to <i>your</i> lineup</span></div>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <span class="meta">value over</span>
+          <div class="seg" id="s_window2" title="Which weeks a player has to help you in. Every rival assumes rest-of-season; if you're chasing a title the only weeks that count are the playoffs.">
+            <button data-v="ros" class="on">Rest of season</button><button data-v="po">Playoffs 15–17</button></div></span></div>
         <div class="bd" id="waiverBox"></div></div>
       <div class="panel"><div class="hd"><h2>Trade value board</h2></div><div class="bd" id="tradeBox"></div></div>
+    </div>
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
+      <div class="panel"><div class="hd"><h2>Streaming plan</h2>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <div class="seg" id="s_streampos"><button data-v="DST" class="on">DST</button><button data-v="K">K</button><button data-v="QB">QB</button><button data-v="TE">TE</button></div></span></div>
+        <div class="bd" id="streamBox"></div></div>
+      <div class="panel"><div class="hd"><h2>If someone goes down</h2>
+        <span class="pickcounter" style="margin-left:auto">What your bench is really covering</span></div>
+        <div class="bd" id="contBox"></div></div>
     </div>
   </section>
 
@@ -5127,8 +5139,13 @@ function renderInSeason(){
      used full-season totals with six weeks left. Three wrong answers stacked: wrong baseline,
      wrong horizon, no idea which slot the player would actually occupy.
      Now: what he adds to the lineup you'd really start, week by week, from here to the end. */
-  const wbTo=18;
-  const wb=waiverBoard(roster,w,wbTo,10);
+  /* The week window the value is measured over. Every competitor assumes rest-of-season; if
+     you're chasing a title the only weeks that count are the fantasy playoffs, and a player who
+     is quietly excellent in 15-17 is worth more than one who front-loads. */
+  const poW=(TRADE.schedule&&TRADE.schedule.playoffStart)||15;
+  const poMode=state.ui.wWindow==="po";
+  const wbFrom=poMode?Math.max(w,poW):w, wbTo=poMode?poW+2:18;
+  const wb=waiverBoard(roster,wbFrom,wbTo,10);
   const holes=L.slots.filter(s=>!s.pl||s.pl.bye===w);
   const holeNote=holes.length
     ? `<div class="note warn-note" style="margin-bottom:10px"><b>${holes.length}</b> starting spot${holes.length>1?"s":""} ${holes.length>1?"are":"is"} empty or on bye this week — the board already values that.</div>` : "";
@@ -5190,6 +5207,43 @@ function renderInSeason(){
           ? `That's well ahead of your actual record — you've been losing games you'd usually win, and that tends to even out.`
           : `That's well behind your actual record — you've been winning games you'd usually lose, so don't over-read the standings.`
         : `That's in line with your record, so the standings are telling you the truth.`}</div>`;
+  })();
+
+  // ---- streaming plan over the horizon ----
+  (()=>{
+    const box=$("#streamBox"); if(!box)return;
+    const pos=state.ui.streamPos||"DST";
+    const sp=streamPlan(pos,roster,w,wbTo,{});
+    if(!sp){box.innerHTML=`<div class="emptystate">Nothing to plan at ${pos} yet.</div>`;return;}
+    const gain=sp.holdTotal!=null?sp.planTotal-sp.holdTotal:null;
+    box.innerHTML=`<p class="meta" style="margin:0 0 8px">The best <b>sequence</b> of ${pos}s from week ${w} to ${wbTo}, not the best one this week.
+      Switching costs you a roster move, so it only changes when the gain is worth it — which is the two-week rule everyone
+      teaches by hand, solved across the whole run instead of two weeks at a time.</p>`
+     +sp.plan.map(x=>`<div class="kv${x.changed?"":" faded"}">
+        <span><b class="num" style="width:38px;display:inline-block">Wk ${x.week}</b>
+          ${x.changed?'<span class="chip warn">switch</span>':'<span class="meta">hold</span>'}
+          ${x.pl.name} <span class="meta">${x.pl.team}</span></span>
+        <span class="num">${x.pts.toFixed(1)}</span></div>`).join("")
+     +`<div class="note" style="margin-top:10px">${sp.moves} change${sp.moves===1?"":"s"} across ${wbTo-w+1} weeks.
+        ${gain!=null
+          ? (gain>1 ? `Streaming this way beats simply holding <b>${sp.hold.name}</b> by <b>${gain.toFixed(1)}</b> points.`
+                    : `Holding <b>${sp.hold.name}</b> all the way is within ${Math.abs(gain).toFixed(1)} points of the best plan — not worth the moves.`)
+          : `You don't roster a ${pos}, so this starts from the wire.`}</div>`;
+  })();
+
+  // ---- contingent value ----
+  (()=>{
+    const box=$("#contBox"); if(!box)return;
+    const cv=contingentValue(roster,w,wbTo);
+    box.innerHTML=cv.length
+      ? `<p class="meta" style="margin:0 0 8px">What each backup is worth now, and what he'd be worth if the man ahead of him were out for the rest of the year.
+         The gap is the insurance you're actually holding — and it's why a bench player who scores nothing today can be the last man you should cut.</p>`
+        +cv.map(x=>`<div class="kv"><span><span class="pos ${x.back.pos}">${x.back.pos}</span> <b>${x.back.name}</b>
+            <span class="needline">behind ${x.star.name} · worth ${x.now.toFixed(1)} now, <b>${x.ifOut.toFixed(1)}</b> if ${lastName(x.star.name)} misses the rest</span></span>
+          <span class="num" style="color:var(--good-ink)">+${x.swing.toFixed(1)}</span></div>`).join("")
+        +`<div class="note" style="margin-top:10px">We stop short of multiplying by the odds of the injury happening: nothing here measures
+          the chance a healthy player gets hurt, and a number invented for that would quietly drive the whole ranking.</div>`
+      : `<div class="emptystate">No backup on your bench meaningfully covers a starter.</div>`;
   })();
 
   // ---- trade value board ----
@@ -5970,6 +6024,84 @@ function winsNeeded(SC,me,iters){
   }
   const rate=madeAt.map((m,i)=>sawAt[i]>=8?m/sawAt[i]:null);
   return {left,rate,sawAt};
+}
+/* ---- Streaming as a PLAN, not a weekly pick ----
+   The market leader sells look-ahead DEPTH as its pricing ladder and still only shows one or two
+   weeks. The "two-into-one rule" everyone teaches by hand — only stream if you find a better
+   two-week stretch than what you hold — is just the two-period case of this.
+
+   Solved as a small dynamic program over the horizon. State is who you're holding; each week you
+   either keep him or pay a switch cost and take someone else, and we want the best total. Greedy
+   "best available this week" is what everyone ships and it loses to holding whenever this week's
+   edge is smaller than next week's, which for kickers and defences is most of the time. */
+function streamPlan(pos,roster,from,to,opts){
+  const o=opts||{}, switchCost=o.switchCost==null?0.6:o.switchCost;   // a roster move isn't free
+  const drafted=draftedIds();
+  const mine=roster.filter(p=>p.pos===pos);
+  const fa=state.players.filter(p=>p.pos===pos&&!drafted.has(p.id));
+  const cands=mine.concat(fa.sort((a,b)=>rosPts(b,from)-rosPts(a,from)).slice(0,14));
+  if(!cands.length||to<from)return null;
+  const weeks=[]; for(let w=from;w<=to;w++)weeks.push(w);
+  const val=(p,w)=>p.bye===w?0:wkPts(p,w);
+  // best[i][c] = best total from week i onward given you arrive holding candidate c
+  const n=weeks.length, C=cands.length;
+  let next=new Array(C).fill(0), nextPick=[];
+  const choice=[];
+  for(let i=n-1;i>=0;i--){
+    const cur=new Array(C).fill(-1e9), pick=new Array(C).fill(0);
+    for(let c=0;c<C;c++){
+      for(let k=0;k<C;k++){
+        const v=val(cands[k],weeks[i])-(k===c?0:switchCost)+next[k];
+        if(v>cur[c]){cur[c]=v;pick[c]=k;}
+      }
+    }
+    choice[i]=pick; next=cur;
+  }
+  // walk it forward from whoever you already hold (or the best start if nobody)
+  let held=mine.length?cands.indexOf(mine[0]):choice[0][0];
+  if(held<0)held=choice[0][0];
+  const plan=[]; let cursor=held;
+  for(let i=0;i<n;i++){
+    const k=choice[i][cursor];
+    plan.push({week:weeks[i],pl:cands[k],pts:val(cands[k],weeks[i]),
+               changed:k!==cursor,held:mine.some(m=>m.id===cands[k].id)});
+    cursor=k;
+  }
+  // what simply holding your current guy the whole way would score, for comparison
+  const holdTotal=mine.length?weeks.reduce((s,w)=>s+val(mine[0],w),0):null;
+  const planTotal=plan.reduce((s,x)=>s+x.pts,0)-plan.filter(x=>x.changed).length*switchCost;
+  return {plan,holdTotal,planTotal,moves:plan.filter(x=>x.changed).length,hold:mine[0]||null};
+}
+/* ---- Contingent value: what your backup becomes if the man in front of him goes down ----
+   The market scan found the two halves of this sold separately and never multiplied: one product
+   models the chance a starter misses time, another eyeballs what the backup would be worth.
+   The honest half to build is the second — what he's actually worth to YOUR lineup if the starter
+   is out for the rest of the year — because it falls out of the same marginal machinery.
+   We deliberately do NOT multiply by a probability of injury: nothing in this app measures the
+   chance a currently healthy player gets hurt, and a number invented for that would quietly set
+   the whole ranking. */
+function contingentValue(roster,from,to){
+  const out=[];
+  roster.forEach(star=>{
+    if(!["RB","WR","TE","QB"].includes(star.pos))return;
+    const without=roster.filter(p=>p.id!==star.id);
+    roster.forEach(back=>{
+      if(back.id===star.id||back.pos!==star.pos)return;
+      // what he adds today, and what he'd add to the same roster minus the starter
+      const now  =marginalROS(back,roster.filter(p=>p.id!==back.id),from,to);
+      const ifOut=marginalROS(back,without.filter(p=>p.id!==back.id),from,to);
+      out.push({back,star,now,ifOut,swing:ifOut-now});
+    });
+  });
+  return out.filter(x=>x.swing>1).sort((a,b)=>b.swing-a.swing).slice(0,6);
+}
+async function trendingAdds(){
+  try{
+    const d=await SJ("https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=24&limit=25");
+    if(!Array.isArray(d))return null;
+    const bySid={}; state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
+    return d.map(x=>({pl:bySid[String(x.player_id)],n:x.count})).filter(x=>x.pl);
+  }catch(e){ return null; }
 }
 function renderSeasonOutlook(SC,rosters,me,wk){
   const T=state.settings.teams;
@@ -6955,6 +7087,8 @@ function init(){
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
     if(ws[j]!=null){state.ui.mWeek=ws[j];renderMatchups();}};
+  segWire("#s_window2",v=>{state.ui.wWindow=v;renderInSeason();save();});
+  segWire("#s_streampos",v=>{state.ui.streamPos=v;renderInSeason();save();});
   $("#mPrev").onclick=()=>stepWeek(-1);
   $("#mNext").onclick=()=>stepWeek(1);
   $("#presetall").onclick=()=>{
