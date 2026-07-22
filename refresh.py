@@ -288,6 +288,48 @@ def pull_market():
     except Exception as ex:
         log("  market pull failed:",ex); return None
 
+def pull_kickoffs():
+    """Kickoff date and time for every team, every week, from nflverse's schedule file.
+
+    SCHED in base.json says WHO each team plays but not WHEN, which is why the matchup tab could
+    never draw a win-probability line across the week: resolving games in order would have meant
+    inventing a running order. This supplies the real one.
+
+    Times are US Eastern, exactly as the NFL publishes them, and are stored as a naive
+    "YYYY-MM-DDTHH:MM" string rather than an epoch. That is deliberate — the browser parses a
+    string in that form as LOCAL time, so the weekday and the clock face come out identical for
+    every viewer instead of a Thursday night game showing up as Friday for someone in Europe. The
+    ordering we actually sort on is unaffected either way, since every kickoff shifts together.
+    """
+    url="https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
+    try:
+        import csv, io
+        raw=get(url, timeout=60).decode("utf-8","replace")
+        rows=[r for r in csv.DictReader(io.StringIO(raw))
+              if r.get("season")==SEASON and r.get("game_type")=="REG"]
+        if not rows:
+            log(f"  kickoffs: nflverse has no REG rows for {SEASON} yet — drift chart stays off")
+            return None
+        KICK={}
+        missing=0
+        for r in rows:
+            try: wk=int(r["week"])
+            except (TypeError,ValueError): continue
+            if not 1<=wk<=18: continue
+            day, tm = (r.get("gameday") or "").strip(), (r.get("gametime") or "").strip()
+            if not day or not tm:
+                missing+=1; continue        # published later; left null rather than guessed at
+            for t in (r.get("home_team"), r.get("away_team")):
+                t=std((t or "").strip())
+                if not t: continue
+                KICK.setdefault(t,[None]*18)[wk-1]=f"{day}T{tm}"
+        filled=sum(1 for arr in KICK.values() for v in arr if v)
+        log(f"  kickoffs: {len(rows)} games, {len(KICK)} teams, {filled} team-weeks"
+            +(f", {missing} games still without a time" if missing else ""))
+        return KICK if len(KICK)>=28 else None
+    except Exception as ex:
+        log("  kickoff pull failed:",ex); return None
+
 def build_data():
     base=json.load(open(os.path.join(HERE,"base.json"),encoding="utf-8"))
     FACT=base["DIST_FACTORS"]; BANDW=base.get("BANDW",8); TEMPL=base["STAT_TEMPLATE"]
@@ -296,6 +338,7 @@ def build_data():
     log("Pulling live sources…")
     ffc,ffc_drafts=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
     espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp(); fpe=pull_fantasypros_ecr()
+    kick=pull_kickoffs()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -394,8 +437,11 @@ def build_data():
         if c: p["cons"]={"s":c["s"],"e":c["e"],"k":c["k"]}; p["wk"]=c["wk"]
         fa=dist_for(pos,posCount[pos],FACT,BANDW)
         if fa: p["dist"]={"f":fa["f"],"c":fa["c"],"bust":fa["bust"],"boom":fa["boom"]}
-        for k in ("adpSd","adpN","adpHi","adpLo"):
-            if info.get(k) is not None: p[k]=info[k]
+        # NOT `k` — that is the player's name key, still needed below for the ECR and usage
+        # lookups. Rebinding it here left every Sleeper-extra player matching against the literal
+        # string "adpLo", which silently halved ecr (415 -> 210) and usage (368 -> 173) coverage.
+        for fld in ("adpSd","adpN","adpHi","adpLo"):
+            if info.get(fld) is not None: p[fld]=info[fld]
         if info.get("sid"): p["sid"]=info["sid"]
         if info.get("inj"): p["inj"]=info["inj"]
         if info.get("depth") is not None: p["depth"]=info["depth"]
@@ -472,8 +518,16 @@ def build_data():
                 hit+=1
         log(f"  market matched to pool: {hit}/{len(players)}")
 
+    # One name per defense, always. FFC supplies a handful under their city ("Atlanta Defense")
+    # and we fill the rest in by abbreviation ("ATL Defense"), so which name a team gets flips
+    # whenever FFC's list changes. The app keys saved players by name, so a flip reads as a brand
+    # new player and quietly leaves a second Tennessee in everyone's pool. Abbreviation wins
+    # because it matches the team code we already store.
+    for p in players:
+        if p["pos"]=="DST" and p.get("team"): p["name"]=f'{p["team"]} Defense'
+
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
-         "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],
+         "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,
                  "usageEval":base.get("USAGE_EVAL"),
