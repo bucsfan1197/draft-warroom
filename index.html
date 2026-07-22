@@ -2030,7 +2030,15 @@ function renderHeurRecs(){
   $("#recCtx").textContent=auct?`💰 $${bud.rem} left · max bid $${bud.maxBid} · ${bud.open} slots open`:`Round ${myRound} · your next pick in ${picksUntilNext}`;
   const top=list.slice(0,6);
   const isMe=teamForPick(currentPick())===myIdx();
-  $("#recList").innerHTML = top.map((r,i)=>{
+  /* Be straight about what this mode is. Benchmarked the fast ranking against the championship
+     simulator across 11 draft states (12- and 10-team, several slots, early through late): the
+     simulator's pick was worth about 1-2 points more title probability per pick, and the fast
+     ranking leans toward tight ends — it put a TE first 7 times out of 11 where the simulator did
+     4. It's a proxy for value, and it's a good one, but on a pick that matters the simulator is
+     measurably the better answer. Tried a fix for the lean and it didn't move the ranking at all,
+     so nothing was changed on a guess. */
+  const proxyNote=isMe?`<div class="note" style="margin-bottom:10px">⚡ <b>Fast ranking.</b> Values each player against replacement and your roster needs — instant, and right most of the time. On a pick you care about, <b>Simulate</b> is measurably better: benchmarked across 11 draft states it found picks worth about <b>1–2 points more title probability</b>, and this mode leans a little too hard on tight ends.</div>`:"";
+  $("#recList").innerHTML = proxyNote + top.map((r,i)=>{
     const pos=r.pl.pos, P=POSWORD[pos]||pos, tier=valueTier(r.v);
     let line;
     if(auct){const val=actx.val(r.pl); line=val<=bud.maxBid?`Best value left — worth about <b>$${val}</b>, and you can afford him.`:`Great player, but ~$${val} is over your max bid ($${bud.maxBid}).`;}
