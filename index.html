@@ -1961,7 +1961,12 @@ function lineupOnSlots(players,slots,valFn){
   slots.filter(s=>s==="SUPERFLEX").forEach(()=>pick(SUPER_POS));
   return {total,chosen};
 }
-function tradeVal(){ return state.settings.format==="dynasty"?(p=>dynValue(p)):(p=>pts(p)); }
+function tradeVal(){
+  if(state.settings.format==="dynasty") return p=>dynValue(p);
+  const w=state.ui.seasonWeek||1;
+  // mid-season, what a player is worth is the points he has LEFT, not a full season already partly gone
+  return w>1 ? (p=>rosPts(p,w)) : (p=>pts(p)*availROS(p));
+}
 async function tradeLoadLeagues(){
   const user=($("#syncUser").value||"").trim()||localStorage.getItem("ffwr_syncuser")||"";
   if(!user){tradeStatus("Add your Sleeper username in League Setup first.","var(--crit)");return;}
@@ -2073,7 +2078,13 @@ function findTrades(){
       const theirAfter=opp.players.filter(p=>!get.includes(p)).concat(give);
       const myGain=lineupOnSlots(mineAfter,slots,V).total-base;
       const theirGain=lineupOnSlots(theirAfter,slots,V).total-oBase;
-      if(myGain>0.5&&theirGain>0.5) cands.push({oi,oppName:opp.name,give,get,myGain,theirGain,mineAfter,theirAfter});
+      // Endowment effect: a manager needs MEANINGFUL value back, not a rounding error, and
+      // won't ship their single best player for depth pieces. Filters out fantasy fleeces.
+      const theirBest=oPool[0];
+      const takingTheirBest=get.includes(theirBest);
+      const fair=theirGain>=Math.max(1.5,0.25*myGain);
+      if(myGain>0.5&&fair&&!(takingTheirBest&&theirGain<0.6*myGain))
+        cands.push({oi,oppName:opp.name,give,get,myGain,theirGain,mineAfter,theirAfter});
     });
   });
   cands.sort((a,b)=>(b.myGain+b.theirGain*0.35)-(a.myGain+a.theirGain*0.35));
@@ -2095,6 +2106,13 @@ function renderTrades(list,base,slots,V,baseline){
       <div class="rank-badge">#${i+1}</div>
       <div class="r1"><span class="nm">${c.oppName}</span></div>
       <div class="cardmeta">You get <b>${c.get.map(p=>p.name).join(" + ")}</b> · You give <b>${c.give.map(p=>p.name).join(" + ")}</b></div>
+      ${(()=>{const rk=usageRanks();
+        const buys=c.get.filter(p=>{const g=usageSignal(p,rk);return g&&g.d>=8;}).map(p=>p.name.split(" ").slice(-1)[0]);
+        const sells=c.give.filter(p=>{const g=usageSignal(p,rk);return g&&g.d<=-8;}).map(p=>p.name.split(" ").slice(-1)[0]);
+        let h="";
+        if(buys.length)h+=`<span class="chip good">📈 buy-low: ${buys.join(", ")} — usage outruns his production</span> `;
+        if(sells.length)h+=`<span class="chip warn">📉 sell-high: ${sells.join(", ")} — production outruns his usage</span>`;
+        return h?`<div style="margin:4px 0">${h}</div>`:"";})()}
       <div class="why">Your starting lineup <b style="color:var(--good)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"pts"} · their side <b>+${Math.round(c.theirGain)}</b> (so it's plausibly accepted).
         ${odds?(Math.abs(odds.after-odds.before)>=2?` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b>.`:` Title odds unchanged (${odds.before}%).`):""}</div>
     </div>`;}).join("")
@@ -2135,7 +2153,13 @@ function tradeTitleDelta(c,slots,baseline){
 /* ===================== IN-SEASON: start/sit, waivers, trade value =====================
    Draft day is one day; the season is 17 weeks. Reuses the same matchup-adjusted weekly
    projections the championship simulator runs on. */
-function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w); }
+// Availability: a player who can't play shouldn't project points. Week-to-week statuses hit
+// this week hard; only long-term statuses (IR/PUP/suspension) discount rest-of-season.
+const INJ_WEEK={Questionable:0.88,Doubtful:0.4,Out:0,IR:0,PUP:0,Sus:0,NA:0,DNR:0,COV:0.6};
+const INJ_ROS ={IR:0.55,PUP:0.6,Sus:0.65,NA:0.6,DNR:0.5};
+function availWeek(pl){const m=pl.inj?INJ_WEEK[pl.inj]:undefined;return m===undefined?1:m;}
+function availROS(pl){const m=pl.inj?INJ_ROS[pl.inj]:undefined;return m===undefined?1:m;}
+function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w)*availWeek(pl); }
 function weeklyLineup(roster,w){
   const R=state.settings.roster;
   const score=p=>wkPts(p,w);
@@ -2228,8 +2252,9 @@ function renderInSeason(){
 
 /* ---- REST OF SEASON: what a player is worth from here on, not for a season already partly gone ---- */
 function rosPts(pl,fromWeek){
-  let t=0; for(let w=Math.max(1,fromWeek);w<=18;w++) t+=wkPts(pl,w);
-  return t;
+  // rest-of-season ignores this week's questionable tag but keeps long-term unavailability
+  let t=0; for(let w=Math.max(1,fromWeek);w<=18;w++) t+=(pts(pl)/17)*weeklyMultOf(pl,w);
+  return t*availROS(pl);
 }
 function renderROS(w,roster,drafted){
   const box=$("#rosBox"); if(!box)return;
