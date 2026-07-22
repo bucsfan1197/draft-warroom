@@ -205,6 +205,69 @@ def byes_from_sched(SCHED):
             if opp is None: out[t]=w+1; break
     return out
 
+# ---- IDP: individual defensive players ----
+# Sleeper is the only free source that projects these, and it carries the exact stat lines
+# fantasy scores off (solo/assist tackles, sacks, interceptions, forced fumbles) plus a real
+# IDP ADP. Granular NFL positions are bucketed into the three slots leagues actually use.
+IDP_BUCKET={"DE":"DL","DT":"DL","DL":"DL","NT":"DL",
+            "LB":"LB","OLB":"LB","ILB":"LB","MLB":"LB",
+            "DB":"DB","CB":"DB","S":"DB","SS":"DB","FS":"DB"}
+IDP_STATS=["idp_tkl_solo","idp_tkl_ast","idp_sack","idp_int","idp_ff","idp_fum_rec",
+           "idp_safe","idp_pass_def","idp_blk_kick","idp_def_td","idp_tkl_loss"]
+IDP_TARGET=260          # deep enough for a 12-team league starting 6-7 defenders
+
+def pull_idp():
+    try:
+        rows=getj(f"https://api.sleeper.com/projections/nfl/{SEASON}?season_type=regular")
+    except Exception as ex:
+        log("  IDP season pull failed:",ex); return []
+    out=[]
+    for r in rows:
+        pl=r.get("player") or {}
+        b=IDP_BUCKET.get(pl.get("position"))
+        if not b: continue
+        st=r.get("stats") or {}
+        line={k:round(float(st[k]),2) for k in IDP_STATS if st.get(k) not in (None,"")}
+        if not line: continue
+        name=((pl.get("first_name") or "")+" "+(pl.get("last_name") or "")).strip()
+        if not name: continue
+        adp=st.get("adp_idp") or st.get("adp_idp_1qb")
+        out.append({"name":name,"pos":b,"posDetail":pl.get("position"),
+                    "team":std(pl.get("team") or ""),"sid":str(r.get("player_id") or ""),
+                    "idp":line,"gp":st.get("gp"),
+                    "adp":float(adp) if adp not in (None,"",999) else None})
+    # rank by a neutral yardstick so the pool is the players who actually matter
+    def rough(x):
+        l=x["idp"]
+        return (l.get("idp_tkl_solo",0)*1.5+l.get("idp_tkl_ast",0)*0.75+l.get("idp_sack",0)*4
+                +l.get("idp_int",0)*6+l.get("idp_ff",0)*4+l.get("idp_fum_rec",0)*2)
+    out.sort(key=rough,reverse=True)
+    out=out[:IDP_TARGET]
+    log(f"  IDP: {len(out)} defenders ({sum(1 for x in out if x['adp'])} with IDP ADP)")
+    return out
+
+def pull_idp_weekly():
+    """Week-by-week IDP projections, so the simulator and in-season tools work for defenders."""
+    out={}
+    posq="&".join(f"position[]={p}" for p in ["DL","LB","DB","DE","DT","CB","S","OLB","ILB","SS","FS","NT"])
+    for w in range(1,19):
+        try:
+            d=getj(f"https://api.sleeper.com/projections/nfl/{SEASON}/{w}?season_type=regular&{posq}")
+            for it in d:
+                pl=it.get("player") or {}
+                if not IDP_BUCKET.get(pl.get("position")): continue
+                st=it.get("stats") or {}
+                line={k:float(st[k]) for k in IDP_STATS if st.get(k) not in (None,"")}
+                if not line: continue
+                key=str(it.get("player_id") or "")
+                if not key: continue
+                out.setdefault(key,{"wk":[None]*19})["wk"][w]=line
+            time.sleep(0.2)
+        except Exception as ex: log("  IDP wk",w,"fail:",ex)
+    for e in out.values(): e["wk"]=e["wk"][1:19]
+    log(f"  IDP weekly: {len(out)}")
+    return out
+
 def pull_market():
     """Blended free-market trade values (KeepTradeCut + FantasyCalc + DynastyProcess)."""
     try:
@@ -354,6 +417,28 @@ def build_data():
     qbs=sorted([p for p in players if p["pos"]=="QB"], key=lambda x:x["adp"])[:12]
     sfShift=[round(sum(q["adp"] for q in qbs)/len(qbs),1),
              round(sum(q.get("adpSf",q["adp"]) for q in qbs)/len(qbs),1)] if qbs else [65.0,20.0]
+
+    # ---- IDP defenders, appended after the offensive pool ----
+    idp=pull_idp(); idpw=pull_idp_weekly()
+    idpCount={}
+    for d in idp:
+        idpCount[d["pos"]]=idpCount.get(d["pos"],0)+1
+        team=d["team"] or "FA"
+        p={"id":pid,"name":d["name"],"pos":d["pos"],"posDetail":d.get("posDetail"),
+           "team":team,"bye":BYE.get(team,0),
+           "adp":d["adp"] if d["adp"] else round(300+len(players)*0.2,1),
+           "adpSf":d["adp"] if d["adp"] else round(300+len(players)*0.2,1),
+           "override":None,"age":25,"idp":d["idp"],"stats":{}}
+        if d["adp"]: p["adpIdp"]=d["adp"]
+        if d.get("sid"):
+            p["sid"]=d["sid"]
+            w=idpw.get(d["sid"])
+            if w: p["idpWk"]=w["wk"]
+        fa=dist_for("IDP_"+d["pos"],idpCount[d["pos"]],FACT,BANDW) or dist_for("WR",idpCount[d["pos"]],FACT,BANDW)
+        if fa: p["dist"]={"f":fa["f"],"c":fa["c"],"bust":fa["bust"],"boom":fa["boom"]}
+        players.append(p); pid+=1
+    log(f"  pool with IDP: {len(players)} ({sum(idpCount.values())} defenders: "
+        + " ".join(f"{k}{v}" for k,v in sorted(idpCount.items())) + ")")
 
     market=pull_market()
     if market:

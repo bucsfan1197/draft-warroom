@@ -10,6 +10,7 @@
     --accent:#0e9f6e; --accent-ink:#ffffff; --accent-soft:#dff5ec;
     --good:#0e9f6e; --warn:#c77700; --crit:#d64545; --info:#2f6fd6;
     --qb:#d64545; --rb:#0e9f6e; --wr:#2f6fd6; --te:#e07b12; --k:#8a56c2; --dst:#0c8ea0; --flex:#6b7280;
+    --dl:#b5651d; --lb:#7a3fa0; --db:#1f7a6b;
     --shadow:0 1px 2px rgba(20,25,35,.06),0 8px 24px rgba(20,25,35,.06);
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -21,6 +22,7 @@
       --accent:#28c98a; --accent-ink:#04150e; --accent-soft:#123026;
       --good:#28c98a; --warn:#e6a53d; --crit:#f0716b; --info:#5b9bf0;
       --qb:#f0716b; --rb:#28c98a; --wr:#5b9bf0; --te:#f0a353; --k:#b085e0; --dst:#3fc0d4; --flex:#8b96a5;
+      --dl:#e0a06b; --lb:#c093e8; --db:#4fc7b0;
       --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
     }
   }
@@ -141,7 +143,8 @@
 
   /* pills */
   .pos{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:2px 6px;border-radius:6px;font-size:11px;font-weight:800;letter-spacing:.03em;color:#fff}
-  .pos.QB{background:var(--qb)}.pos.RB{background:var(--rb)}.pos.WR{background:var(--wr)}.pos.TE{background:var(--te)}.pos.K{background:var(--k)}.pos.DST{background:var(--dst)}.pos.FLEX{background:var(--flex)}
+  .pos.QB{background:var(--qb)}.pos.RB{background:var(--rb)}.pos.WR{background:var(--wr)}.pos.TE{background:var(--te)}.pos.K{background:var(--k)}.pos.DST{background:var(--dst)}
+  .pos.DL{background:var(--dl)}.pos.LB{background:var(--lb)}.pos.DB{background:var(--db)}.pos.FLEX{background:var(--flex)}
   .pos.SUPERFLEX{background:linear-gradient(120deg,var(--qb),var(--wr))}
   .rec.SUPERFLEX:before{background:linear-gradient(180deg,var(--qb),var(--wr))}
   .btgrid{width:100%;border-collapse:separate;border-spacing:3px}
@@ -671,7 +674,15 @@
             <div class="field"><label>SUPERFLEX (Q/R/W/T)</label><input type="number" id="r_SUPERFLEX" min="0" step="1"></div>
             <div class="field"><label>K</label><input type="number" id="r_K" min="0" step="1"></div>
             <div class="field"><label>DST</label><input type="number" id="r_DST" min="0" step="1"></div>
+            <div class="field idpfield"><label>DL</label><input type="number" id="r_DL" min="0" step="1"></div>
+            <div class="field idpfield"><label>LB</label><input type="number" id="r_LB" min="0" step="1"></div>
+            <div class="field idpfield"><label>DB</label><input type="number" id="r_DB" min="0" step="1"></div>
+            <div class="field idpfield"><label>IDP FLEX (DL/LB/DB)</label><input type="number" id="r_IDP_FLEX" min="0" step="1"></div>
             <div class="field"><label>Bench</label><input type="number" id="r_BENCH" min="0" step="1"></div>
+            <div class="field" style="grid-column:1/-1"><label>Individual defensive players (IDP)</label>
+              <span class="seg" id="s_idp"><button data-v="0" class="on">Off</button><button data-v="1">On — start defenders</button></span>
+              <div class="note" id="idpNote" style="margin-top:6px">Turning this on adds <b>260 defenders</b> to the pool and reveals DL/LB/DB slots and defensive scoring below. Tackle numbers dwarf offensive stats, so <b>set your scoring before trusting the board</b> — a tackle-heavy league and a big-play league rank defenders completely differently.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -691,6 +702,17 @@
             <div class="field"><label>Rec yd (pts)</label><input type="number" id="sc_recYd" step="0.01"></div>
             <div class="field"><label>Rec TD</label><input type="number" id="sc_recTd" step="0.5"></div>
             <div class="field"><label>Fumble lost</label><input type="number" id="sc_fl" step="0.5"></div>
+            <div class="field idpfield" style="grid-column:1/-1"><label class="eyebrow">Defensive scoring (IDP)</label></div>
+            <div class="field idpfield"><label>Solo tackle</label><input type="number" id="sc_idpSolo" step="0.25"></div>
+            <div class="field idpfield"><label>Assisted tackle</label><input type="number" id="sc_idpAst" step="0.25"></div>
+            <div class="field idpfield"><label>Sack</label><input type="number" id="sc_idpSack" step="0.5"></div>
+            <div class="field idpfield"><label>Interception</label><input type="number" id="sc_idpInt" step="0.5"></div>
+            <div class="field idpfield"><label>Forced fumble</label><input type="number" id="sc_idpFF" step="0.5"></div>
+            <div class="field idpfield"><label>Fumble recovery</label><input type="number" id="sc_idpFR" step="0.5"></div>
+            <div class="field idpfield"><label>Defensive TD</label><input type="number" id="sc_idpTD" step="0.5"></div>
+            <div class="field idpfield"><label>Safety</label><input type="number" id="sc_idpSafe" step="0.5"></div>
+            <div class="field idpfield"><label>Pass defended</label><input type="number" id="sc_idpPD" step="0.25"></div>
+            <div class="field idpfield"><label>Tackle for loss</label><input type="number" id="sc_idpTFL" step="0.25"></div>
           </div>
           <div class="note" style="margin-top:14px">Changing scoring instantly re-projects every player and recomputes VORP, replacement levels, and pick recommendations.</div>
         </div>
@@ -932,8 +954,11 @@ const ROOKIE_PICKS=[
 ];
 
 /* ============================= STATE ============================= */
-const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0.1,recTd:6,fl:-2};
-const DEF_ROSTER={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,BENCH:6};
+const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0.1,recTd:6,fl:-2,
+  // IDP defaults: a middle-of-the-road "balanced" scoring. Tackle-heavy leagues raise solo/assist,
+  // big-play leagues raise sacks and turnovers — both are editable.
+  idpSolo:1,idpAst:0.5,idpSack:4,idpInt:6,idpFF:4,idpFR:2,idpTD:6,idpSafe:4,idpPD:1,idpTFL:1};
+const DEF_ROSTER={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:6};
 const nrm=s=>String(s).toLowerCase().replace(/[.'`]/g,"").replace(/\b(jr|sr|ii|iii|iv|v)\b/g,"").replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
 const STORE_KEY="draftwarroom_v1";
 let state;
@@ -951,7 +976,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:16},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:17},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:""}
@@ -963,6 +988,12 @@ function load(){
   return freshState();
 }
 function migrate(st){
+  /* Backfill any settings key added since this state was saved, keeping the user's own values.
+     The player pool already self-heals via _projv; settings did not, so adding the IDP scoring
+     keys left every defender projecting exactly zero on an existing save. Merging defaults on
+     every load fixes that class of bug for good, not just this one. */
+  st.settings.scoring={...DEF_SCORING,...(st.settings.scoring||{})};
+  st.settings.roster ={...DEF_ROSTER, ...(st.settings.roster ||{})};
   if(!st.settings.format)st.settings.format="redraft";
   if(!st.settings.window)st.settings.window="balanced";
   if(st.settings.roster.SUPERFLEX==null)st.settings.roster.SUPERFLEX=0;
@@ -974,7 +1005,7 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==16){
+  if(D&&D.PLAYERS&&st.settings._projv!==17){
     const byName={};D.PLAYERS.forEach(e=>byName[nrm(e.name)]=e);
     const have=new Set(st.players.map(p=>nrm(p.name)));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
@@ -987,7 +1018,7 @@ function migrate(st){
     D.PLAYERS.forEach(e=>{if(!have.has(nrm(e.name)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
-    st.settings._projv=16;
+    st.settings._projv=17;
   }
   return st;
 }
@@ -997,6 +1028,14 @@ function save(){try{localStorage.setItem(STORE_KEY,JSON.stringify(state));}catch
 function pts(pl){
   const s=state.settings.scoring, t=pl.stats;
   if(pl.override!=null && pl.override!=="") return +pl.override;
+  if(pl.idp){                       // defenders score off their own stat line
+    const d=pl.idp;
+    return (d.idp_tkl_solo||0)*(s.idpSolo||0)+(d.idp_tkl_ast||0)*(s.idpAst||0)
+      +(d.idp_sack||0)*(s.idpSack||0)+(d.idp_int||0)*(s.idpInt||0)
+      +(d.idp_ff||0)*(s.idpFF||0)+(d.idp_fum_rec||0)*(s.idpFR||0)
+      +(d.idp_def_td||0)*(s.idpTD||0)+(d.idp_safe||0)*(s.idpSafe||0)
+      +(d.idp_pass_def||0)*(s.idpPD||0)+(d.idp_tkl_loss||0)*(s.idpTFL||0);
+  }
   if(t.p!=null) return t.p; // K/DST flat
   return (t.py||0)*s.passYd+(t.ptd||0)*s.passTd+(t.int||0)*s.int
     +(t.ry||0)*s.rushYd+(t.rtd||0)*s.rushTd
@@ -1024,8 +1063,22 @@ function ageTag(pl){
   return {label:`age ${a} · prime`,cls:"info"};
 }
 const FLEX_POS=["RB","WR","TE"];
+/* ---- IDP: individual defensive players ----
+   Leagues that start defenders use three buckets (DL/LB/DB) plus an IDP flex. The granular NFL
+   position is kept on posDetail for leagues that split DE/DT/CB/S. ALLPOS grows only when the
+   league actually starts defenders, so a normal league behaves exactly as before. */
+const OFF_POS=["QB","RB","WR","TE","K","DST"];
+const IDP_POS=["DL","LB","DB"];
+/* A defender is only a real asset in a league that starts defenders. The pool always carries
+   them (state.players is indexed by id, so it must never be filtered or reordered), which means
+   every place that offers a player has to ask this first. Without it a normal league both
+   showed linebackers on the board and crashed recommendations(), because ALLPOS no longer had
+   a bucket for them — the same shape as the old DEF/PK crash. */
+function inLeague(pl){ return !pl||!pl.idp||idpOn(); }
+function idpOn(){const R=state&&state.settings&&state.settings.roster;return !!R&&((R.DL||0)+(R.LB||0)+(R.DB||0)+(R.IDP_FLEX||0))>0;}
+function syncPosList(){ ALLPOS = idpOn()? OFF_POS.concat(IDP_POS) : OFF_POS.slice(); }
 const SUPER_POS=["QB","RB","WR","TE"];
-const ALLPOS=["QB","RB","WR","TE","K","DST"];
+let ALLPOS=["QB","RB","WR","TE","K","DST"];
 // Matchup multiplier for a player in NFL week w (0 = bye), from real 2026 schedule × opponent DvP
 function matchupMultWeek(pl,w){const D=window.__FFDATA__;if(!D||!D.DVP||!D.SCHED)return 1;const sc=D.SCHED[pl.team];if(!sc)return 1;const opp=sc[w-1];if(!opp)return 0;const dv=D.DVP[opp];return dv?(dv[pl.pos]||1):1;}
 function sosOf(pl,a,b){let s=0,n=0;for(let w=a;w<=b;w++){const m=matchupMultWeek(pl,w);if(m>0){s+=m;n++;}}return n?s/n:1;}
@@ -1045,6 +1098,7 @@ function injChip(pl){
 }
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
+  if(pl.idp) return pl.adpIdp!=null?pl.adpIdp:(pl.adp||999);
   const src=state.settings.adpSource||"ffc", sf=isSF();
   let v=null;
   if(src==="custom") v = (pl.adpCustom!=null?pl.adpCustom:null);
@@ -1096,6 +1150,12 @@ function replacementLevels(){
   const flexTotal=T*R.FLEX, share={RB:0.45,WR:0.45,TE:0.10};
   FLEX_POS.forEach(p=>base[p]+=Math.round(flexTotal*share[p]));
   // superflex slots start mostly QBs — this raises QB replacement depth (and thus elite-QB VORP)
+  // defenders: their own starters plus a share of the IDP flex, which is usually filled by LBs
+  if(idpOn()){
+    base.DL=T*(R.DL||0); base.LB=T*(R.LB||0); base.DB=T*(R.DB||0);
+    const idpFlex=T*(R.IDP_FLEX||0), ishare={DL:0.2,LB:0.5,DB:0.3};
+    IDP_POS.forEach(p=>base[p]+=Math.round(idpFlex*ishare[p]));
+  }
   const sfTotal=T*(R.SUPERFLEX||0);
   base.QB+=Math.round(sfTotal*0.72);base.RB+=Math.round(sfTotal*0.13);base.WR+=Math.round(sfTotal*0.12);base.TE+=Math.round(sfTotal*0.03);
   const levels={};
@@ -1143,6 +1203,8 @@ function fillLineup(roster){
   fillBest(FLEX_POS,"FLEX",R.FLEX);
   fillBest(SUPER_POS,"SUPERFLEX",R.SUPERFLEX);
   [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
+  [["DL",R.DL],["LB",R.LB],["DB",R.DB]].forEach(([pos,n])=>{for(let i=0;i<(n||0);i++)slots.push({slot:pos,pl:take(pos)});});
+  fillBest(IDP_POS,"IDP_FLEX",R.IDP_FLEX);
   const bench=roster.filter(x=>!used.has(x.id)).sort((a,b)=>pts(b)-pts(a));
   return {slots,bench};
 }
@@ -1176,10 +1238,26 @@ function rosterTargets(){
   // 1QB: stream the position — 1 starter, a backup only as a late luxury. Superflex: 3.
   const t ={QB:sf?3:(bb?2:1), RB:bb?6:5, WR:bb?7:6, TE:bb?3:2, K:req.K?1:0, DST:req.DST?1:0};
   const mx={QB:sf?4:(bb?3:2), RB:bb?7:6, WR:bb?8:7, TE:bb?3:2, K:req.K?1:0, DST:req.DST?1:0};
+  // Defenders must be part of the SAME slot budget as the offence. Adding them after the fitting
+  // loops meant the offence was trimmed to fit the roster and the defence was piled on top, so a
+  // full mock came back with six linebackers and two receivers.
+  if(idpOn()){
+    IDP_POS.forEach(pz=>{ const need=(R[pz]||0)+(pz==="LB"?(R.IDP_FLEX||0):0);
+      req[pz]=R[pz]||0; t[pz]=need?need+1:0; mx[pz]=need?need+2:0; });
+  }
   // fit targets to the real roster size, never below required starters (or 2 QB in superflex)
-  const floorOf=p=>Math.max(req[p]||0,(p==="QB"&&sf)?2:(req[p]?1:0));
-  const trim=["WR","RB","TE","QB"]; let sum=Object.values(t).reduce((a,b)=>a+b,0), i=0;
-  while(sum>totalSlots&&i<80){ const p=trim[i%trim.length]; if(t[p]>floorOf(p)){t[p]--;sum--;} i++; }
+  const floorOf=p=>Math.max(req[p]||0,(p==="QB"&&sf)?2:(req[p]?1:0));   // req now includes DL/LB/DB
+  /* Trim from whichever position is furthest above its required starters, rather than always
+     shaving the front of a fixed list. Cycling a fixed order starved receivers first every time —
+     with IDP eating the slot budget a 23-man roster came back with two of them. */
+  const trimPool=idpOn()?["WR","RB","TE","QB","DL","LB","DB"]:["WR","RB","TE","QB"];
+  let sum=Object.values(t).reduce((a,b)=>a+b,0), i=0;
+  while(sum>totalSlots&&i<200){
+    let pick=null,slack=-1;
+    trimPool.forEach(p=>{const sl=(t[p]||0)-floorOf(p); if(sl>slack&&sl>0){slack=sl;pick=p;}});
+    if(!pick)break;
+    t[pick]--; sum--; i++;
+  }
   // Deep rosters (dynasty startups, 25-30 spots) legitimately carry more bench bodies than a
   // 15-man target — grow RB/WR (and TE) capacity to absorb the extra slots instead of leaving
   // them unaccounted for, which would force junk picks like a 2nd kicker.
@@ -1194,7 +1272,7 @@ function recommendations(){
   const drafted=draftedIds();
   const mine=teamRoster(myIdx());
   const {need,flexNeed,superNeed}=positionalNeed(mine);
-  const avail=state.players.filter(p=>!drafted.has(p.id));
+  const avail=state.players.filter(p=>!drafted.has(p.id)&&inLeague(p));
   const nextPick=myNextPick(currentPick()+1); // pick after this one
   const picksUntilNext=Math.max(0,nextPick-currentPick()-1);
   const myRound=Math.ceil((currentPick()+1)/state.settings.teams);
@@ -1212,7 +1290,10 @@ function recommendations(){
 
   const URANK=(state.settings.usageBlend!==false)?usageRanks():null;
   // available startable (vorp>0) per position, sorted
-  const byPos={};ALLPOS.forEach(p=>byPos[p]=avail.filter(x=>x.pos===p).sort((a,b)=>vorp(b,levels)-vorp(a,levels)));
+  // built from the positions actually present, so a missing bucket can never throw again
+  const byPos={};avail.forEach(x=>(byPos[x.pos]=byPos[x.pos]||[]).push(x));
+  Object.values(byPos).forEach(a=>a.sort((x,y)=>vorp(y,levels)-vorp(x,levels)));
+  ALLPOS.forEach(p=>{if(!byPos[p])byPos[p]=[];});
 
   const scored=avail.map(pl=>{
     const v=vorp(pl,levels);
@@ -1271,13 +1352,13 @@ function recommendations(){
   return {list:scored,levels,picksUntilNext,need,flexNeed,superNeed,myRound};
 }
 // crude share of upcoming picks likely spent on a position
-function posDemandShare(pos){return ({QB:0.12,RB:0.34,WR:0.34,TE:0.10,K:0.04,DST:0.04})[pos]||0.1;}
+function posDemandShare(pos){return ({QB:0.12,RB:0.34,WR:0.34,TE:0.10,K:0.04,DST:0.04,DL:0.05,LB:0.08,DB:0.06})[pos]||0.1;}
 
 /* ---- Positional tiers (Elite/Great/…) + run detection ---- */
 function tierData(){
   const drafted=draftedIds(), lv=replacementLevels().levels, out={};
   ["QB","RB","WR","TE"].forEach(pos=>{
-    const avail=state.players.filter(p=>p.pos===pos&&!drafted.has(p.id)).sort((a,b)=>vorp(b,lv)-vorp(a,lv));
+    const avail=state.players.filter(p=>p.pos===pos&&!drafted.has(p.id)&&inLeague(p)).sort((a,b)=>vorp(b,lv)-vorp(a,lv));
     if(!avail.length){out[pos]={n:0,total:0,tier:"—"};return;}
     const topLabel=valueTier(vorp(avail[0],lv)).label;
     let n=0; for(const p of avail){if(valueTier(vorp(p,lv)).label===topLabel)n++;else break;}
@@ -1806,7 +1887,8 @@ function renderSimRecs(){
   $$("#recList [data-draft]").forEach(b=>b.onclick=()=>doDraft(+b.dataset.draft));
   $("#reSimBtn").onclick=()=>fireSim();
 }
-const POSWORD={QB:"quarterback",RB:"running back",WR:"receiver",TE:"tight end",K:"kicker",DST:"defense"};
+const POSWORD={QB:"quarterback",RB:"running back",WR:"receiver",TE:"tight end",K:"kicker",DST:"defense",
+  DL:"defensive lineman",LB:"linebacker",DB:"defensive back"};
 function valueTier(v){
   if(v>=110)return{label:"Elite",cls:"elite"};
   if(v>=65)return{label:"Great",cls:"great"};
@@ -1874,7 +1956,7 @@ function renderAvail(){
   const {levels}=replacementLevels();
   const drafted=draftedIds();
   const u=state.ui;
-  let rows=state.players.map(pl=>({pl,proj:pts(pl),vorp:vorp(pl,levels),age:pl.age||0,drafted:drafted.has(pl.id)}));
+  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pts(pl),vorp:vorp(pl,levels),age:pl.age||0,drafted:drafted.has(pl.id)}));
   if(u.posFilter!=="ALL")rows=rows.filter(r=>u.posFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.posFilter);
   if(u.search)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.search.toLowerCase()));
   if(u.hideDrafted)rows=rows.filter(r=>!r.drafted);
@@ -2147,6 +2229,32 @@ function selfTest(){
     state.settings.format=wf2; LABC={key:null};
     add("Superflex raises quarterback prices",qbSF>qb1*1.05,
         qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    // ---- IDP ----
+    const wasRoster=JSON.parse(JSON.stringify(state.settings.roster));
+    const defenders=P.filter(x=>x.idp);
+    add("Defenders available in the pool",defenders.length>150,
+        `${defenders.length} — ` + ["DL","LB","DB"].map(b=>b+" "+defenders.filter(x=>x.pos===b).length).join(", "));
+    Object.assign(state.settings.roster,{DL:2,LB:3,DB:2,IDP_FLEX:1}); syncPosList();
+    const sc=state.settings.scoring, keepSc={...sc};
+    const rankTop=()=>state.players.filter(x=>x.idp).sort((a,b)=>pts(b)-pts(a))[0];
+    Object.assign(sc,{idpSolo:2,idpAst:1,idpSack:2,idpInt:3});  const tackleTop=rankTop();
+    Object.assign(sc,{idpSolo:.5,idpAst:.25,idpSack:8,idpInt:10}); const bigPlayTop=rankTop();
+    Object.assign(sc,keepSc);
+    add("Defensive scoring actually changes the board",
+        !!tackleTop&&!!bigPlayTop&&tackleTop.id!==bigPlayTop.id,
+        tackleTop&&bigPlayTop?`tackle-heavy → ${tackleTop.name} (${tackleTop.pos}) · big-play → ${bigPlayTop.name} (${bigPlayTop.pos})`:"");
+    const idpLv=replacementLevels().levels;
+    add("Defenders have real replacement levels",
+        ["DL","LB","DB"].every(b=>idpLv[b]>0),
+        ["DL","LB","DB"].map(b=>b+" "+Math.round(idpLv[b]||0)).join(" · "));
+    // a defender must never show up in a league that doesn't start defenders
+    Object.assign(state.settings.roster,{DL:0,LB:0,DB:0,IDP_FLEX:0}); syncPosList();
+    const leaked=state.players.filter(x=>x.idp&&inLeague(x)).length;
+    add("Defenders hidden when the league doesn't start them",leaked===0,
+        leaked?`${leaked} leaked into a non-IDP league`:"none on the board, no crash in recommendations");
+    let recOk=true; try{ recommendations(); }catch(e){ recOk=false; }
+    add("Recommendations survive a mixed pool",recOk,"");
+    Object.assign(state.settings.roster,wasRoster); syncPosList();
     // ---- keeper leagues ----
     const wasKF=state.settings.format, wasKeep=state.settings.keeper;
     state.settings.format="keeper"; state.settings.keeper={max:3,esc:1,years:2}; PICKVAL={key:null};
@@ -2676,7 +2784,10 @@ function fuzzyPlayers(q,limit){
       else if(oneWord&&n.length>=2&&n.length<=5&&pt.map(x=>x[0]).join("")===n) sc=84;
     }
     // then lean toward the player people actually mean — the one with real trade value
-    if(sc) out.push({p,sc:sc+Math.min(14,(marketOf(p)||0)/700)});
+    // lean toward the player people actually mean. Market price where there is one, projected
+    // points otherwise — no source prices defenders, so a pure market tie-break silently ranked
+    // every defender behind a same-named receiver.
+    if(sc) out.push({p,sc:sc+Math.min(14,Math.max((marketOf(p)||0)/700,pts(p)/25))});
   });
   out.sort((a,b)=>b.sc-a.sc);
   return out.slice(0,limit||6).map(x=>x.p);
@@ -2706,6 +2817,7 @@ function labSettingsLine(){
   if(s.bestball) bits.push("best ball");
   if(s.auction) bits.push("auction");
   if(state.ui.labTep) bits.push("TE premium");
+  if(idpOn()) bits.push("IDP");
   const src=labSrc();
   const how=src==="market"?"Live market prices only."
     :src==="mine"?"This app's own projections only — market prices ignored."
@@ -2715,6 +2827,8 @@ function labSettingsLine(){
   // Be explicit when only one source stands behind a number.
   if(state.ui.labTep&&isDyno())
     seriesNote+=" <b>TE-premium prices come from KeepTradeCut alone</b> — the other two sources don't publish a TE-premium series, so there's no cross-check on these.";
+  if(idpOn())
+    seriesNote+=" <b>No market source prices defenders anywhere</b>, so every IDP value here comes from this app's own projections under your defensive scoring — set that scoring before trusting a defender's number.";
   return `Priced for <b>${bits.join(" · ")}</b>. ${how}${seriesNote}
     <span class="meta">Market prices are quoted for 12-team leagues — the shape barely moves with league size, but a very shallow or very deep league will shade values slightly.</span>`;
 }
@@ -3376,7 +3490,7 @@ function renderInSeason(){
   const dyn=state.settings.format==="dynasty";
   const val=p=>dyn?dynValue(p):pts(p);
   const mine=roster.slice().sort((a,b)=>val(b)-val(a));
-  const avail=state.players.filter(p=>!drafted.has(p.id)).sort((a,b)=>val(b)-val(a)).slice(0,6);
+  const avail=state.players.filter(p=>!drafted.has(p.id)&&inLeague(p)).sort((a,b)=>val(b)-val(a)).slice(0,6);
   renderROS(w,roster,drafted);
   renderBuzz(roster);
   $("#tradeBox").innerHTML=`<h3 class="eyebrow" style="margin-bottom:6px">Your roster${dyn?" (dynasty value)":""}</h3>`
@@ -3621,7 +3735,7 @@ function renderMatchups(){
 function renderPlayersTab(){
   const {levels}=replacementLevels();
   const u=state.ui;
-  let rows=state.players.map(pl=>({pl,proj:pts(pl)}));
+  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pts(pl)}));
   if(u.pposFilter!=="ALL")rows=rows.filter(r=>u.pposFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.pposFilter);
   if(u.psearch)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.psearch.toLowerCase()));
   const key=u.psort,dir=u.pdir;
@@ -3808,6 +3922,7 @@ function curveSVG(){
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:210px">${legend}${grid}${xlab}${lines}</svg>`;
 }
 function applyFormatUI(){
+  syncPosList();
   const dyn=isDyno();
   $("#dynastyTabBtn").classList.toggle("hide",!dyn);
   $("#keeperTabBtn").classList.toggle("hide",!keeperIsOn());
@@ -3816,6 +3931,9 @@ function applyFormatUI(){
   $$("#s_format button").forEach(b=>b.classList.toggle("on",b.dataset.v===state.settings.format));
   $$("#s_window button").forEach(b=>b.classList.toggle("on",b.dataset.v===state.settings.window));
   const bb=$("#bbNote");if(bb)bb.classList.toggle("hide",!state.settings.bestball);
+  const on=idpOn();
+  $$(".idpfield").forEach(el=>el.classList.toggle("hide",!on));
+  $$("#s_idp button").forEach(x=>x.classList.toggle("on",(+x.dataset.v===1)===on));
   $$("#s_usage button").forEach(b=>b.onclick=()=>{state.settings.usageBlend=(b.dataset.v==="1");SIMCACHE={key:null};loadSetupInputs();renderAll();flash("Opportunity model "+(state.settings.usageBlend?"on":"off"));});
   $$("#s_bestball button").forEach(b=>b.classList.toggle("on",+b.dataset.v===(state.settings.bestball?1:0)));
 }
@@ -3825,17 +3943,27 @@ function applyFormatUI(){
 function cpuPickFor(t){
   const R=state.settings.roster, taken=draftedIds();
   const cpuBias=oppBias(t,Math.floor(state.picks.length/Math.max(1,state.settings.teams))+1);
-  const cnt={QB:0,RB:0,WR:0,TE:0,K:0,DST:0}; teamRoster(t).forEach(p=>cnt[p.pos]++);
-  const skillCnt=cnt.QB+cnt.RB+cnt.WR+cnt.TE;
+  const cnt={QB:0,RB:0,WR:0,TE:0,K:0,DST:0,DL:0,LB:0,DB:0}; teamRoster(t).forEach(p=>{if(cnt[p.pos]!=null)cnt[p.pos]++;});
+  const skillCnt=cnt.QB+cnt.RB+cnt.WR+cnt.TE+cnt.DL+cnt.LB+cnt.DB;   // defenders are starters too
   const rosterSize=Object.values(R).reduce((a,b)=>a+b,0);
-  const skillCap=rosterSize-(R.K||0)-(R.DST||0);
+  const skillCap=rosterSize-(R.K||0)-(R.DST||0)-(R.DL||0)-(R.LB||0)-(R.DB||0)-(R.IDP_FLEX||0);
   const onlyKD=skillCnt>=skillCap;
-  const posCap={QB:R.QB+(R.SUPERFLEX||0)+1,RB:R.RB+R.FLEX+(R.SUPERFLEX||0)+2,WR:R.WR+R.FLEX+(R.SUPERFLEX||0)+2,TE:R.TE+2,K:R.K||1,DST:R.DST||1};
+  /* Make the CPU field a legal team. Defenders carry late IDP ADP, so drafting purely by ADP
+     left opponents with offence-heavy rosters and empty DL/LB/DB slots — only 1 of 12 teams was
+     legal. When the picks remaining no longer cover the starting slots still unfilled, the CPU
+     stops shopping and fills what it must, exactly as a real manager does. */
+  const mustFill=[];
+  ["QB","RB","WR","TE","K","DST","DL","LB","DB"].forEach(pz=>{
+    const short=(R[pz]||0)-(cnt[pz]||0); for(let i=0;i<short;i++) mustFill.push(pz); });
+  const picksLeft=rosterSize-teamRoster(t).length;
+  const forced=picksLeft<=mustFill.length?new Set(mustFill):null;
+  const posCap={QB:R.QB+(R.SUPERFLEX||0)+1,RB:R.RB+R.FLEX+(R.SUPERFLEX||0)+2,WR:R.WR+R.FLEX+(R.SUPERFLEX||0)+2,TE:R.TE+2,K:R.K||1,DST:R.DST||1,
+    DL:(R.DL||0)+(R.IDP_FLEX?1:0)+1, LB:(R.LB||0)+(R.IDP_FLEX||0)+1, DB:(R.DB||0)+(R.IDP_FLEX?1:0)+1};
   let best=null,bestScore=1e18;
   for(const p of state.players){
-    if(taken.has(p.id))continue;
-    const kd=(p.pos==="K"||p.pos==="DST");
-    if(onlyKD?!kd:kd)continue;
+    if(taken.has(p.id)||!inLeague(p))continue;
+    if(forced){ if(!forced.has(p.pos))continue; }
+    else { const kd=(p.pos==="K"||p.pos==="DST"); if(onlyKD?!kd:kd)continue; }
     if((cnt[p.pos]||0)>=(posCap[p.pos]||99))continue;
     const nz=adpOf(p)*(1+gauss()*0.11)*(cpuBias?(cpuBias[p.pos]||1):1)+gauss()*2;
     if(nz<bestScore){bestScore=nz;best=p;}
@@ -4006,6 +4134,14 @@ function wireSetup(){
   Object.keys(DEF_ROSTER).forEach(k=>$("#r_"+k).oninput=e=>{state.settings.roster[k]=Math.max(0,+e.target.value||0);renderAll();});
   Object.keys(DEF_SCORING).forEach(k=>$("#sc_"+k).oninput=e=>{state.settings.scoring[k]=+e.target.value||0;if(k==='rec')loadSetupInputs();renderAll();});
   $$("#s_ppr button").forEach(b=>b.onclick=()=>{state.settings.scoring.rec=+b.dataset.v;loadSetupInputs();renderAll();});
+  $$("#s_idp button").forEach(b=>b.onclick=()=>{
+    const R=state.settings.roster;
+    if(b.dataset.v==="1"){ if(!idpOn()){R.DL=2;R.LB=3;R.DB=2;R.IDP_FLEX=1;} }
+    else { R.DL=0;R.LB=0;R.DB=0;R.IDP_FLEX=0; }
+    syncPosList(); PICKVAL={key:null}; LABC={key:null}; SIMCACHE={key:null};
+    loadSetupInputs(); renderAll();
+    flash(idpOn()?"IDP on — defenders added to the board":"IDP off");
+  });
   $$("#s_clock button").forEach(b=>b.onclick=()=>{state.settings.pickClock=+b.dataset.v;loadSetupInputs();renderAll();});
   $("#s_clockCustom").oninput=e=>{state.settings.pickClock=Math.max(0,+e.target.value||0);$$("#s_clock button").forEach(b=>b.classList.toggle("on",+b.dataset.v===state.settings.pickClock));renderAll();};
 }
@@ -4081,6 +4217,7 @@ function showOnboarding(){
 }
 function maybeOnboard(){ try{ if(!localStorage.getItem(ONB_KEY))showOnboarding(); }catch(e){} }
 function boot(){
+  syncPosList();
   loadSetupInputs();
   buildPosFilters("#posFilters","posFilter",renderAvail);
   buildPosFilters("#pposFilters","pposFilter",renderPlayersTab);
