@@ -271,7 +271,7 @@
   <div class="topin">
     <div class="brand">
       <div class="logo">◈</div>
-      <div><b>Draft War Room</b><span>Redraft optimizer · VORP engine</span></div>
+      <div><b>Draft War Room</b><span>Know exactly who to pick, and why</span></div>
     </div>
     <nav class="tabs" id="tabs">
       <button class="tab on" data-tab="draft">Draft Room</button>
@@ -332,7 +332,7 @@
                 <th class="r" data-sort="age">Age</th>
                 <th class="r" data-sort="proj">Proj</th>
                 <th class="r">Floor–Ceil</th>
-                <th class="r" data-sort="vorp" id="vorpHead">VORP</th>
+                <th class="r" data-sort="vorp" id="vorpHead" title="How many points this player beats a free agent by">vs free agent</th>
                 <th class="r" data-sort="adp" id="adpHead">ADP</th>
                 <th></th>
               </tr></thead>
@@ -422,7 +422,7 @@
     <div class="panel" style="margin-top:16px">
       <div class="hd"><h2>Where the value lives — best position per round</h2></div>
       <div class="bd"><div id="btBest"></div>
-        <div class="note" style="margin-top:12px">Data: <b>Fantasy Football Calculator</b> historical ADP + <b>nflverse</b> actual fantasy finishes, 2014–2024. "Best" = highest startable-hit-rate position available at that round's ADP. Use it as a positional roadmap, not a mandate — your board's specific values (VORP) still rule any single pick.</div>
+        <div class="note" style="margin-top:12px">Data: <b>Fantasy Football Calculator</b> historical ADP + <b>nflverse</b> actual fantasy finishes, 2014–2024. "Best" = highest startable-hit-rate position available at that round's ADP. Use it as a rough map of which positions pay off in which rounds — for any single pick, what your own board says about that player still wins.</div>
       </div>
     </div>
     <div class="panel" style="margin-top:16px">
@@ -558,7 +558,7 @@
       <div class="hd"><h2>Rookie draft pick values</h2><span class="pickcounter" style="margin-left:auto">1QB PPR · relative 0–100 · superflex bumps QBs</span></div>
       <div class="bd">
         <div class="board" id="rookieBox" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))"></div>
-        <div class="note" style="margin-top:12px">Use these to weigh a pick against a player in trades or startup auctions: a player's dynasty value (the DynVORP column, roughly) is comparable to these pick values once you scale to the same range. <b>Rebuilders</b> hoard early 1sts and future firsts; <b>contenders</b> cash picks for proven vets.</div>
+        <div class="note" style="margin-top:12px">Use these to weigh a pick against a player in trades or startup auctions — a player's dynasty value on the board is roughly comparable once both are on the same scale. <b>Rebuilders</b> hoard early 1sts and future firsts; <b>contenders</b> cash picks for proven vets.</div>
       </div>
     </div>
   </section>
@@ -758,7 +758,7 @@
             <div class="field idpfield"><label>Pass defended</label><input type="number" id="sc_idpPD" step="0.25"></div>
             <div class="field idpfield"><label>Tackle for loss</label><input type="number" id="sc_idpTFL" step="0.25"></div>
           </div>
-          <div class="note" style="margin-top:14px">Changing scoring instantly re-projects every player and recomputes VORP, replacement levels, and pick recommendations.</div>
+          <div class="note" style="margin-top:14px">Change any of these and every projection, every ranking and every recommendation updates immediately — including who you'd be left with if you skip a position.</div>
         </div>
       </div>
     </div>
@@ -2140,7 +2140,7 @@ function renderAvail(){
     else{av=a[key];bv=b[key];}
     return dir*(av-bv);
   });
-  const vh=$("#vorpHead");if(vh)vh.textContent=isDyno()?"DynVORP":"VORP";
+  const vh=$("#vorpHead");if(vh)vh.textContent=isDyno()?"vs free agent (multi-year)":"vs free agent";
   const auct=state.settings.auction, actx=auct?auctionCtx():null;
   const ah=$("#adpHead");if(ah)ah.textContent=auct?"$ Val":"ADP";
   $("#availCount").textContent=auct?`${rows.length} shown · $ values${actx.infl!==1?` · inflation ${actx.infl.toFixed(2)}×`:''}`:`${rows.length} shown · ADP: ${ADP_SRC[state.settings.adpSource||'ffc']} ${isSF()?'SF':'1QB'}`;
@@ -2319,11 +2319,11 @@ function selfTest(){
     const cnt=k=>P.filter(x=>x[k]!=null).length;
     // 1. data integrity
     add("Player pool loaded",P.length>=400,`${P.length} players`);
-    add("Data fields propagated (no stale-migration bug)",
+    add("Every player has all his data",
         cnt("sid")>300&&cnt("usage")>200&&cnt("ecr")>200,
         `sid ${cnt("sid")} · usage ${cnt("usage")} · ecr ${cnt("ecr")}`);
     add("All 32 defenses present",P.filter(x=>x.pos==="DST").length===32,`${P.filter(x=>x.pos==="DST").length} DST`);
-    add("Positions normalised (DST/K not DEF/PK)",!P.some(x=>["DEF","PK"].includes(x.pos)),"no DEF/PK");
+    add("Positions are labelled correctly",!P.some(x=>["DEF","PK"].includes(x.pos)),"no DEF/PK");
     const h=dataAgeHours();
     add("Data is fresh",h==null||h<=36,h==null?"unknown":`${Math.round(h)}h old`);
     // 2. every tab opens with content
@@ -2337,7 +2337,7 @@ function selfTest(){
     const lay=[];
     tabs.forEach(t=>{ t.click(); layoutProbe().forEach(i=>lay.push(`${t.textContent.trim()}: ${i}`)); });
     const badVars=cssVarAudit();
-    add("No undefined CSS variables",badVars.length===0,badVars.length?badVars.join(", "):"every var(--x) is defined");
+    add("Every colour and style is defined",badVars.length===0,badVars.length?badVars.join(", "):"every var(--x) is defined");
     add(`Layout is sound at ${window.innerWidth}px`,lay.length===0,
         lay.length?lay.slice(0,3).join(" · ")+(lay.length>3?` (+${lay.length-3} more)`:""):`${tabs.length} tabs, nothing clipped`);
     // 2c. TRADE ENGINE: bracket resolves at every playoff size, picks are valued sanely
@@ -2379,7 +2379,7 @@ function selfTest(){
     add("Market trade values loaded",mktN>250,`${mktN} players priced from ${(marketMeta()||{}).sources||"—"}`);
     const parsePick=parseAssetLine("2027 early 2nd"), parseSlot=parseAssetLine("2028 1.05"),
           parsePlayer=parseAssetLine("Bijan Robinson");
-    add("Trade lines parse (players, picks, exact slots)",
+    add("Typed players and picks are understood",
         parsePick&&parsePick.kind==="pick"&&parsePick.round===2&&parsePick.tier==="early"
         &&parseSlot&&parseSlot.round===1&&parseSlot.tier==="mid"
         &&parsePlayer&&parsePlayer.kind==="player",
@@ -2405,19 +2405,19 @@ function selfTest(){
     const mOf=(f,n)=>{let s=0;for(let i=0;i<n;i++)s+=f();return s/n;};
     const sfBias=[0.2,0.46,0.7].map(sd=>Math.abs(mOf(()=>seasonFactor(sd),8000)-1));
     const wfBias=[0.43,0.64,0.72].map(cv=>Math.abs(mOf(()=>weekFactor(cv),8000)-1));
-    add("Season and weekly samplers are unbiased",
+    add("Simulated seasons average out to the projection",
         Math.max(...sfBias,...wfBias)<0.03,
         `largest drift from a mean of 1.0: ${Math.max(...sfBias,...wfBias).toFixed(3)}`);
     // Replacement level is only meaningful if exactly the startable players clear it.
     const rlv=replacementLevels();
     const nStart=Object.values(rlv.base).reduce((a,b)=>a+b,0);
     const nClear=state.players.filter(x=>inLeague(x)&&vorp(x,rlv.levels)>0).length;
-    add("Replacement level matches the number of starters",
+    add("The free-agent bar matches how many players actually start",
         nStart>0&&Math.abs(nClear-nStart)<=2,
         `${nClear} players above replacement vs ${nStart} league starting slots`);
     // Positional demand comes from real drafts now; it still has to be a distribution.
     const dem=["QB","RB","WR","TE","K","DST"].reduce((a,p)=>a+posDemandShare(p),0);
-    add("Positional demand is a valid share of the board",dem>0.85&&dem<1.15,
+    add("Position demand adds up to a whole draft",dem>0.85&&dem<1.15,
         `shares total ${dem.toFixed(2)}`);
     /* Trade evenness, measured from real completed trades. The percentile must rise with how
        even a deal is — the first version had it inverted and warned about a near-even swap while
@@ -2463,12 +2463,12 @@ function selfTest(){
       return pos.length?pos.filter(v=>v>=c.elite).length/pos.length:0;};
     const s12=eliteShare(12), s8=eliteShare(8);
     state.settings.teams=wasT2; TIERQ={key:null};
-    add("Tiers are a constant share of the startable pool, whatever the league",
+    add("Elite means the same thing in any league",
         Math.abs(s12-0.08)<0.04&&Math.abs(s8-0.08)<0.04,
         `"elite" covers ${(s12*100).toFixed(0)}% of startable players in a 12-team league and ${(s8*100).toFixed(0)}% in an 8-team one`);
     // ---- "will he last?" rests on measured draft spread, not a guess ----
     const wSd=P.filter(x=>x.adpSd>0);
-    add("Draft-position spread is measured, not assumed",wSd.length>150,
+    add("How early or late players go is measured, not guessed",wSd.length>150,
         `${wSd.length} players carry FFC's published standard deviation (median ${
           (()=>{const a=wSd.map(x=>x.adpSd).sort((u,v)=>u-v);return a[a.length>>1];})()} picks)`);
     if(wSd.length>20){
@@ -2487,7 +2487,7 @@ function selfTest(){
     }
     // ---- per-asset confidence ----
     const withN=P.filter(x=>x.mktN).length;
-    add("Sample size behind each market value",withN>200,
+    add("We know how much data backs each price",withN>200,
         `${withN} players carry a vote count (max ${Math.max(0,...P.map(x=>x.mktN||0)).toLocaleString()})`);
     /* Confidence must track what actually predicts disagreement. Vote count does NOT — regressed
        against observed cross-source spread it explains nothing (R²=0.005) — so the checks below
@@ -2500,17 +2500,17 @@ function selfTest(){
     if(conf3.length>20){
       conf3.sort((a,b)=>a.c.spread-b.c.spread);
       const tight=conf3[0], wide=conf3[conf3.length-1];
-      add("Disagreement drives the error bar",wide.c.sd>tight.c.sd,
+      add("Players the sources argue about are marked less certain",wide.c.sd>tight.c.sd,
           `${tight.x.name} spread ${tight.c.spread.toFixed(2)} → ±${Math.round(tight.c.sd*100)}% · ${wide.x.name} spread ${wide.c.spread.toFixed(2)} → ±${Math.round(wide.c.sd*100)}%`);
       const solo=P.filter(x=>x.mkt&&x.mktSrcN===1)[0];
       if(solo){
         const median=conf3[Math.floor(conf3.length/2)];
-        add("An unchecked single source isn't treated as agreement",
+        add("One source alone is not treated as agreement",
             assetConfidence({kind:"player",player:solo}).sd>=median.c.sd,
             `one source ±${Math.round(assetConfidence({kind:"player",player:solo}).sd*100)}% vs a typical three-source ±${Math.round(median.c.sd*100)}%`);
       }
     }
-    add("Values blend geometrically, matching how the sources themselves are combined",
+    add("Prices are combined the same way everywhere",
         Math.abs(blendVals(8000,2000)-4000)<1&&blendVals(8000,2000)<(8000+2000)/2,
         `8,000 with 2,000 → ${Math.round(blendVals(8000,2000)).toLocaleString()} (an average would say 5,000)`);
     const near=assetConfidence({kind:"pick",season:CUR_SEASON()+1,round:1});
@@ -2520,11 +2520,11 @@ function selfTest(){
     // a band must grow with the size of the deal, and errors must add in quadrature (not linearly)
     const two=P.filter(x=>x.mkt).slice(0,2).map(x=>({kind:"player",player:x}));
     const b1=tradeBand([two[0]]), b2=tradeBand(two);
-    add("Trade uncertainty compounds correctly",b2>b1&&b2<b1*2.2,
-        `one asset ±${Math.round(b1)}, two ±${Math.round(b2)} — added in quadrature, not summed`);
+    add("Bigger trades carry more uncertainty, but not double",b2>b1&&b2<b1*2.2,
+        `one asset ±${Math.round(b1)}, two ±${Math.round(b2)} — two players are less uncertain together than doubling one`);
     // ---- salary cap / contracts ----
     const cl=parseContractLine("Puka Nacua $42 3yr"), cl2=parseContractLine("Bijan Robinson 55 x2");
-    add("Contract lines parse (salary and years)",
+    add("Typed salaries and contract years are understood",
         cl&&cl.salary===42&&cl.years===3&&/nacua/i.test(cl.name)
         &&cl2&&cl2.salary===55&&cl2.years===2&&/bijan/i.test(cl2.name),
         cl?`"$42 3yr" → $${cl.salary}/${cl.years}yr · "55 x2" → $${cl2&&cl2.salary}/${cl2&&cl2.years}yr`:"");
@@ -2539,7 +2539,7 @@ function selfTest(){
     const wasCap=state.settings.salaryCap; state.settings.salaryCap=true;
     const sample=P.filter(x=>!x.idp&&x.pos!=="K"&&x.pos!=="DST").slice(0,12);
     const cheapCmp=capMarketCompare(sample,()=>1), dearCmp=capMarketCompare(sample,()=>999);
-    add("Cap comparison reads the right way round",
+    add("Cheap contracts read as cheap, dear ones as dear",
         cheapCmp.market>cheapCmp.paid&&dearCmp.paid>dearCmp.market&&cheapCmp.prod===dearCmp.prod,
         `same lineup: $1 deals read under market, $999 deals read over, production identical`);
     state.settings.salaryCap=wasCap;
@@ -2566,7 +2566,7 @@ function selfTest(){
           `${beforeIds.size} assets in, ${afterIds.size} out, roster sizes unchanged, nobody receives their own player`);
     })();
     const p3=parseAssetLine("2027 1st");
-    add("Three-team mode has its own matcher",typeof lab3Match==="function"&&typeof lab3Compute==="function"&&!!p3,"");
+    add("Three-team trades match players correctly",typeof lab3Match==="function"&&typeof lab3Compute==="function"&&!!p3,"");
     // ---- IDP ----
     const wasRoster=JSON.parse(JSON.stringify(state.settings.roster));
     const defenders=P.filter(x=>x.idp);
@@ -2582,7 +2582,7 @@ function selfTest(){
         !!tackleTop&&!!bigPlayTop&&tackleTop.id!==bigPlayTop.id,
         tackleTop&&bigPlayTop?`tackle-heavy → ${tackleTop.name} (${tackleTop.pos}) · big-play → ${bigPlayTop.name} (${bigPlayTop.pos})`:"");
     const idpLv=replacementLevels().levels;
-    add("Defenders have real replacement levels",
+    add("Defenders are measured against a free-agent defender",
         ["DL","LB","DB"].every(b=>idpLv[b]>0),
         ["DL","LB","DB"].map(b=>b+" "+Math.round(idpLv[b]||0)).join(" · "));
     // a defender must never show up in a league that doesn't start defenders
@@ -2591,7 +2591,7 @@ function selfTest(){
     add("Defenders hidden when the league doesn't start them",leaked===0,
         leaked?`${leaked} leaked into a non-IDP league`:"none on the board, no crash in recommendations");
     let recOk=true; try{ recommendations(); }catch(e){ recOk=false; }
-    add("Recommendations survive a mixed pool",recOk,"");
+    add("Picks still work with defenders in the pool",recOk,"");
     Object.assign(state.settings.roster,wasRoster); syncPosList();
     // ---- keeper leagues ----
     const wasKF=state.settings.format, wasKeep=state.settings.keeper;
@@ -2616,11 +2616,11 @@ function selfTest(){
     const starters=(()=>{const b=replacementLevels().base;return b.QB+b.RB+b.WR+b.TE;})();
     const n1=posCount(); state.settings.bestball=true; const n2=posCount();
     state.settings.bestball=wasBB; PICKVAL={key:null};
-    add("Pick values use one consistent value scale",
+    add("Picks and players are measured on the same scale",
         n1>starters*0.7&&n2>starters*0.7,
         `${n1} above replacement (${n2} in best ball) vs ${starters} league starters`);
     const kl=parseKeeperLine("Puka Nacua 8"), kl2=parseKeeperLine("Jayden Daniels $34");
-    add("Keeper lines parse (round and salary)",
+    add("Typed keeper costs are understood",
         kl&&kl.cost===8&&kl.kind==="round"&&/nacua/i.test(kl.name)
         &&kl2&&kl2.cost===34&&kl2.kind==="auction"&&/daniels/i.test(kl2.name),
         `"Puka Nacua 8" → ${kl?kl.name+" R"+kl.cost:"?"} · "Jayden Daniels $34" → ${kl2?kl2.name+" $"+kl2.cost:"?"}`);
@@ -2661,7 +2661,7 @@ function selfTest(){
     add("Championship simulator runs",simOk,"");
   }catch(e){ add("Self-test completed without crashing",false,String(e)); }
   window.removeEventListener("error",onerr);
-  add("No JavaScript errors",errs.length===0,errs.slice(0,2).join(" | "));
+  add("Nothing broke while testing",errs.length===0,errs.slice(0,2).join(" | "));
   // restore
   state.settings=snapshot.settings; state.picks=snapshot.picks; state.ui.mock=snapshot.mock;
   SIMCACHE={key:null}; loadSetupInputs(); renderAll();
