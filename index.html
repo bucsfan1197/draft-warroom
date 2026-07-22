@@ -1347,7 +1347,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:19},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:20},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null}
@@ -1376,8 +1376,7 @@ function migrate(st){
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
-  if(D&&D.PLAYERS&&st.settings._projv!==19){
-    /* Identity for matching. A defense is its TEAM, never its name: the feed calls Atlanta's
+  /* Identity for matching. A defense is its TEAM, never its name: the feed calls Atlanta's
        "Atlanta Defense" when Fantasy Football Calculator lists it and "ATL Defense" when we fill
        it in ourselves, and which of those you get changes from one refresh to the next. Matching
        those by name means a rename reads as a brand-new player, so the pool quietly grows a
@@ -1389,6 +1388,8 @@ function migrate(st){
        key — players get traded, and keying on team would turn every move into a brand new
        player. Position is stable in a way that team isn't. */
     const pkey=p=>p.pos==="DST"?"DST:"+(p.team||nrm(p.name)):p.pos+":"+nrm(p.name);
+  // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
+  if(D&&D.PLAYERS&&st.settings._projv!==20){
     const byName={};D.PLAYERS.forEach(e=>byName[pkey(e)]=e);
     const have=new Set(st.players.map(pkey));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
@@ -1401,11 +1402,26 @@ function migrate(st){
     D.PLAYERS.forEach(e=>{if(!have.has(pkey(e)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
-    /* Clean up pools that already collected duplicates before the rule above existed. Undrafted
-       copies only — anything on a roster stays put rather than vanishing from someone's team. */
+    st.settings._projv=20;
+  }
+  /* Deduping runs on EVERY load, not inside the version gate above. It was originally in there,
+     which meant it never executed for anyone whose pool was already current — exactly the people
+     carrying duplicates from an earlier build. The live site found this: a saved pool at the
+     latest version still had two Byron Murphys and nothing was ever going to clear them.
+     Undrafted copies only — anything on a roster stays put rather than vanishing from a team. */
+  if(D&&D.PLAYERS){
     (()=>{
+      /* Deliberately STRICTER than pkey. pkey decides "is this the same player as in the feed",
+         and it leaves team out because players get traded. Deletion is a different question and
+         a much less forgiving one: two entries have to agree on name, position AND team before
+         one of them is thrown away. Without the team check this merged Byron Murphy of Minnesota
+         into Byron Murphy of Seattle the moment a position went stale — two real players, one of
+         them silently deleted. Matching too eagerly costs someone a player; matching too
+         cautiously just leaves a harmless extra row. */
+      const dkey=p=>p.pos==="DST"?"DST:"+(p.team||nrm(p.name))
+                                 :p.pos+":"+(p.team||"?")+":"+nrm(p.name);
       const drafted=new Set(st.picks.map(x=>x.playerId)), seen=new Map(), drop=new Set();
-      st.players.forEach(p=>{const k=pkey(p); if(!seen.has(k))seen.set(k,[]); seen.get(k).push(p);});
+      st.players.forEach(p=>{const k=dkey(p); if(!seen.has(k))seen.set(k,[]); seen.get(k).push(p);});
       seen.forEach(list=>{ if(list.length<2)return;
         const keep=list.find(p=>drafted.has(p.id))||list[0];
         list.forEach(p=>{ if(p!==keep&&!drafted.has(p.id))drop.add(p.id); }); });
@@ -1419,7 +1435,6 @@ function migrate(st){
       st.picks=st.picks.map(x=>remap.has(x.playerId)?{...x,playerId:remap.get(x.playerId)}:null).filter(Boolean);
       st.players=kept;
     })();
-    st.settings._projv=19;
   }
   return st;
 }
@@ -2792,7 +2807,7 @@ function selfTest(){
     const misIdx=P.filter((p,i)=>p.id!==i).length;
     add("Every player's id matches his slot",misIdx===0,
         misIdx?`${misIdx} players are indexed wrong`:`${P.length} players line up`);
-    const pk=p=>p.pos==="DST"?"DST:"+p.team:p.pos+":"+nrm(p.name);
+    const pk=p=>p.pos==="DST"?"DST:"+p.team:p.pos+":"+(p.team||"?")+":"+nrm(p.name);
     const dupes={}; P.forEach(p=>{const k=pk(p);dupes[k]=(dupes[k]||0)+1;});
     const dup=Object.entries(dupes).filter(([,n])=>n>1);
     add("Nobody appears in the pool twice",dup.length===0,
