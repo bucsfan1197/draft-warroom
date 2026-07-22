@@ -2978,8 +2978,14 @@ function selfTest(){
         add("The week's win-probability line starts where the matchup does",
             Math.abs(b0.med-pre)<0.06&&Math.abs(b0.hi-b0.lo)<0.06,
             `opens at ${Math.round(b0.med*100)}% against a pregame ${Math.round(pre*100)}%`);
-        add("By the last game the week is decided",bN.lo===0&&bN.hi===1&&dp.left[dp.left.length-1]===0,
-            `${dp.stages.length} windows, nobody left to play at the end`);
+        /* Every path must END on a certainty — not span one. Requiring the final band to cover
+           both 0 and 1 assumed every simulated week produced at least one win and one loss, which
+           is false the moment the matchup is lopsided enough that all 150 paths agree. What
+           actually has to hold is that no path is left sitting on a probability. */
+        const lastI=dp.band.length-1;
+        const allDecided=dp.paths.every(p=>p[lastI]===0||p[lastI]===1);
+        add("By the last game the week is decided",allDecided&&dp.left[dp.left.length-1]===0,
+            `${dp.stages.length} windows, every path settled, nobody left to play`);
       }
     }
     add("Kickoff times are loaded",kickOn,
@@ -5643,6 +5649,51 @@ function oddsWord(p){
   if(p>=.15)return {t:"You're the underdog",c:"crit"};
   return {t:"You need a big week",c:"crit"};
 }
+/* Split out so the tab can still show your schedule and the league table before you've
+   drafted anyone — that part is meaningful from the moment the fixtures exist, even when
+   the head-to-head above it isn't. */
+function renderSeasonOutlook(SC,rosters,me,wk){
+  const T=state.settings.teams;
+  const S=simSeason(400), mine=S[me];
+  /* Rosters this empty make every game a scoreless tie, and the table then hands "100%" to
+     whichever six teams happen to sort first. The arithmetic is right and the answer is noise,
+     so label it rather than presenting it as a forecast. */
+  const filledPct=state.picks.length/Math.max(1,T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0));
+  $("#mSeasonCtx").textContent=filledPct<0.25
+    ? `only ${Math.round(filledPct*100)}% drafted — these are placeholders until rosters fill`
+    : `${SC.weeks.length} weeks · top ${SC.playoffTeams} make the playoffs`
+      +(filledPct<0.9?` · ${Math.round(filledPct*100)}% drafted, so expect movement`:``);
+  $("#myScheduleBox").innerHTML=SC.weeks.map(w=>{
+    const p=w.pairs.find(x=>x.includes(me));
+    if(!p)return `<div class="matchup"><span class="num meta" style="width:46px">Wk ${w.week}</span><span class="meta">— bye —</span></div>`;
+    const o=p[0]===me?p[1]:p[0];
+    const fin=w.done&&w.done[me]!=null&&w.done[o]!=null;
+    if(fin){const won=w.done[me]>w.done[o];
+      return `<div class="matchup${w.week===wk?" cur":""}" data-wk="${w.week}">
+        <span class="num meta" style="width:46px">Wk ${w.week}</span>
+        <span class="wl ${won?"W":"L"}">${won?"W":"L"}</span>
+        <span style="flex:1">vs ${teamLabel(o)}</span>
+        <span class="num">${fmt(w.done[me])}–${fmt(w.done[o])}</span></div>`;}
+    const s=simMatchup(weekUnits(rosters[me],w.week).starters,weekUnits(rosters[o],w.week).starters,600);
+    const q=Math.round(s.p*100);
+    return `<div class="matchup${w.week===wk?" cur":""}" data-wk="${w.week}">
+      <span class="num meta" style="width:46px">Wk ${w.week}</span>
+      <span style="flex:1">vs ${teamLabel(o)}</span>
+      <span class="wprob"><span style="width:${q}%" class="${q>=55?"good":q<=45?"bad":""}"></span></span>
+      <b class="num" style="width:38px;text-align:right">${q}%</b></div>`;
+  }).join("");
+  $$("#myScheduleBox [data-wk]").forEach(el=>el.onclick=()=>{state.ui.mWeek=+el.dataset.wk;renderMatchups();});
+
+  const order=[...Array(T).keys()].sort((x,y)=>S[y].playoff-S[x].playoff||S[y].wins-S[x].wins);
+  $("#standingsBody").innerHTML=order.map(i=>{
+    const r=S[i], g=Math.max(1,r.games), po=Math.round(r.playoff*100);
+    return `<tr${i===me?' style="background:var(--accent-soft)"':''}>
+      <td>${i===me?"★ ":""}${teamLabel(i)}</td>
+      <td class="r num">${r.wins.toFixed(1)}-${(g-r.wins).toFixed(1)}</td>
+      <td class="r num meta">${fmt(r.pf/g)}</td>
+      <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
+  }).join("");
+}
 function renderMatchups(){
   const T=state.settings.teams, me=myIdx();
   const SC=seasonSchedule(), rosters=[...Array(T).keys()].map(teamRoster);
@@ -5660,6 +5711,21 @@ function renderMatchups(){
   const pair=wobj.pairs.find(p=>p.includes(me));
   const opp=pair[0]===me?pair[1]:pair[0];
   const A=weekUnits(rosters[me],wk), B=weekUnits(rosters[opp],wk);
+
+  /* Nothing on this tab means anything until there are players to field. Before the draft the
+     maths still runs and still produces confident-looking output — a 0.0 projection reported as
+     "1% chance you win", and a league where every game is a scoreless tie reporting that winning
+     one of them takes you from 6% to 100% to make the playoffs. Both were technically correct
+     and completely useless. Say what's actually true instead. */
+  if(!A.starters.length){
+    const need=`<div class="emptystate">Draft some players and this fills in — every number here is built from your starting lineup.</div>`;
+    $("#mH2H").innerHTML=need;
+    $("#matchNote").innerHTML=`Once you have a lineup, both teams get simulated 3,000 times a week to give you a real win probability rather than a projected score.`;
+    ["mSwing","mStartSit","mLeverage"].forEach(id=>$("#"+id).innerHTML=need);
+    $("#mLevCtx").textContent="";
+    renderSeasonOutlook(SC,rosters,me,wk);
+    return;
+  }
   const played=wobj.done&&wobj.done[me]!=null&&wobj.done[opp]!=null;
   const sim=simMatchup(A.starters,B.starters,3000);
 
@@ -5704,7 +5770,13 @@ function renderMatchups(){
           a bad week at ${fmt(sim.a.lo)} drops you to ${Math.round(nc.at(sim.a.lo)*100)}%, a good one at ${fmt(sim.a.hi)} lifts you to ${Math.round(nc.at(sim.a.hi)*100)}%.
           The shaded band is where you'll usually land.</div></div>`;})()}
       ${(()=>{const dp=driftPath(A.starters,B.starters,wk,{paths:300,rest:1200});
-        if(!dp)return `<div class="mchartwrap"><div class="meta">Kickoff times for week ${wk} aren't published yet, so there's no running order to chart.</div></div>`;
+        // Two different reasons this can't be drawn, and blaming the wrong one is worse than
+        // saying nothing: the schedule may not carry times yet, or both lineups may sit in the
+        // same kickoff window so there is no sequence to show.
+        if(!dp)return `<div class="mchartwrap"><div class="meta">${
+          (window.__FFDATA__&&__FFDATA__.KICK&&__FFDATA__.KICK[(A.starters[0]||{pl:{}}).pl.team])
+            ? `Everyone in this matchup plays in the same window, so there's no running order to chart.`
+            : `The schedule doesn't carry kickoff times for week ${wk} yet, so there's no running order to chart.`}</div></div>`;
         const mi=Math.floor(dp.stages.length/2), mid=dp.band[mi];
         return `<div class="mchartwrap">
           <div class="eyebrow" style="margin-bottom:4px">How the week unfolds</div>
@@ -5799,39 +5871,7 @@ function renderMatchups(){
         ? `This one barely moves your season — about <b>${Math.round(Math.abs(lev.win-lev.lose)*100)} points</b> of playoff odds either way. Don't burn a waiver claim on it.`
         : `This week swings your playoff odds by roughly <b>${Math.round((lev.win-lev.lose)*100)} points</b>. ${lev.win-lev.lose>0.15?"It's one of the big ones.":"Worth a close look at your lineup."}`}</div>`;
 
-  // ---- season ----
-  const S=simSeason(400), mine=S[me];
-  $("#mSeasonCtx").textContent=`${SC.weeks.length} weeks · top ${SC.playoffTeams} make the playoffs`;
-  $("#myScheduleBox").innerHTML=SC.weeks.map(w=>{
-    const p=w.pairs.find(x=>x.includes(me));
-    if(!p)return `<div class="matchup"><span class="num meta" style="width:46px">Wk ${w.week}</span><span class="meta">— bye —</span></div>`;
-    const o=p[0]===me?p[1]:p[0];
-    const fin=w.done&&w.done[me]!=null&&w.done[o]!=null;
-    if(fin){const won=w.done[me]>w.done[o];
-      return `<div class="matchup${w.week===wk?" cur":""}" data-wk="${w.week}">
-        <span class="num meta" style="width:46px">Wk ${w.week}</span>
-        <span class="wl ${won?"W":"L"}">${won?"W":"L"}</span>
-        <span style="flex:1">vs ${teamLabel(o)}</span>
-        <span class="num">${fmt(w.done[me])}–${fmt(w.done[o])}</span></div>`;}
-    const s=simMatchup(weekUnits(rosters[me],w.week).starters,weekUnits(rosters[o],w.week).starters,600);
-    const q=Math.round(s.p*100);
-    return `<div class="matchup${w.week===wk?" cur":""}" data-wk="${w.week}">
-      <span class="num meta" style="width:46px">Wk ${w.week}</span>
-      <span style="flex:1">vs ${teamLabel(o)}</span>
-      <span class="wprob"><span style="width:${q}%" class="${q>=55?"good":q<=45?"bad":""}"></span></span>
-      <b class="num" style="width:38px;text-align:right">${q}%</b></div>`;
-  }).join("");
-  $$("#myScheduleBox [data-wk]").forEach(el=>el.onclick=()=>{state.ui.mWeek=+el.dataset.wk;renderMatchups();});
-
-  const order=[...Array(T).keys()].sort((x,y)=>S[y].playoff-S[x].playoff||S[y].wins-S[x].wins);
-  $("#standingsBody").innerHTML=order.map(i=>{
-    const r=S[i], g=Math.max(1,r.games), po=Math.round(r.playoff*100);
-    return `<tr${i===me?' style="background:var(--accent-soft)"':''}>
-      <td>${i===me?"★ ":""}${teamLabel(i)}</td>
-      <td class="r num">${r.wins.toFixed(1)}-${(g-r.wins).toFixed(1)}</td>
-      <td class="r num meta">${fmt(r.pf/g)}</td>
-      <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
-  }).join("");
+  renderSeasonOutlook(SC,rosters,me,wk);
 }
 /* How much a start/sit call is actually worth losing sleep over.
    Two numbers that everyone conflates: how often the player you benched outscores the one you
