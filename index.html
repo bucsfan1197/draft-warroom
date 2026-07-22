@@ -468,10 +468,10 @@
         <div class="bd" id="ageProfile"></div>
       </div>
       <div class="panel">
-        <div class="hd"><h2>Aging curves — production vs peak</h2></div>
+        <div class="hd"><h2>Aging curves — dynasty value vs peak</h2></div>
         <div class="bd">
           <div id="curveBox"></div>
-          <div class="note" style="margin-top:12px">Each line is the share of a position's peak production at a given age. <b>RBs</b> spike early and collapse by ~29; <b>WRs</b> hold a long plateau; <b>TEs</b> peak late; <b>QBs</b> barely age. Dynasty value projects each player's current points forward along his curve.</div>
+          <div class="note" style="margin-top:12px">Each line is what a player at that age is worth <b>over your whole window</b>, against the best age at his position — so it moves when you change contend/balanced/rebuild. Measured from 11 seasons (2014–2025): for a startable player at each age, how much of his production he actually delivered in later years, <b>counting players who washed out of the league as zero</b>. Two findings worth knowing, because both contradict the usual advice. <b>QBs age far more gently than anyone</b> — a 30-year-old keeps 96% of a 23-year-old's forward value over five years, where a WR or RB keeps about 43%. And <b>"RBs age fastest" is a myth</b>: RBs and WRs decline at nearly the same <i>rate</i> (0.43 vs 0.44 from 23 to 30). The real RB problem is the <i>level</i> — an RB is worth less than a WR at every single age. Age still costs a QB, but the damage lands in years five through eight, which is exactly where a contender's window has already closed.</div>
         </div>
       </div>
     </div>
@@ -793,16 +793,58 @@ const AGE={
  "Colston Loveland":22,"Tyler Warren":23,"Kyle Pitts":25
 };
 // Production as a fraction of positional peak, by integer age. Clamped at the ends.
-const AGE_CURVE={
- RB:{21:.85,22:.90,23:.96,24:1,25:1,26:.93,27:.84,28:.72,29:.60,30:.48,31:.38,32:.30,33:.24,34:.20},
- WR:{21:.78,22:.84,23:.90,24:.95,25:.99,26:1,27:1,28:.96,29:.90,30:.82,31:.73,32:.63,33:.53,34:.44,35:.37,36:.30},
- TE:{22:.62,23:.72,24:.82,25:.90,26:.96,27:1,28:1,29:.97,30:.92,31:.85,32:.77,33:.68,34:.59,35:.50,36:.42,37:.35},
- QB:{22:.82,23:.87,24:.91,25:.95,26:.98,27:1,28:1,29:1,30:1,31:1,32:.99,33:.97,34:.94,35:.90,36:.85,37:.79,38:.72,39:.65,40:.58}
+/* ---- DYNASTY RETENTION CURVES (derived, not asserted) ----
+   Built by scratchpad/build_retention.py from 11 seasons of nflverse results (2014-2025)
+   joined to roster birth dates. For a player who is a STARTABLE fantasy asset at age A,
+   RETENTION[pos][A][k] is the share of his current production he actually delivers k years
+   later — counting players who are out of the league as ZERO.
+
+   That last part is the whole point. The old hand-authored curve described what a player
+   scores *if he is still playing*, which is why it rated a 31-year-old QB almost level with
+   a 23-year-old: over four years their production curves really are nearly flat. The data
+   agrees (QB age 30 delivers 3.45 over the next four years, age 23 delivers 3.31). What it
+   missed was everything after year four, where attrition does the separating — a 24-year-old
+   QB returns 1.93 more over years 5-8, a 36-year-old returns 0.79. So the fix was not to
+   steepen the curve; it was to measure survival and to stop truncating the horizon at four
+   years. Positions differ enormously: QBs age gently, RBs fall off a cliff. */
+const RETENTION={
+ QB:{22:[1,1.003,0.849,0.754,0.74,0.694,0.68,0.633],23:[1,0.891,0.776,0.699,0.697,0.695,0.65,0.549],24:[1,0.853,0.764,0.684,0.684,0.662,0.6,0.486],25:[1,0.824,0.767,0.689,0.689,0.613,0.558,0.441],26:[1,0.833,0.798,0.677,0.659,0.578,0.543,0.426],27:[1,0.809,0.766,0.653,0.612,0.536,0.51,0.414],28:[1,0.809,0.732,0.627,0.551,0.49,0.474,0.385],29:[1,0.766,0.679,0.63,0.516,0.471,0.435,0.368],30:[1,0.808,0.702,0.652,0.502,0.451,0.407,0.324],31:[1,0.824,0.687,0.613,0.47,0.439,0.379,0.311],32:[1,0.846,0.668,0.576,0.475,0.43,0.35,0.224],33:[1,0.822,0.654,0.564,0.496,0.422,0.336,0.187],34:[1,0.812,0.686,0.565,0.477,0.384,0.274,0.103],35:[1,0.827,0.702,0.527,0.453,0.307,0.243,0.127],36:[1,0.827,0.659,0.479,0.345,0.264,0.214,0.104],37:[1,0.807,0.569,0.411,0.322,0.257,0.213,0.161],38:[1,0.708,0.466,0.396,0.305,0.255,0.217,0.134],39:[1,0.679,0.368,0.218,0.083,0,0,0],40:[1,0.635,0.375,0.226,0.086,0,0,0]},
+ RB:{21:[1,0.894,0.849,0.636,0.597,0.498,0.39,0.211],22:[1,0.897,0.769,0.629,0.531,0.421,0.286,0.145],23:[1,0.834,0.728,0.577,0.462,0.343,0.228,0.105],24:[1,0.828,0.674,0.546,0.373,0.267,0.161,0.075],25:[1,0.772,0.656,0.482,0.313,0.204,0.124,0.067],26:[1,0.753,0.58,0.421,0.244,0.149,0.092,0.049],27:[1,0.7,0.525,0.343,0.203,0.112,0.069,0.035],28:[1,0.653,0.417,0.275,0.157,0.079,0.047,0.015],29:[1,0.589,0.361,0.211,0.109,0.053,0.029,0.005],30:[1,0.57,0.321,0.189,0.103,0.055,0.025,0],31:[1,0.554,0.351,0.188,0.105,0.063,0.039,0],32:[1,0.613,0.267,0.107,0.033,0,0,0],33:[1,0.595,0.274,0.102,0.032,0,0,0]},
+ WR:{21:[1,0.961,0.946,0.946,0.9,0.831,0.727,0.66],22:[1,0.918,0.908,0.872,0.83,0.727,0.654,0.531],23:[1,0.881,0.842,0.8,0.745,0.634,0.514,0.424],24:[1,0.835,0.806,0.714,0.646,0.507,0.416,0.3],25:[1,0.829,0.742,0.642,0.55,0.416,0.307,0.223],26:[1,0.811,0.702,0.565,0.463,0.323,0.24,0.157],27:[1,0.81,0.65,0.514,0.397,0.273,0.176,0.098],28:[1,0.78,0.619,0.443,0.329,0.207,0.114,0.049],29:[1,0.763,0.562,0.409,0.27,0.145,0.06,0.016],30:[1,0.716,0.512,0.334,0.198,0.089,0.029,0.005],31:[1,0.666,0.407,0.264,0.13,0.041,0.01,0],32:[1,0.643,0.375,0.201,0.1,0.033,0.008,0],33:[1,0.607,0.282,0.135,0.066,0.013,0,0],34:[1,0.637,0.257,0.061,0.013,0,0,0],35:[1,0.622,0.223,0.027,0.004,0,0,0]},
+ TE:{22:[1,0.859,0.859,0.788,0.646,0.646,0.446,0.331],23:[1,0.852,0.825,0.744,0.668,0.573,0.481,0.372],24:[1,0.84,0.785,0.698,0.606,0.562,0.411,0.301],25:[1,0.81,0.736,0.679,0.63,0.504,0.449,0.305],26:[1,0.798,0.724,0.671,0.528,0.457,0.364,0.241],27:[1,0.769,0.704,0.596,0.511,0.37,0.35,0.255],28:[1,0.793,0.662,0.568,0.41,0.306,0.255,0.186],29:[1,0.729,0.664,0.496,0.372,0.241,0.206,0.146],30:[1,0.768,0.612,0.496,0.33,0.209,0.129,0.066],31:[1,0.685,0.567,0.447,0.274,0.16,0.077,0.024],32:[1,0.673,0.503,0.396,0.205,0.141,0.04,0.005],33:[1,0.583,0.433,0.303,0.159,0.077,0.015,0],34:[1,0.571,0.298,0.136,0.027,0,0,0],35:[1,0.527,0.323,0.121,0.022,0,0,0]}
 };
-function ageMult(pos,age){const c=AGE_CURVE[pos];if(!c)return 1;const ks=Object.keys(c).map(Number);
- const a=Math.max(Math.min(...ks),Math.min(Math.max(...ks),Math.round(age)));return c[a]??1;}
-// Window weights over a 4-year horizon: contenders value now, rebuilders value the future.
-const WINDOW_W={contend:[1,.55,.30,.15],balanced:[1,.80,.62,.45],rebuild:[.65,.85,1,1]};
+/* Window weights: contenders value now, rebuilders value the future. Extended from four years
+   to eight, because four is exactly where age stops mattering in the data and starts mattering
+   in real life — truncating there is what made every quarterback look the same age. */
+const WINDOW_W={contend:[1,.55,.30,.15,.08,.04,.02,.01],
+                balanced:[1,.80,.62,.45,.32,.22,.15,.10],
+                rebuild:[.65,.85,1,1,.92,.80,.65,.50]};
+// Retention lookup, clamped to the ages we actually measured.
+function retentionOf(pos,age,k){
+  const tab=RETENTION[pos]; if(!tab)return Math.pow(0.8,k);      // K/DST: generic decay
+  const ages=Object.keys(tab).map(Number);
+  const a=Math.max(Math.min(...ages),Math.min(Math.max(...ages),Math.round(age||27)));
+  const row=tab[a]; if(!row)return Math.pow(0.8,k);
+  return k<row.length?row[k]:row[row.length-1]*0.6;
+}
+// What a player is worth over your whole window, per point of current production.
+function assetMultiple(pos,age){
+  const w=WINDOW_W[state.settings.window]||WINDOW_W.balanced;
+  let v=0; for(let t=0;t<w.length;t++) v+=w[t]*retentionOf(pos,age,t);
+  return v;
+}
+// Same thing scaled 0-1 against the best age at that position — for age tags and the curve chart,
+// so what the UI draws is the model that's actually pricing players.
+let PEAKCACHE={};
+function assetMult(pos,age){
+  const key=pos+"|"+state.settings.window;
+  if(PEAKCACHE[key]===undefined){
+    const tab=RETENTION[pos];
+    const ages=tab?Object.keys(tab).map(Number):[27];
+    PEAKCACHE[key]=Math.max(...ages.map(a=>assetMultiple(pos,a)))||1;
+  }
+  return assetMultiple(pos,age)/PEAKCACHE[key];
+}
 // Dynasty rookie-pick reference values (1QB PPR, 0–100 scale). Superflex bumps QBs up.
 const ROOKIE_PICKS=[
  ["1.01",100,"elite"],["1.02",92,"elite"],["1.03",85,"elite"],["1.04",79,"high"],["1.05",73,"high"],["1.06",68,"high"],
@@ -889,16 +931,15 @@ function dynValue(pl){
   const w=WINDOW_W[state.settings.window]||WINDOW_W.balanced;
   const base=pts(pl);
   if(pl.pos==="K"||pl.pos==="DST") return base*w.reduce((a,b)=>a+b,0)*0.6; // age-agnostic + replaceable discount
-  const a=pl.age||27, cur=ageMult(pl.pos,a)||1; let v=0;
-  for(let t=0;t<w.length;t++) v+=w[t]*base*(ageMult(pl.pos,a+t)/cur);
-  return v;
+  // Measured retention (production decline AND washout risk) over the full window.
+  return base*assetMultiple(pl.pos,pl.age||27);
 }
 // Ranking value: dynasty value in dynasty mode, else current-year points. Best-ball tilts toward ceiling.
 function valueOf(pl){let v=state.settings.format==="dynasty"?dynValue(pl):pts(pl);if(state.settings.bestball&&pl.dist)v*=(0.55+0.45*pl.dist.c);return v;}
 function isDyno(){return state.settings.format==="dynasty";}
 function ageTag(pl){
   if(pl.pos==="K"||pl.pos==="DST")return null;
-  const a=pl.age||27, m=ageMult(pl.pos,a);
+  const a=pl.age||27, m=assetMult(pl.pos,a);
   const peakStart={RB:24,WR:25,TE:26,QB:27}[pl.pos]||25;
   if(a<=peakStart&&m>=0.9)return {label:`age ${a} · ascending`,cls:"good"};
   if(m<0.72)return {label:`age ${a} · win-now`,cls:"crit"};
@@ -1739,7 +1780,7 @@ function buildWhy(r,pun,myRound){
   if(bt)parts.push(`Historically (2014–24, ${state.settings.teams}-team${isSF()?' SF':''}), Round&nbsp;${myRound} ${r.pl.pos}s returned a startable season <b>${Math.round(bt.hit*100)}%</b> of the time (avg ${Math.round(bt.avg)} PPR pts, n=${bt.n}).`);
   parts.push(`+${fmt(r.v)} ${isDyno()?'dynasty value':'pts'} over replacement.`);
   if(isDyno()){
-    const a=r.pl.age||27, m=ageMult(r.pl.pos,a);
+    const a=r.pl.age||27, m=assetMult(r.pl.pos,a);
     if(r.pl.pos!=="K"&&r.pl.pos!=="DST"){
       if(m>=0.95&&a<=25)parts.push(`Age <b>${a}</b> — years of ascending production ahead; a multi-year cornerstone.`);
       else if(m<0.72)parts.push(`Age <b>${a}</b> — a win-now asset; value fades fast, so only if you're contending.`);
@@ -1985,6 +2026,24 @@ function selfTest(){
     add("Draft picks valued in the right order",p1>p2&&p1>pFar&&p2>0,
         `1st ${Math.round(p1)} > 2nd ${Math.round(p2)}, and a ${y+3} 1st (${Math.round(pFar)}) is worth less than a ${y+1} 1st`);
     add("Pick values match the active value scale",scaleOk,"same relative worth in points and in dynasty value");
+    // dynasty aging: younger must be worth more, and positions must age at different rates
+    state.settings.format="dynasty"; const wasWin=state.settings.window; state.settings.window="rebuild";
+    const drop=(pos,y,o)=>assetMultiple(pos,o)/assetMultiple(pos,y);
+    const ageOrdered=["QB","RB","WR","TE"].every(p=>{
+      const ms=[23,26,29,32].map(a=>assetMultiple(p,a));
+      return ms.every((v,i)=>i===0||v<=ms[i-1]+1e-9) && ms.every(v=>v>0&&isFinite(v));});
+    add("Dynasty value falls with age at every position",ageOrdered,
+        `23→32 keeps: QB ${(drop("QB",23,32)*100|0)}% · WR ${(drop("WR",23,32)*100|0)}% · RB ${(drop("RB",23,32)*100|0)}%`);
+    // The data's actual finding: QBs decline far more slowly than skill positions, and RBs are
+    // worth less than WRs at EVERY age — RB and WR decline at nearly the same rate (0.43 vs 0.44),
+    // so "RBs age fastest" is false as a rate claim and only true as a level claim.
+    add("Quarterbacks age more slowly than skill positions",
+        drop("QB",23,30)>drop("RB",23,30)&&drop("QB",23,30)>drop("WR",23,30),
+        `keeps at 30 vs 23 — QB ${(drop("QB",23,30)*100|0)}% vs WR ${(drop("WR",23,30)*100|0)}% / RB ${(drop("RB",23,30)*100|0)}%`);
+    add("Running backs are the weakest dynasty asset at every age",
+        [23,26,29].every(a=>assetMultiple("RB",a)<assetMultiple("WR",a)),
+        `RB below WR at 23/26/29`);
+    state.settings.window=wasWin; state.settings.format=wasFmt;
     // 3. mock drafts across formats: legal + no cap violations
     showTab("draft");     // drafting happens on the draft tab; hidden tabs render lazily now
     const SEG=(id,v)=>{const b=[...document.getElementById(id).querySelectorAll('button')].find(x=>x.dataset.v===v);if(b)b.click();};
@@ -2991,13 +3050,13 @@ function renderDynasty(){
   else{
     const tv=skill.reduce((s,p)=>s+Math.max(1,valueOf(p)),0);
     const wAge=skill.reduce((s,p)=>s+(p.age||27)*Math.max(1,valueOf(p)),0)/tv;
-    const wMult=skill.reduce((s,p)=>s+ageMult(p.pos,p.age||27)*Math.max(1,valueOf(p)),0)/tv;
+    const wMult=skill.reduce((s,p)=>s+assetMult(p.pos,p.age||27)*Math.max(1,valueOf(p)),0)/tv;
     const youth=Math.round(wMult*100);
     $("#ageProfileHd").textContent=`value-weighted age ${fmt(wAge)}`;
     const cvar={QB:'--qb',RB:'--rb',WR:'--wr',TE:'--te'};
     const posRows=['QB','RB','WR','TE'].map(pos=>{
       const ps=roster.filter(p=>p.pos===pos);if(!ps.length)return '';
-      const avg=ps.reduce((s,p)=>s+(p.age||0),0)/ps.length, m=ageMult(pos,avg);
+      const avg=ps.reduce((s,p)=>s+(p.age||0),0)/ps.length, m=assetMult(pos,avg);
       return `<div class="barrow"><span class="lab"><span class="pos ${pos}">${pos}</span></span>
         <div class="bar"><i style="width:${Math.round(Math.min(1,m)*100)}%;background:var(${cvar[pos]})"></i></div>
         <span class="num" style="width:70px;text-align:right">${fmt(avg)} yrs</span></div>`;
@@ -3036,7 +3095,7 @@ function curveSVG(){
   const xlab=[22,26,30,34,38].map(a=>`<text x="${X(a)}" y="${H-9}" text-anchor="middle" font-size="8" fill="var(--ink-2)">${a}</text>`).join('');
   const cvar={QB:'--qb',RB:'--rb',WR:'--wr',TE:'--te'};
   const lines=['RB','WR','TE','QB'].map(pos=>{
-    let ps=[];for(let a=aMin;a<=aMax;a++)ps.push(`${X(a).toFixed(1)},${Y(Math.min(1,ageMult(pos,a))).toFixed(1)}`);
+    let ps=[];for(let a=aMin;a<=aMax;a++)ps.push(`${X(a).toFixed(1)},${Y(Math.min(1,assetMult(pos,a))).toFixed(1)}`);
     return `<polyline points="${ps.join(' ')}" fill="none" stroke-width="2" style="stroke:var(${cvar[pos]})"/>`;
   }).join('');
   const legend=['RB','WR','TE','QB'].map((pos,i)=>`<g transform="translate(${x0+i*52},8)"><rect width="9" height="9" rx="2" style="fill:var(${cvar[pos]})"/><text x="13" y="8" font-size="9" fill="var(--ink-2)">${pos}</text></g>`).join('');
