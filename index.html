@@ -80,7 +80,7 @@
   #s_clock,#s_adp{flex-wrap:wrap;height:auto}
   /* ---- trade calculator ---- */
   /* a textarea doesn't fill its box on its own — without this it sits at its default ~20 cols */
-  #labGive,#labGet,#keepList,#lab3r0,#lab3r1,#lab3r2{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
+  #labGive,#labGet,#keepList,#capList,#lab3r0,#lab3r1,#lab3r2{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
     padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);
     color:var(--ink);resize:vertical;min-height:96px}
   .labside{margin-top:6px;display:flex;flex-direction:column;gap:3px;min-height:20px}
@@ -112,7 +112,7 @@
     .grid-draft{grid-template-columns:1fr!important;gap:12px}
     .sticky-col{position:static}                 /* sticky wastes vertical room on a phone */
     /* the calculator's two panes stack on a phone, and 16px stops iOS zooming on focus */
-    #labGive,#labGet,#keepList,#lab3r0,#lab3r1,#lab3r2{font-size:16px}
+    #labGive,#labGet,#keepList,#capList,#lab3r0,#lab3r1,#lab3r2{font-size:16px}
     .labopts{gap:8px}
     .labopts label{flex:1 1 100%}
     .clock{flex-wrap:wrap;gap:8px;padding:12px}
@@ -280,6 +280,7 @@
       <button class="tab" data-tab="backtest">Backtest</button>
       <button class="tab hide" data-tab="dynasty" id="dynastyTabBtn">Dynasty</button>
       <button class="tab hide" data-tab="keepers" id="keeperTabBtn">Keepers</button>
+      <button class="tab hide" data-tab="cap" id="capTabBtn">Contracts</button>
       <button class="tab" data-tab="season">In-Season</button>
       <button class="tab" data-tab="trade">Trades</button>
       <span id="dataAge" class="meta" style="margin-left:auto;align-self:center;white-space:nowrap"></span>
@@ -563,6 +564,25 @@
   </section>
 
   <!-- PROJECTIONS TAB -->
+  <section id="tab-cap" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Contracts &amp; cap</h2><span id="capCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="grid-draft" style="grid-template-columns:2fr 1fr;gap:12px">
+          <div>
+            <h3 class="eyebrow" style="margin-bottom:6px">Your roster — player, cap hit, years left</h3>
+            <textarea id="capList" rows="9" spellcheck="false" placeholder="One per line:&#10;Puka Nacua $42 3yr&#10;Bijan Robinson $55 x2&#10;Brock Bowers $18&#10;Drake Maye $12 4yr"></textarea>
+          </div>
+          <div>
+            <h3 class="eyebrow" style="margin-bottom:6px">League</h3>
+            <div class="field"><label>Salary cap ($)</label><input type="number" id="capAmt" min="1" step="1" value="200"></div>
+            <div class="note" style="margin-top:8px">A contract is only good if the player beats what that same money would buy elsewhere. Cheap stars win cap leagues; expensive fine players lose them.</div>
+          </div>
+        </div>
+        <div id="capOut" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </section>
   <section id="tab-keepers" class="hide">
     <div class="panel">
       <div class="hd"><h2>Keeper decisions</h2><span id="keepCtx" class="pickcounter" style="margin-left:auto"></span></div>
@@ -699,6 +719,10 @@
             <div class="field idpfield"><label>DB</label><input type="number" id="r_DB" min="0" step="1"></div>
             <div class="field idpfield"><label>IDP FLEX (DL/LB/DB)</label><input type="number" id="r_IDP_FLEX" min="0" step="1"></div>
             <div class="field"><label>Bench</label><input type="number" id="r_BENCH" min="0" step="1"></div>
+            <div class="field" style="grid-column:1/-1"><label>Salary cap / contract league</label>
+              <span class="seg" id="s_cap"><button data-v="0" class="on">Off</button><button data-v="1">On — contracts &amp; cap</button></span>
+              <div class="note" style="margin-top:6px">Adds a <b>Contracts</b> tab that judges every cap hit against what that money would buy on the open market, and makes the trade calculator check that a deal actually fits under both teams' caps.</div>
+            </div>
             <div class="field" style="grid-column:1/-1"><label>Individual defensive players (IDP)</label>
               <span class="seg" id="s_idp"><button data-v="0" class="on">Off</button><button data-v="1">On — start defenders</button></span>
               <div class="note" id="idpNote" style="margin-top:6px">Turning this on adds <b>260 defenders</b> to the pool and reveals DL/LB/DB slots and defensive scoring below. Tackle numbers dwarf offensive stats, so <b>set your scoring before trusting the board</b> — a tackle-heavy league and a big-play league rank defenders completely differently.</div>
@@ -1807,6 +1831,7 @@ const TAB_RENDER={
   season:  ()=>renderInSeason(),
   dynasty: ()=>renderDynasty(),
   keepers: ()=>renderKeepers(),
+  cap:     ()=>renderCapSheet(),
   players: ()=>renderPlayersTab(),
   setup:   ()=>renderReplBox(),
   trade:   ()=>labCompute()             // the finder/evaluator below it build on demand
@@ -2249,6 +2274,27 @@ function selfTest(){
     state.settings.format=wf2; LABC={key:null};
     add("Superflex raises quarterback prices",qbSF>qb1*1.05,
         qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    // ---- salary cap / contracts ----
+    const cl=parseContractLine("Puka Nacua $42 3yr"), cl2=parseContractLine("Bijan Robinson 55 x2");
+    add("Contract lines parse (salary and years)",
+        cl&&cl.salary===42&&cl.years===3&&/nacua/i.test(cl.name)
+        &&cl2&&cl2.salary===55&&cl2.years===2&&/bijan/i.test(cl2.name),
+        cl?`"$42 3yr" → $${cl.salary}/${cl.years}yr · "55 x2" → $${cl2&&cl2.salary}/${cl2&&cl2.years}yr`:"");
+    const cpl=P.filter(x=>!x.idp&&x.pos!=="K"&&x.pos!=="DST").sort((a,b)=>pts(b)-pts(a))[0];
+    const cheapC=contractSurplus(cpl,10,1).total, dearC=contractSurplus(cpl,90,1).total;
+    add("The same player is worth more on a cheaper contract",cheapC>dearC,
+        cpl?`${cpl.name}: +${Math.round(cheapC)} at $10 vs ${Math.round(dearC)} at $90`:"");
+    const mkt=[5,20,50,90].map(d=>auctionValueAt(d));
+    add("Contract cost rises with salary",mkt.every((v,i)=>i===0||v>=mkt[i-1]-1e-9),
+        mkt.map(v=>Math.round(v)).join(" → "));
+    // the market comparison must be same-currency on both sides: an all-$1 roster is under market
+    const wasCap=state.settings.salaryCap; state.settings.salaryCap=true;
+    const sample=P.filter(x=>!x.idp&&x.pos!=="K"&&x.pos!=="DST").slice(0,12);
+    const cheapCmp=capMarketCompare(sample,()=>1), dearCmp=capMarketCompare(sample,()=>999);
+    add("Cap comparison reads the right way round",
+        cheapCmp.market>cheapCmp.paid&&dearCmp.paid>dearCmp.market&&cheapCmp.prod===dearCmp.prod,
+        `same lineup: $1 deals read under market, $999 deals read over, production identical`);
+    state.settings.salaryCap=wasCap;
     // ---- three-team trades ----
     // No league is loaded during a self-test, so exercise the pieces on synthetic rosters:
     // conservation (nothing created or destroyed) is the invariant that matters.
@@ -2880,6 +2926,33 @@ function labSettingsLine(){
   return `Priced for <b>${bits.join(" · ")}</b>. ${how}${seriesNote}
     <span class="meta">Market prices are quoted for 12-team leagues — the shape barely moves with league size, but a very shallow or very deep league will shade values slightly.</span>`;
 }
+/* Cap check. In a salary-cap league the most common reason a trade dies isn't value — it's that
+   the deal doesn't fit, and no free calculator tells you. Salaries come from the Contracts tab
+   where they're known, or can be tagged inline ("Bijan Robinson $55"). */
+function labSalaryOf(a){
+  if(!a||a.kind!=="player"||!a.player) return null;
+  const inline=(a.raw||"").match(/\$\s*(\d+(?:\.\d+)?)/);
+  if(inline) return +inline[1];
+  const row=(state.ui.capSalaries||{})[a.player.id];
+  return row!=null?row:null;
+}
+function labCapCheck(give,get){
+  if(!capOn()) return "";
+  const outS=give.map(labSalaryOf), inS=get.map(labSalaryOf);
+  const known=[...outS,...inS].filter(x=>x!=null).length;
+  if(!known) return `<div class="note" style="margin-top:8px">This is a cap league — add each player's cap hit to see whether the deal fits, either on the Contracts tab or inline like <code>Bijan Robinson $55</code>.</div>`;
+  const sumOut=outS.reduce((a,b)=>a+(b||0),0), sumIn=inS.reduce((a,b)=>a+(b||0),0);
+  const net=sumIn-sumOut;
+  // your own committed salary comes from the Contracts tab when it's filled in
+  const committed=contractRows().reduce((a,r)=>a+(r.player?r.salary:0),0);
+  const after=committed+net, cap=capTotal();
+  const missing=[...give,...get].filter(a=>a.kind==="player"&&a.player&&labSalaryOf(a)==null);
+  return `<div class="note" style="margin-top:8px">
+    <b>Cap:</b> you take on <b>$${sumIn}</b> and shed <b>$${sumOut}</b> — a net ${net>=0?"add":"saving"} of <b>$${Math.abs(net)}</b>.
+    ${committed?` That puts you at <b>$${after}</b> of $${cap}${after>cap?` — <b style="color:var(--crit)">$${after-cap} over the cap, so this trade can't be made as it stands</b>`:`, leaving <b>$${cap-after}</b> of room`}.`:""}
+    ${missing.length?` <span class="meta">No cap hit known for ${missing.map(m=>m.player.name).join(", ")} — tag them with a $ amount to include them.</span>`:""}
+  </div>`;
+}
 function labRenderSide(list,elId,nId){
   const el=$(elId); if(!el)return;
   el.innerHTML=list.map(a=>{
@@ -3077,6 +3150,7 @@ function labCompute(){
       </div>
       ${avgDis!=null?`<div class="note" style="margin-top:8px">${avgDis>=0.45?"⚠️ ":""}The three market sources ${avgDis>=0.45?"<b>disagree sharply</b>":"broadly agree"} about these players (spread ${avgDis.toFixed(2)} sd)${avgDis>=0.45?" — treat this verdict as soft, and check the players individually.":"."}</div>`:""}
       ${unmatched.length?`<div class="note" style="margin-top:8px">⚠️ Couldn't match: <b>${unmatched.map(u=>u.raw).join(", ")}</b> — check the spelling, or pick from the dropdown.</div>`:""}
+      ${labCapCheck(give,get)}
       <div class="note" style="margin-top:8px">${labSettingsLine()}</div>
     </div>
     <div id="labExtra"></div>`;
@@ -3299,6 +3373,142 @@ function auctionDollarsToRound(dollars){
   priced.forEach(x=>{const d=Math.abs(x.$-dollars); if(d<bd){bd=d;best=x;}});
   return Math.max(1,Math.round(best.adp/T+0.49));
 }
+/* ==================== SALARY-CAP / CONTRACT LEAGUES ====================
+   A contract is a multi-year keeper at a fixed price, so the valuation reuses the keeper engine:
+   what a player is worth over replacement, against what that same money buys on the open market.
+   What's genuinely different is the CAP. Cap space is the binding constraint in these leagues and
+   the thing that kills trades, and no free tool checks it — so the trade calculator now does.
+
+   The other number nobody offers: cap efficiency. Your cap could buy some best-possible starting
+   lineup; how close is yours to it? That's the question a cap league actually turns on. */
+function capOn(){ return !!(state.settings.salaryCap); }
+function capTotal(){ return +(state.settings.cap||200); }
+// "Puka Nacua $42 3yr" / "Bijan Robinson 55 x2" / "Brock Bowers $18"
+function parseContractLine(line){
+  const s=String(line||"").trim(); if(!s) return null;
+  const money=s.match(/\$?\s*(\d+(?:\.\d+)?)\s*(?:$|[\s,])/);
+  const dollars=(s.match(/\$\s*(\d+(?:\.\d+)?)/)||[])[1];
+  const yrs=(s.match(/(?:x\s*(\d)|(\d)\s*(?:yr|yrs|years?))/i)||[]);
+  const years=+(yrs[1]||yrs[2]||1);
+  let salary=dollars!=null?+dollars:null;
+  if(salary==null){ const bare=s.match(/[\s,](\d{1,3})(?:\s|$)/); if(bare)salary=+bare[1]; }
+  const name=s.replace(/\$\s*\d+(\.\d+)?/,"")
+              .replace(/(?:x\s*\d|\d\s*(?:yr|yrs|years?))/ig,"")
+              .replace(/[\s,]+\d{1,3}\s*$/,"").replace(/[,;]+$/,"").trim();
+  return {name,salary,years:Math.max(1,Math.min(5,years)),raw:s};
+}
+/* Worth of a contract: each year the player produces over replacement, minus what that salary
+   could have bought instead, aged along the measured retention curves and discounted. */
+function contractSurplus(pl,salary,years){
+  const {levels}=replacementLevels();
+  const base=Math.max(0,vorp(pl,levels));
+  const rows=[]; let total=0;
+  for(let y=0;y<years;y++){
+    const keep=y===0?1:retentionOf(pl.pos,pl.age||27,y);
+    const val=base*keep, cost=auctionValueAt(salary), disc=Math.pow(0.9,y);
+    rows.push({year:y,val,cost,surplus:(val-cost)*disc});
+    total+=(val-cost)*disc;
+  }
+  return {total,rows,base};
+}
+function contractRows(){
+  const txt=($("#capList")&&$("#capList").value)||"";
+  const out=[];
+  txt.split("\n").forEach((line,i)=>{
+    const c=parseContractLine(line); if(!c||!c.name) return;
+    const cands=fuzzyPlayers(c.name,6);
+    const pinned=(state.ui.capPin||{})[i];
+    const pl=(pinned!=null?state.players.find(p=>p.id===pinned):null)||cands[0]||null;
+    if(!pl){ out.push({raw:c.raw,player:null,idx:i}); return; }
+    const salary=c.salary!=null?c.salary:1;
+    const s=contractSurplus(pl,salary,c.years);
+    out.push({raw:c.raw,player:pl,cands,idx:i,salary,years:c.years,
+              surplus:s.total,rows:s.rows,base:s.base,
+              perDollar:salary>0?s.base/salary:0});
+  });
+  return out;
+}
+/* What your starters would COST at open-market prices, against what you actually pay for them.
+   The first attempt scored the roster against a greedy "best lineup this cap could buy", which
+   produced 146% efficiency — nonsense, because the user's contract salaries and the market's
+   prices are two different currencies and a below-market roster beat the benchmark. Comparing
+   your lineup's market price to your own cap hits is the same currency on both sides, and it
+   answers the real question: are these contracts cheap or dear? */
+function capMarketCompare(players,salaryOf){
+  const {levels}=replacementLevels(), A=auctionCtx();
+  const L=fillLineup(players);
+  let prod=0, market=0, paid=0;
+  L.slots.forEach(x=>{ if(!x.pl)return;
+    prod+=Math.max(0,vorp(x.pl,levels));
+    market+=Math.max(1,A.val(x.pl));
+    paid+=(salaryOf(x.pl)||0); });
+  return {prod,market,paid,slots:L.slots};
+}
+function renderCapSheet(){
+  const box=$("#capOut"); if(!box)return;
+  const rows=contractRows();
+  const ctx=$("#capCtx");
+  const cap=capTotal();
+  const committed=rows.reduce((a,r)=>a+(r.player?r.salary:0),0);
+  const space=cap-committed;
+  if(ctx)ctx.textContent=`$${committed} of $${cap} committed · $${space} free`;
+  if(!rows.length){
+    box.innerHTML=`<div class="note">List your roster one per line, with each player's cap hit and how many years are left:
+      <br><br><code>Puka Nacua $42 3yr</code> &nbsp; <code>Bijan Robinson $55 x2</code> &nbsp; <code>Brock Bowers $18</code>
+      <br><br>Every contract is judged against <b>what that same money would buy on the open market</b> — that's what makes a deal good or bad, not the raw salary.</div>`;
+    return;
+  }
+  const good=rows.filter(r=>r.player).sort((a,b)=>b.surplus-a.surplus);
+  // remember every cap hit so the trade calculator can check a deal without re-typing them
+  state.ui.capSalaries={}; good.forEach(r=>state.ui.capSalaries[r.player.id]=r.salary);
+  const salaryOf=pl=>{const r=good.find(x=>x.player.id===pl.id);return r?r.salary:0;};
+  const cmp=capMarketCompare(good.map(r=>r.player),salaryOf);
+  const saving=cmp.market-cmp.paid;                 // below market = money you didn't have to spend
+  const ratio=cmp.market>0?cmp.paid/cmp.market:1;
+  const cuts=good.filter(r=>r.surplus<0);
+  const verdict=r=>r.surplus>60?["BARGAIN","good"]:r.surplus>15?["GOOD VALUE","good"]
+    :r.surplus>-15?["FAIR PRICE","warn"]:["OVERPAID","crit"];
+  box.innerHTML=`
+    <div class="rec top">
+      <div class="r1"><span class="nm">${saving>=0?`$${Math.round(saving)} under market`:`$${Math.round(-saving)} over market`}</span>
+        <span class="chip ${ratio<=0.8?'good':ratio<=1.05?'warn':'crit'}" style="margin-left:8px">${
+          ratio<=0.8?"Your starters are signed well below what they'd cost to buy."
+          :ratio<=1.05?"Your starters cost about what they're worth."
+          :"You're paying above market for this lineup."}</span></div>
+      <div class="cardmeta"><span>Committed <b>$${committed}</b> of $${cap}</span>
+        <span>${space>=0?`Space <b>$${space}</b>`:`<b style="color:var(--crit)">$${-space} OVER THE CAP</b>`}</span>
+        <span>Starters produce <b>${Math.round(cmp.prod)}</b> over replacement</span>
+        <span class="meta">you pay $${Math.round(cmp.paid)} for them; buying the same lineup today costs about $${Math.round(cmp.market)}</span></div>
+      ${space<0?`<div class="note" style="margin-top:8px">⚠️ You're <b>$${-space} over the cap</b> — something has to go before anything else matters.</div>`:""}
+    </div>
+    <div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr>
+      <th>Player</th><th>Cap hit</th><th class="r">Worth</th><th class="r">That money buys</th>
+      <th class="r">Surplus</th><th class="r">Per $</th><th>Verdict</th></tr></thead><tbody>
+    ${good.map(r=>{const v=verdict(r);
+      return `<tr>
+        <td>${r.cands&&r.cands.length>1
+          ? `<select class="cappick" data-idx="${r.idx}">`+r.cands.map(c=>`<option value="${c.id}"${c.id===r.player.id?" selected":""}>${c.name} · ${c.pos}</option>`).join("")+`</select>`
+          : `<b>${r.player.name}</b> <span class="meta">${r.player.pos}</span>`}</td>
+        <td>$${r.salary}${r.years>1?` <span class="meta">${r.years}yr</span>`:""}</td>
+        <td class="r">${Math.round(r.base)}</td>
+        <td class="r">${Math.round(r.rows[0].cost)}</td>
+        <td class="r"><b style="color:${r.surplus>=0?'var(--good)':'var(--crit)'}">${r.surplus>=0?"+":""}${Math.round(r.surplus)}</b></td>
+        <td class="r">${r.perDollar.toFixed(1)}</td>
+        <td><span class="chip ${v[1]}">${v[0]}</span></td></tr>`
+      +(r.years>1?`<tr><td colspan="7" class="meta" style="padding-top:0">${
+        r.rows.map(y=>`yr${y.year+1}: ${y.surplus>=0?"+":""}${Math.round(y.surplus)}`).join(" · ")}</td></tr>`:"");
+    }).join("")}
+    ${rows.filter(r=>!r.player).map(r=>`<tr><td colspan="7" class="meta">⚠️ Couldn't match “${r.raw}”</td></tr>`).join("")}
+    </tbody></table></div>
+    ${cuts.length?`<div class="note" style="margin-top:10px"><b>Cut candidates:</b> ${
+      cuts.map(r=>`${r.player.name} (frees <b>$${r.salary}</b>, costs you ${Math.round(r.base)} over replacement — that money buys ${Math.round(r.rows[0].cost)})`).join(" · ")}.
+      Cutting only helps if you spend the space on someone better than what you dropped.</div>`:""}
+    <div class="note" style="margin-top:10px">Each contract is judged against <b>what that salary would buy on the open market</b>, not against its raw size — a $50 stud can be a bargain and a $8 bench player can be a waste. The headline compares what you pay your starters against what that same lineup would cost to sign today — same currency on both sides. Multi-year deals age the player along the measured retention curves (including his odds of falling out of the league) and discount later seasons.</div>`;
+  box.querySelectorAll("select.cappick").forEach(sel=>{
+    sel.onchange=()=>{state.ui.capPin=state.ui.capPin||{};
+      state.ui.capPin[sel.dataset.idx]=+sel.value; renderCapSheet();};
+  });
+}
 function renderKeepers(){
   const box=$("#keepOut"); if(!box)return;
   const cfg=keeperCfg();
@@ -3358,6 +3568,21 @@ function renderKeepers(){
     sel.onchange=()=>{state.ui.keepPin=state.ui.keepPin||{};
       state.ui.keepPin[sel.dataset.idx]=+sel.value; renderKeepers();};
   });
+}
+function wireCap(){
+  const t=$("#capList"); if(!t)return;
+  let d=null;
+  t.oninput=()=>{clearTimeout(d);d=setTimeout(()=>{state.ui.capPin={};renderCapSheet();},160);};
+  $("#capAmt").oninput=()=>{state.settings.cap=Math.max(1,+$("#capAmt").value||200);renderCapSheet();save();};
+  $$("#s_cap button").forEach(b=>b.onclick=()=>{
+    state.settings.salaryCap=(b.dataset.v==="1");
+    if(state.settings.salaryCap&&!state.settings.cap)state.settings.cap=200;
+    $$("#s_cap button").forEach(x=>x.classList.toggle("on",x===b));
+    if(!capOn()&&$("#tab-cap").offsetParent!==null)showTab("draft");
+    loadSetupInputs(); renderAll();
+    flash(capOn()?"Cap league on — Contracts tab added":"Cap league off");
+  });
+  if(state.settings.cap)$("#capAmt").value=state.settings.cap;
 }
 function wireKeepers(){
   const t=$("#keepList"); if(!t)return;
@@ -4124,6 +4349,8 @@ function applyFormatUI(){
   const dyn=isDyno();
   $("#dynastyTabBtn").classList.toggle("hide",!dyn);
   $("#keeperTabBtn").classList.toggle("hide",!keeperIsOn());
+  $("#capTabBtn").classList.toggle("hide",!capOn());
+  $$("#s_cap button").forEach(x=>x.classList.toggle("on",(+x.dataset.v===1)===capOn()));
   $("#windowField").classList.toggle("hide",!dyn);
   $("#dynNote").classList.toggle("hide",!dyn);
   $$("#s_format button").forEach(b=>b.classList.toggle("on",b.dataset.v===state.settings.format));
@@ -4308,7 +4535,7 @@ function wireSetup(){
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
   $("#selfTestBtn").onclick=()=>selfTest();
   $("#introBtn").onclick=()=>showOnboarding();
-  wireTradeLab(); wireKeepers();
+  wireTradeLab(); wireKeepers(); wireCap();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   $("#tradeFindBtn").onclick=()=>findTrades();
