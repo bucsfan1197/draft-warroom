@@ -3117,6 +3117,16 @@ function selfTest(){
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
                         :`${strip?strip.children.length:0} tabs, no strays`);
+    /* The projections carry a measured, cross-validated correction, not raw consensus. This checks
+       it survived into the blob and still points the right way — quarterbacks corrected DOWN, which
+       is the one direction four seasons of data agree on. A correction that silently flipped sign
+       would quietly make every projection worse, so it's worth a guard even though it's applied
+       upstream in the refresher. */
+    const PF=D.PROJFIX;
+    add("Projections carry the measured bias correction",
+        !!(PF&&PF.bias&&PF.bias.QB<0),
+        PF&&PF.bias?`QB ${PF.bias.QB} · validated across ${(PF.years||[]).length} seasons, beats consensus every fold: ${PF.beatsEveryFold!==false}`
+                   :"absent — projections are raw consensus");
     add("Kickoff times are loaded",kickOn,
         kickOn?`${Object.keys(D.KICK).length} teams — the drift chart can run`
               :"absent, so the drift chart is hidden rather than guessed at");

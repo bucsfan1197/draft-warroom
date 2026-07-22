@@ -580,7 +580,7 @@ def build_data():
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,
-         "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),
+         "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,
                  "usageEval":base.get("USAGE_EVAL"),
