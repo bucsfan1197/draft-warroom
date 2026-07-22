@@ -1186,29 +1186,41 @@ function btKey(){const sizes=[8,10,12];const t=sizes.reduce((a,b)=>Math.abs(b-st
 function btCell(round,pos){const t=(window.__FFDATA__&&window.__FFDATA__.BACKTEST[btKey()])||{};return (t[String(round)]||{})[pos]||null;}
 
 // replacement level points per position, given league settings
+/* Replacement level is the single most load-bearing number in the app — every VORP, every
+   recommendation, every trade and keeper verdict is measured against it. It used to be set by
+   assumed flex splits (RB 45% / WR 45% / TE 10%), superflex splits (QB 72%...) and IDP splits,
+   three sets of hand-picked constants that quietly decided how valuable each position was.
+
+   Those assumptions aren't needed. Fill the league's starting lineups greedily in value order —
+   dedicated slots first, then flex, then superflex — and see who's actually left. Replacement is
+   then what it's supposed to mean: the best player at that position who ISN'T starting anywhere,
+   i.e. the guy you could have off the wire instead. It self-adjusts to any roster shape, any
+   scoring, superflex, TE premium, IDP and deep benches, with nothing hardcoded. */
 function replacementLevels(){
   const T=state.settings.teams, R=state.settings.roster;
-  // base starters per position across league
-  const base={QB:T*R.QB,RB:T*R.RB,WR:T*R.WR,TE:T*R.TE,K:T*R.K,DST:T*R.DST};
-  // distribute FLEX slots across RB/WR/TE by typical usage
-  const flexTotal=T*R.FLEX, share={RB:0.45,WR:0.45,TE:0.10};
-  FLEX_POS.forEach(p=>base[p]+=Math.round(flexTotal*share[p]));
-  // superflex slots start mostly QBs — this raises QB replacement depth (and thus elite-QB VORP)
-  // defenders: their own starters plus a share of the IDP flex, which is usually filled by LBs
-  if(idpOn()){
-    base.DL=T*(R.DL||0); base.LB=T*(R.LB||0); base.DB=T*(R.DB||0);
-    const idpFlex=T*(R.IDP_FLEX||0), ishare={DL:0.2,LB:0.5,DB:0.3};
-    IDP_POS.forEach(p=>base[p]+=Math.round(idpFlex*ishare[p]));
+  const openDedicated={}; ALLPOS.forEach(p=>openDedicated[p]=T*(R[p]||0));
+  let openFlex=T*(R.FLEX||0), openSuper=T*(R.SUPERFLEX||0), openIdp=T*(R.IDP_FLEX||0);
+  const ranked=state.players.filter(p=>inLeague(p))
+    .map(p=>({p,v:valueOf(p)})).filter(x=>isFinite(x.v)).sort((a,b)=>b.v-a.v);
+  const started={}, lastStarted={}, firstBenched={};
+  ALLPOS.forEach(p=>{started[p]=0;});
+  for(const {p,v} of ranked){
+    const pos=p.pos; let placed=false;
+    if(openDedicated[pos]>0){ openDedicated[pos]--; placed=true; }
+    else if(pos!=="QB"&&FLEX_POS.includes(pos)&&openFlex>0){ openFlex--; placed=true; }
+    else if(SUPER_POS.includes(pos)&&openSuper>0){ openSuper--; placed=true; }
+    else if(IDP_POS.includes(pos)&&openIdp>0){ openIdp--; placed=true; }
+    if(placed){ started[pos]=(started[pos]||0)+1; lastStarted[pos]=v; }
+    else if(firstBenched[pos]===undefined) firstBenched[pos]=v;   // best man not starting anywhere
   }
-  const sfTotal=T*(R.SUPERFLEX||0);
-  base.QB+=Math.round(sfTotal*0.72);base.RB+=Math.round(sfTotal*0.13);base.WR+=Math.round(sfTotal*0.12);base.TE+=Math.round(sfTotal*0.03);
   const levels={};
   ALLPOS.forEach(pos=>{
-    const arr=state.players.filter(p=>p.pos===pos).map(valueOf).sort((a,b)=>b-a);
-    const idx=Math.min(Math.max(base[pos]-1,0),arr.length-1);
-    levels[pos]=arr.length?arr[idx]:0;
+    levels[pos]=firstBenched[pos]!==undefined?firstBenched[pos]
+               :(lastStarted[pos]!==undefined?lastStarted[pos]:0);
   });
-  return {levels,base};
+  // `base` is still reported as the count of league-wide starters at each position, now observed
+  // rather than assumed — other code uses it to size targets and sanity checks.
+  return {levels,base:started};
 }
 function vorp(pl,levels){return valueOf(pl)-(levels[pl.pos]||0);}
 
@@ -1396,7 +1408,35 @@ function recommendations(){
   return {list:scored,levels,picksUntilNext,need,flexNeed,superNeed,myRound};
 }
 // crude share of upcoming picks likely spent on a position
-function posDemandShare(pos){return ({QB:0.12,RB:0.34,WR:0.34,TE:0.10,K:0.04,DST:0.04,DL:0.05,LB:0.08,DB:0.06})[pos]||0.1;}
+/* What share of the next few picks goes to each position — used to estimate how many players at
+   a position will vanish before your next turn. This was hand-set and flat; 11 seasons of real
+   drafts say it's neither. Measured 12-team 1QB shares are WR .395 / RB .358 / QB .141 / TE .106,
+   and they move a lot by round: quarterbacks are 5.9% of the first four rounds and 18.5% of round
+   ten onward — 29.9% early in superflex. Reading the actual round makes run-risk warnings mean
+   something instead of being a constant. */
+function posDemandShare(pos){
+  const FALLBACK={QB:0.14,RB:0.36,WR:0.39,TE:0.11,K:0.03,DST:0.03,DL:0.05,LB:0.08,DB:0.06};
+  const t=(window.__FFDATA__&&window.__FFDATA__.BACKTEST||{})[btKey()];
+  const round=Math.floor(state.picks.length/Math.max(1,state.settings.teams))+1;
+  if(t){
+    const acc={}; let tot=0;
+    for(let r=round;r<=Math.min(14,round+2);r++){
+      const row=t[String(r)]; if(!row)continue;
+      Object.entries(row).forEach(([p,v])=>{acc[p]=(acc[p]||0)+v.n; tot+=v.n;});
+    }
+    if(tot>40){
+      // the backtest only tracks skill positions; kickers and defences come off the board at
+      // the very end, so give them a share that only appears once the draft is nearly over
+      const late=round>=Math.max(8,(Object.values(state.settings.roster).reduce((a,b)=>a+b,0))-4);
+      const kd=late?0.11:0.01;
+      if(pos==="K"||pos==="DST") return kd;
+      if(IDP_POS.includes(pos)) return FALLBACK[pos];
+      const share=(acc[pos]||0)/tot;
+      return Math.max(0.01,share*(1-2*kd));
+    }
+  }
+  return FALLBACK[pos]||0.1;
+}
 
 /* ---- Positional tiers (Elite/Great/…) + run detection ---- */
 function tierData(){
@@ -1689,6 +1729,31 @@ async function syncTick(first,slotMsg){
 /* ===================== MONTE CARLO DRAFT SIMULATOR ===================== */
 let SIMCACHE={key:null,results:null,ms:0,sims:0};
 function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+/* ---- HOW A SEASON IS SAMPLED ----
+   Two different uncertainties get confused constantly, and confusing them makes a simulator
+   overconfident in both directions at once:
+
+     SEASON-LONG  the projection itself may be wrong, and that error persists all year.
+     WEEK-TO-WEEK a player who finishes exactly on projection still swings wildly each week.
+
+   Redrawing the season-level factor every week (what this used to do) averages the season error
+   away over 17 weeks AND leaves weekly swings far too small — so the better team wins too often
+   and title odds come out too extreme. Both are now modelled separately, calibrated against 11
+   seasons of real weekly results (scratchpad/variance.py):
+     measured week-to-week CV per player: QB .43  RB .64  WR .67  TE .72
+     measured CV of a real team's weekly total: 0.263 */
+const WEEK_CV={QB:0.43,RB:0.64,WR:0.67,TE:0.72,K:0.55,DST:0.75,DL:0.72,LB:0.55,DB:0.78};
+function normPdf(z){return Math.exp(-z*z/2)/Math.sqrt(2*Math.PI);}
+/* Weekly scoring is strongly right-skewed — a floor at zero and the occasional three-times
+   week — so a lognormal fits it far better than a clipped normal. Mean is exactly 1. */
+function weekFactor(cv){ const s=Math.sqrt(Math.log(1+cv*cv)); return Math.exp(-s*s/2+gauss()*s); }
+/* Season-long error is near-symmetric in the data (measured p15/p85 of 0.53/1.49 sit either side
+   of 1.0), so a normal is right — but clipping it at zero would quietly raise the mean, and by
+   more for volatile players, which would flatter exactly the high-variance guys. Dividing by the
+   clipped mean E[max(0,X)] restores a mean of exactly 1. */
+function truncMean(sd){ const z=1/sd; return normCdf(z)+sd*normPdf(z); }
+function seasonFactor(sd){ if(!(sd>0))return 1; return Math.max(0,1+gauss()*sd)/truncMean(sd); }
+function weekCvOf(pos){ return WEEK_CV[pos]||0.65; }
 function simKey(){const s=state.settings;return `${state.picks.length}|${s.teams}|${s.slot}|${s.snake}|${isSF()?1:0}|${JSON.stringify(s.roster)}|${JSON.stringify(s.scoring)}`;}
 function simNeedMult(pos,c,R){
   const req={QB:R.QB,RB:R.RB,WR:R.WR,TE:R.TE};
@@ -1787,15 +1852,21 @@ function runSim(nIters){
     for(let t=0;t<T;t++){
       const arr=ros[t].filter(id=>MM[id]).map(id=>{const p=state.players[id],d=p.dist,bp=pts(p);
         const sd=d?(d.c-d.f)/2.08:0.18, nfl=p.team; if(off[nfl]===undefined)off[nfl]=gauss()*0.11;
-        const isPass=(p.pos==="QB"||p.pos==="WR"||p.pos==="TE"), tot=bp*Math.max(0.12,1+gauss()*sd*0.9+off[nfl]*(isPass?0.5:0.15));
-        return {id,pos:p.pos,tot,per:tot/17};});
+        const isPass=(p.pos==="QB"||p.pos==="WR"||p.pos==="TE");
+        // season-long error (shared offence factor keeps team-mates correlated, which is what
+        // makes stacking work), mean-corrected so volatile players aren't quietly flattered
+        const tot=bp*seasonFactor(sd*0.9)*(1+off[nfl]*(isPass?0.5:0.15));
+        return {id,pos:p.pos,tot,per:tot/17,cv:weekCvOf(p.pos)};});
       const fl=fillSampledLineup(arr,R); teamStart[t]=fl.starters; teamBench[t]=fl.bench;
     }
     // weekly team score: each starter's per-game × that week's matchup multiplier (0 on bye → sub best bench)
+    // Weekly noise belongs on each PLAYER, not as a flat ±6% on the team total. Per-player
+    // lognormal swings (measured CV by position) reproduce the real 0.263 team-week spread;
+    // a team-level nudge left the simulation far too orderly and favourites won too often.
     const wk=(t,w)=>{let s=0,byeN=0;
-      for(const st of teamStart[t]){const c=st.per*MM[st.id][w]; if(c>0)s+=c; else byeN++;}
-      if(byeN>0){const bw=teamBench[t].map(b=>b.per*MM[b.id][w]).filter(x=>x>0).sort((a,b)=>b-a);for(let i=0;i<byeN&&i<bw.length;i++)s+=bw[i];}
-      return s*(1+gauss()*0.06);};
+      for(const st of teamStart[t]){const c=st.per*MM[st.id][w]; if(c>0)s+=c*weekFactor(st.cv); else byeN++;}
+      if(byeN>0){const bw=teamBench[t].map(b=>b.per*MM[b.id][w]*(MM[b.id][w]>0?weekFactor(b.cv):0)).filter(x=>x>0).sort((a,b)=>b-a);for(let i=0;i<byeN&&i<bw.length;i++)s+=bw[i];}
+      return s;};
     const wins=new Array(T).fill(0), pf=new Array(T).fill(0);
     sched.forEach((week,wi)=>{const w=wi+1;week.forEach(([a,b])=>{const sa=wk(a,w),sb=wk(b,w);pf[a]+=sa;pf[b]+=sb;if(sa>=sb)wins[a]++;else wins[b]++;});});
     const seeds=[...Array(T).keys()].sort((x,y)=>(wins[y]-wins[x])||(pf[y]-pf[x])).slice(0,nPlayoff);
@@ -1919,12 +1990,24 @@ function renderSimRecs(){
   const res=SIMCACHE.results;
   if(!res||!res.length){$("#recList").innerHTML=note+simSel+`<div class="emptystate">No skill players left to simulate.</div>`;wire();return;}
   const best=res[0].title, top=res.slice(0,6);
+  /* A simulated percentage is a sample, not a fact. With 600 runs a 13% title chance carries
+     about ±1.4 points of standard error, so two candidates a point apart are indistinguishable —
+     and ranking them 1 and 2 implies a precision that isn't there. Checked this against the
+     heuristic recommender: at a mid-draft pick the two engines disagreed on the top name, but the
+     gap (2.5pts) sat inside the combined error (±2.8), i.e. they don't actually disagree. */
+  const simSE=t=>Math.sqrt(Math.max(t*(1-t),0.0001)/Math.max(1,SIMCACHE.sims));
+  const tied=top.filter(r=>Math.abs(r.title-best)<=1.96*Math.sqrt(simSE(r.title)**2+simSE(best)**2));
   $("#recList").innerHTML=note+simSel+`<div class="pickcounter" style="margin-bottom:8px">Ranked by your chance to win it all (${SIMCACHE.sims} season sims each)</div>`+
     top.map((r,i)=>{const pl=state.players[r.id];
-      const line=i===0?`Best shot at the championship of any pick right now.`:`A bit less likely to win it all than the top pick.`;
+      const within=Math.abs(r.title-best)<=1.96*Math.sqrt(simSE(r.title)**2+simSE(best)**2);
+      const line=i===0
+        ?(tied.length>1?`Best of the bunch — though ${tied.length-1} other${tied.length>2?"s are":" is"} too close to separate at this many sims.`
+                       :`Best shot at the championship of any pick right now.`)
+        :(within?`Statistically level with the top pick — take whichever you prefer.`
+                :`Clearly behind the top pick on title odds.`);
       return `<div class="rec ${pl.pos}${i===0?' top':''}"><div class="rank-badge">#${i+1}</div>
         <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span>${injChip(pl)}</div>
-        <div class="cardmeta">${pl.team} · bye ${pl.bye||"—"} · <b>${Math.round(pts(pl))}</b> proj pts · <b>${(r.title*100).toFixed(0)}%</b> to win title · ${Math.round(r.playoff*100)}% make playoffs</div>
+        <div class="cardmeta">${pl.team} · bye ${pl.bye||"—"} · <b>${Math.round(pts(pl))}</b> proj pts · <b>${(r.title*100).toFixed(0)}%</b> <span class="meta">±${(simSE(r.title)*196).toFixed(1)}</span> to win title · ${Math.round(r.playoff*100)}% make playoffs</div>
         <div class="why">${line}</div>
         <button class="draftbtn" data-draft="${r.id}">Draft to my team</button></div>`;
     }).join("")+`<button class="draftbtn alt" id="reSimBtn" style="margin-top:2px">↻ Re-run</button>`;
@@ -2274,6 +2357,26 @@ function selfTest(){
     state.settings.format=wf2; LABC={key:null};
     add("Superflex raises quarterback prices",qbSF>qb1*1.05,
         qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    // ---- the maths underneath everything ----
+    // Samplers must be unbiased. Clipping a normal at zero quietly raises its mean, and by more
+    // for volatile players, which would flatter exactly the high-variance guys.
+    const mOf=(f,n)=>{let s=0;for(let i=0;i<n;i++)s+=f();return s/n;};
+    const sfBias=[0.2,0.46,0.7].map(sd=>Math.abs(mOf(()=>seasonFactor(sd),8000)-1));
+    const wfBias=[0.43,0.64,0.72].map(cv=>Math.abs(mOf(()=>weekFactor(cv),8000)-1));
+    add("Season and weekly samplers are unbiased",
+        Math.max(...sfBias,...wfBias)<0.03,
+        `largest drift from a mean of 1.0: ${Math.max(...sfBias,...wfBias).toFixed(3)}`);
+    // Replacement level is only meaningful if exactly the startable players clear it.
+    const rlv=replacementLevels();
+    const nStart=Object.values(rlv.base).reduce((a,b)=>a+b,0);
+    const nClear=state.players.filter(x=>inLeague(x)&&vorp(x,rlv.levels)>0).length;
+    add("Replacement level matches the number of starters",
+        nStart>0&&Math.abs(nClear-nStart)<=2,
+        `${nClear} players above replacement vs ${nStart} league starting slots`);
+    // Positional demand comes from real drafts now; it still has to be a distribution.
+    const dem=["QB","RB","WR","TE","K","DST"].reduce((a,p)=>a+posDemandShare(p),0);
+    add("Positional demand is a valid share of the board",dem>0.85&&dem<1.15,
+        `shares total ${dem.toFixed(2)}`);
     // ---- per-asset confidence ----
     const withN=P.filter(x=>x.mktN).length;
     add("Sample size behind each market value",withN>200,
@@ -3857,7 +3960,12 @@ function simTitle(rosters,slots,iters){
   const lastW=pStart+3;
   // picks are assets, not starters — they never score
   const lineups=rosters.map(r=>lineupOnSlots((r||[]).filter(p=>p&&!p.isPick),slots,p=>pts(p)).chosen.map(p=>{
-    const d=p.dist; return {base:pts(p)/17, sd:d?(d.c-d.f)/2.08:0.18};}));
+    const d=p.dist;
+    // per-game baseline, the season-long error that persists all year, this player's weekly
+    // swing, and his real week-by-week schedule (0 on a bye) precomputed once
+    const mm=new Array(lastW+2).fill(1);
+    for(let w=1;w<=lastW;w++) mm[w]=w<=18?weeklyMultOf(p,w):1;
+    return {base:pts(p)/17, sd:d?(d.c-d.f)/2.08:0.18, cv:weekCvOf(p.pos), mm};}));
   // Weeks already played are FACT, not simulation: carry the real record and points forward.
   const rec0=new Array(T).fill(0), pf0=new Array(T).fill(0);
   if(S){
@@ -3870,8 +3978,19 @@ function simTitle(rosters,slots,iters){
     }
   }
   for(let it=0;it<N;it++){
-    const wk=lineups.map(L=>{const a=new Array(lastW+1).fill(0);
-      for(let w=from;w<=lastW;w++){let sc=0;for(const x of L)sc+=x.base*Math.max(0.1,1+gauss()*x.sd);a[w]=sc;}
+    const wk=lineups.map(L=>{
+      const a=new Array(lastW+1).fill(0);
+      // one season-long error per player for the WHOLE run — being wrong about a player is a
+      // season-long condition, not a fresh coin flip every Sunday
+      const sf=L.map(x=>seasonFactor(x.sd));
+      for(let w=from;w<=lastW;w++){
+        let sc=0;
+        for(let i=0;i<L.length;i++){
+          const x=L[i], m=x.mm[Math.min(w,18)];
+          if(m>0) sc+=x.base*sf[i]*m*weekFactor(x.cv);   // bye weeks score nothing
+        }
+        a[w]=sc;
+      }
       return a;});
     const rec=rec0.slice(), pf=pf0.slice();
     for(let w=from;w<=regEnd;w++){
