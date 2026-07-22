@@ -2381,13 +2381,30 @@ function selfTest(){
     const withN=P.filter(x=>x.mktN).length;
     add("Sample size behind each market value",withN>200,
         `${withN} players carry a vote count (max ${Math.max(0,...P.map(x=>x.mktN||0)).toLocaleString()})`);
-    const byVotes=P.filter(x=>x.mkt&&x.mktN).sort((a,b)=>b.mktN-a.mktN);
-    if(byVotes.length>20){
-      const heavy=assetConfidence({kind:"player",player:byVotes[0]});
-      const thin =assetConfidence({kind:"player",player:byVotes[byVotes.length-1]});
-      add("Thin samples are marked less certain",thin.sd>heavy.sd,
-          `${byVotes[0].name} ±${Math.round(heavy.sd*100)}% (${heavy.n.toLocaleString()} votes) vs ${byVotes[byVotes.length-1].name} ±${Math.round(thin.sd*100)}% (${thin.n.toLocaleString()})`);
+    /* Confidence must track what actually predicts disagreement. Vote count does NOT — regressed
+       against observed cross-source spread it explains nothing (R²=0.005) — so the checks below
+       test the things that do: how far the sources are apart, and whether there's more than one
+       of them to compare at all. An earlier check compared high-vote against low-vote players and
+       passed, but only because thin-vote players also tend to be single-source: right answer,
+       wrong reason. */
+    const conf3=P.filter(x=>x.mkt&&x.mktSrcN===3).map(x=>({x,c:assetConfidence({kind:"player",player:x})}))
+      .filter(o=>o.c.spread>0);
+    if(conf3.length>20){
+      conf3.sort((a,b)=>a.c.spread-b.c.spread);
+      const tight=conf3[0], wide=conf3[conf3.length-1];
+      add("Disagreement drives the error bar",wide.c.sd>tight.c.sd,
+          `${tight.x.name} spread ${tight.c.spread.toFixed(2)} → ±${Math.round(tight.c.sd*100)}% · ${wide.x.name} spread ${wide.c.spread.toFixed(2)} → ±${Math.round(wide.c.sd*100)}%`);
+      const solo=P.filter(x=>x.mkt&&x.mktSrcN===1)[0];
+      if(solo){
+        const median=conf3[Math.floor(conf3.length/2)];
+        add("An unchecked single source isn't treated as agreement",
+            assetConfidence({kind:"player",player:solo}).sd>=median.c.sd,
+            `one source ±${Math.round(assetConfidence({kind:"player",player:solo}).sd*100)}% vs a typical three-source ±${Math.round(median.c.sd*100)}%`);
+      }
     }
+    add("Values blend geometrically, matching how the sources themselves are combined",
+        Math.abs(blendVals(8000,2000)-4000)<1&&blendVals(8000,2000)<(8000+2000)/2,
+        `8,000 with 2,000 → ${Math.round(blendVals(8000,2000)).toLocaleString()} (an average would say 5,000)`);
     const near=assetConfidence({kind:"pick",season:CUR_SEASON()+1,round:1});
     const far =assetConfidence({kind:"pick",season:CUR_SEASON()+3,round:1});
     add("Distant picks are marked less certain than near ones",far.sd>near.sd,
@@ -2947,18 +2964,37 @@ function labValue(a){
     const adj=(a.season>CUR_SEASON()?(+state.ui.labPickAdj||100)/100:1);
     const v=src==="market"?(mkt!=null?mkt:mine)
            :src==="mine"?mine
-           :(mkt!=null?(mkt+mine)/2:mine);
+           :(mkt!=null?blendVals(mkt,mine):mine);
     return v*adj;
   }
   const p=a.player; if(!p)return 0;
   const mkt=marketOf(p), mine=myScaled(labCurves().V(p));
   if(src==="market") return mkt!=null?mkt:mine;
   if(src==="mine")   return mine;
-  return mkt!=null?(mkt+mine)/2:mine;
+  return mkt!=null?blendVals(mkt,mine):mine;
+}
+/* Values live on a multiplicative scale — the market's own three sources are blended in log
+   space for exactly that reason, and an arithmetic average here was inconsistent with it. On a
+   0-10,000 board the difference is real: 8,000 and 2,000 average to 5,000 arithmetically but
+   4,000 geometrically, and the geometric answer is the one that treats "half as valuable" the
+   same way everywhere else in the app does. */
+function blendVals(a,b){
+  if(!(a>0)||!(b>0)) return Math.max(a||0,b||0);
+  return Math.sqrt(a*b);
 }
 // What a droppable body is worth — the cost of a roster spot in this league.
+/* What a roster spot actually costs. Taking on more bodies than you send means cutting someone —
+   and the right price is the player YOU would drop, not a league-wide average. When the league is
+   synced we know exactly who that is; otherwise fall back to the last player who'd be rostered
+   anywhere in the league. */
 function replacementMarketValue(){
   const C=labCurves(); if(!C.curve.length)return 0;
+  const me=TRADE.teams&&TRADE.teams[TRADE.me];
+  if(me&&me.players&&me.players.length){
+    const mine=me.players.map(pl=>{const m=marketOf(pl);return m!=null?m:myScaled(C.V(pl));})
+      .filter(x=>isFinite(x)).sort((a,b)=>a-b);
+    if(mine.length) return mine[0];        // your worst rostered player is the one that goes
+  }
   const R=state.settings.roster||{};
   const size=Object.values(R).reduce((a,b)=>a+(+b||0),0)||15;
   const rostered=Math.round((state.settings.teams||12)*size);
@@ -3067,20 +3103,33 @@ function assetConfidence(a){
   const series=mktSeriesKey().find(k=>p.mkt[k]!=null);
   const src=(p.mktSrc||{})[series]||{};
   const vals=Object.values(src).filter(x=>x>0);
-  // 1. how far apart the sources are (range → sd for a handful of samples)
-  const spread=vals.length>1?(Math.max(...vals)-Math.min(...vals))/Math.max(1,vals.reduce((x,y)=>x+y,0)/vals.length):0;
-  const sdSpread=spread/2.5;
-  // 2. how many votes stand behind the crowd-sourced side of it
-  const n=p.mktN||0;
-  const sdVotes=n?Math.min(0.5,0.35/Math.sqrt(Math.max(0.05,n/5000))):0.35;
-  // 3. one source pricing an asset alone can't be cross-checked at all
-  const srcN=p.mktSrcN||vals.length||1;
-  const sd=Math.max(srcN===1?0.25:0.04,Math.sqrt(sdSpread*sdSpread+sdVotes*sdVotes));
-  const why=srcN===1?"only one source prices him"
-    :n&&n<8000?"thin voting sample"
-    :spread>0.5?"the sources disagree sharply"
-    :"well covered and broadly agreed";
-  return {sd:Math.min(0.6,sd),n,srcN,spread,why};
+  const n=p.mktN||0, srcN=p.mktSrcN||vals.length||1;
+  /* The error in a BLENDED value, done properly.
+     Each source is one estimate of the same asset. The expected range of k samples from a normal
+     is d(k)·σ — d(2)=1.128, d(3)=1.693 — so the per-source error is range/d(k), and averaging k
+     of them cuts it by √k. That gives sd = spread / (d(k)·√k).
+     A previous version divided by a flat 2.5 regardless of how many sources there were, and added
+     a term for KeepTradeCut's vote count. That vote term was invented: regressed against the
+     observed cross-source spread over 348 players it explains nothing (R²=0.005, and the median
+     spread is flat from 1,200 votes to 329,000). Votes make KTC's own number steady; they don't
+     make KTC agree with an expert-ranking or trade-derived valuation. So votes are reported as
+     context and no longer pretend to drive the error bar. */
+  const D_K={1:1,2:1.128,3:1.693,4:2.059};
+  const mean=vals.length?vals.reduce((x,y)=>x+y,0)/vals.length:0;
+  const spread=vals.length>1&&mean>0?(Math.max(...vals)-Math.min(...vals))/mean:0;
+  const MEDIAN_SPREAD=0.50;     // measured across every 3-source player on the board
+  let sd;
+  if(vals.length>1) sd=spread/(D_K[Math.min(4,vals.length)]*Math.sqrt(vals.length));
+  // With one source there's no disagreement to see — which is not the same as agreement. Assume
+  // it's as far off as a typical asset, with no averaging to help it.
+  else sd=MEDIAN_SPREAD/D_K[3];
+  // Even three sources agreeing can be wrong together; nothing here is priced to ±2%.
+  sd=Math.min(0.6,Math.max(0.08,sd));
+  const why=srcN===1?"only one source prices him, so there's no cross-check"
+    :spread>0.8?"the sources disagree sharply about him"
+    :spread>0.4?"the usual amount of disagreement between sources"
+    :"all sources land in much the same place";
+  return {sd,n,srcN,spread,why};
 }
 function confLabel(c){
   if(!c) return "";
