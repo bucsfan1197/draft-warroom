@@ -2225,7 +2225,25 @@ function gauss(){let u=0,v=0;while(!u)u=rnd();while(!v)v=rnd();return Math.sqrt(
    seasons of real weekly results (scratchpad/variance.py):
      measured week-to-week CV per player: QB .43  RB .64  WR .67  TE .72
      measured CV of a real team's weekly total: 0.263 */
-const WEEK_CV={QB:0.43,RB:0.64,WR:0.67,TE:0.72,K:0.55,DST:0.75,DL:0.72,LB:0.55,DB:0.78};
+/* The most load-bearing constants in the app: every probability it prints — win probability,
+   playoff odds, swing, the margin curve — comes from drawing weekly scores with this spread.
+   They were assumed for a long time and are now MEASURED (tools_validate.py): four seasons of
+   nflverse weekly scoring, each player against his own season mean, so it isolates week-to-week
+   noise around a known level rather than the much larger error of forecasting the level.
+   The shape held up — skew is positive at every position, which is what justifies the lognormal —
+   but the magnitude was too wide: RB was overstated 8% and TE 11%. Overstating variance drags
+   every matchup toward a coin flip, so the whole app was quietly under-confident.
+   K/DST/IDP keep assumed values; nflverse weekly stats don't carry them, and that's flagged
+   rather than papered over. */
+const WEEK_CV_ASSUMED={QB:0.43,RB:0.64,WR:0.67,TE:0.72,K:0.55,DST:0.75,DL:0.72,LB:0.55,DB:0.78};
+const WEEK_CV=(()=>{
+  const m=(window.__FFDATA__&&__FFDATA__.WEEKCV&&__FFDATA__.WEEKCV.weekCv)||{};
+  return Object.assign({},WEEK_CV_ASSUMED,m);
+})();
+function weekCvMeasured(pos){
+  const m=window.__FFDATA__&&__FFDATA__.WEEKCV;
+  return !!(m&&m.weekCv&&m.weekCv[pos]!=null);
+}
 function normPdf(z){return Math.exp(-z*z/2)/Math.sqrt(2*Math.PI);}
 /* Weekly scoring is strongly right-skewed — a floor at zero and the occasional three-times
    week — so a lognormal fits it far better than a clipped normal. Mean is exactly 1. */
@@ -5117,7 +5135,7 @@ function renderInSeason(){
   const B=oppIdx!=null?weekUnits(teamRoster(oppIdx),w).starters:null;
   if(A.starters.length&&A.bench.length&&B&&B.length){
     const res=startSitAdvice(A,B,900);
-    const best=res.moves.filter(m=>m.gain>0.005)[0];
+    const best=res.moves.filter(m=>m.gain>2*m.se)[0];
     advice.push(best
       ? `Start <b>${best.inPl.name}</b> over <b>${best.outPl.name}</b> at ${slotLabel(best.slot)} — <b>+${(best.gain*100).toFixed(1)}%</b> to win against ${teamLabel(oppIdx)}.`
       : `No swap improves your odds against ${teamLabel(oppIdx)} — this is your best lineup for the game, not just the highest total.`);
@@ -5702,7 +5720,15 @@ function startSitAdvice(A,unitsB,iters){
        coin flip, and the number that makes people agonise. `cost` is how often that actually
        flips the week. They come apart hard: being "wrong" 45% of the time while it matters 3%
        of the time means the decision is nearly free, and saying so is more useful than a pick. */
-    wrong:st[k].wrong/N, cost:st[k].cost/N, saved:st[k].saved/N}));
+    wrong:st[k].wrong/N, cost:st[k].cost/N, saved:st[k].saved/N,
+    /* The standard error of this swap's own estimate, computed exactly rather than guessed.
+       Per simulated week the swap either rescues a loss (+1), throws away a win (-1), or changes
+       nothing (0) — so the difference is a mean over N of that, and its spread follows directly
+       from the two counters we already keep. The old code reported any gain above 0.5 percentage
+       points; at these sample sizes that is a fifth of the noise in the number being filtered, so
+       it was ranking sampling error and presenting it as advice. */
+    se:(()=>{const c=st[k].cost/N,s=st[k].saved/N,g=c-s;
+             return Math.sqrt(Math.max(0,(c+s)-g*g)/N);})()}));
   return {base,moves:moves.sort((x,y)=>y.gain-x.gain)};
 }
 /* Win probability as a function of what you finish on — the "points-needed curve" the market scan
@@ -5938,9 +5964,14 @@ function marginalROS(add,roster,from,to){
 /* Below this, the difference is smaller than the error in the projections it came from, and
    ranking on it is ranking on noise. Derived from the player's own measured outcome band rather
    than a number I picked — the same 11-season spread that drives his floor and ceiling. */
-function belowNoise(pl,gain,from){
-  const r=rosRange(pl,from), half=Math.max(1,(r[1]-r[0])/2);
-  return gain < 0.12*half;
+function belowNoise(pl,gain,from,to){
+  /* Below the noise in his own production, using the week-to-week spread now measured from four
+     seasons of real scoring. Over W weeks a player's total carries a standard deviation of about
+     his weekly mean times that spread times sqrt(W); a difference smaller than one of those is
+     not something the data can resolve, whatever the decimal says. */
+  const W=Math.max(1,(to||18)-from+1);
+  const wk=rosPts(pl,from)/W, cv=WEEK_CV[pl.pos]||0.65;
+  return gain < wk*cv*Math.sqrt(W);
 }
 /* Who you'd actually have to drop. A claim isn't free — it costs your least useful body, and on a
    full roster that cost is part of the price. Never suggests dropping someone who is currently
@@ -5981,7 +6012,7 @@ function waiverBoard(roster,from,to,limit){
     r.gap=Math.max(0,r.gain-(rows[i+1]?rows[i+1].gain:0));
     r.bidPct=Math.round(r.gap/totalGap*100);
     r.bid=Math.round(remaining*r.gap/totalGap);
-    r.noise=belowNoise(r.p,r.gain,from);
+    r.noise=belowNoise(r.p,r.gain,from,to);
     r.drop=drop;
   });
   return {rows,drop,remaining};
@@ -6041,7 +6072,17 @@ function winsNeeded(SC,me,iters){
    "best available this week" is what everyone ships and it loses to holding whenever this week's
    edge is smaller than next week's, which for kickers and defences is most of the time. */
 function streamPlan(pos,roster,from,to,opts){
-  const o=opts||{}, switchCost=o.switchCost==null?0.6:o.switchCost;   // a roster move isn't free
+  /* What a roster move costs, taken from this roster rather than invented. Streaming spends the
+     last spot on your bench, so its price is what that spot is currently earning you: the value of
+     the man you'd have to drop. On a deep bench that is near zero and churn is nearly free; on a
+     tight one it is real and the plan holds instead. The old 0.6 was a number I made up, and it
+     silently decided every hold-versus-stream call in the tab. */
+  const o=opts||{};
+  const switchCost=o.switchCost!=null?o.switchCost:(()=>{
+    const d=dropCandidate(roster,from,to);
+    if(!d)return 0;
+    return Math.max(0,marginalROS(d,roster.filter(p=>p.id!==d.id),from,to))/Math.max(1,to-from+1);
+  })();
   const drafted=draftedIds();
   const mine=roster.filter(p=>p.pos===pos);
   const fa=state.players.filter(p=>p.pos===pos&&!drafted.has(p.id));
@@ -6326,7 +6367,8 @@ function renderMatchups(){
 
   // ---- start / sit ----
   const ss=played?null:startSitAdvice(A,B.starters,1200);
-  const helpful=ss?ss.moves.filter(m=>m.gain>0.005):[];
+  // two standard errors of the swap's own estimate — anything less is the simulation's noise
+  const helpful=ss?ss.moves.filter(m=>m.gain>2*m.se):[];
   $("#mStartSit").innerHTML=played?`<div class="meta">Week ${wk} is already final.</div>`
     :!ss||!ss.moves.length?`<div class="emptystate">Once you have players on the bench, every legal swap gets checked here.</div>`
     :!helpful.length?`<p class="meta" style="margin:0 0 10px">Your best lineup by projected points is also your best lineup for winning this particular game — no swap improves your odds. That is the normal case, and worth knowing rather than guessing at.</p>`
@@ -6366,7 +6408,10 @@ function renderMatchups(){
    of the time and paying for it 3% of the time means the call is nearly free — which is more
    useful to a manager than another confident recommendation. */
 function closeCalls(ss){
-  const cc=ss.moves.filter(m=>m.wrong>=0.32&&m.wrong<=0.68)
+  /* A call is "close" when the simulation genuinely can't separate the two players — that is,
+     when its own error bar on the wrong-rate still covers a coin flip. Derived, not a window I
+     picked. */
+  const cc=ss.moves.filter(m=>Math.abs(m.wrong-0.5)<2*Math.max(m.se,1e-6)+0.06)
                    .sort((a,b)=>b.cost-a.cost).slice(0,3);
   if(!cc.length)return "";
   return `<div class="note" style="margin-top:12px"><div class="eyebrow" style="margin-bottom:6px">How much these calls really matter</div>`
