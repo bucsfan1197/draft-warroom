@@ -78,7 +78,7 @@
   #s_clock,#s_adp{flex-wrap:wrap;height:auto}
   /* ---- trade calculator ---- */
   /* a textarea doesn't fill its box on its own — without this it sits at its default ~20 cols */
-  #labGive,#labGet{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
+  #labGive,#labGet,#keepList{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;
     padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);
     color:var(--ink);resize:vertical;min-height:96px}
   .labside{margin-top:6px;display:flex;flex-direction:column;gap:3px;min-height:20px}
@@ -110,7 +110,7 @@
     .grid-draft{grid-template-columns:1fr!important;gap:12px}
     .sticky-col{position:static}                 /* sticky wastes vertical room on a phone */
     /* the calculator's two panes stack on a phone, and 16px stops iOS zooming on focus */
-    #labGive,#labGet{font-size:16px}
+    #labGive,#labGet,#keepList{font-size:16px}
     .labopts{gap:8px}
     .labopts label{flex:1 1 100%}
     .clock{flex-wrap:wrap;gap:8px;padding:12px}
@@ -276,6 +276,7 @@
       <button class="tab" data-tab="matchups">Matchups</button>
       <button class="tab" data-tab="backtest">Backtest</button>
       <button class="tab hide" data-tab="dynasty" id="dynastyTabBtn">Dynasty</button>
+      <button class="tab hide" data-tab="keepers" id="keeperTabBtn">Keepers</button>
       <button class="tab" data-tab="season">In-Season</button>
       <button class="tab" data-tab="trade">Trades</button>
       <span id="dataAge" class="meta" style="margin-left:auto;align-self:center;white-space:nowrap"></span>
@@ -539,6 +540,28 @@
   </section>
 
   <!-- PROJECTIONS TAB -->
+  <section id="tab-keepers" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Keeper decisions</h2><span id="keepCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd">
+        <div class="grid-draft" style="grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <h3 class="eyebrow" style="margin-bottom:6px">Who could you keep, and what does each cost?</h3>
+            <textarea id="keepList" rows="8" spellcheck="false" placeholder="One per line — name then cost:&#10;Puka Nacua 8&#10;Bijan Robinson, r2&#10;Jayden Daniels $34&#10;Brock Bowers"></textarea>
+          </div>
+          <div>
+            <h3 class="eyebrow" style="margin-bottom:6px">League rules</h3>
+            <div class="field"><label>Keepers allowed</label><input type="number" id="keepMax" min="1" max="12" value="3"></div>
+            <div class="field" style="margin-top:8px"><label>Cost climbs each year you keep him</label>
+              <span class="seg" id="keepEsc"><button data-v="0">Never</button><button data-v="1" class="on">1 round</button><button data-v="2">2 rounds</button></span></div>
+            <div class="field" style="margin-top:8px"><label>Plan how many years ahead?</label>
+              <span class="seg" id="keepYears"><button data-v="1" class="on">1</button><button data-v="2">2</button><button data-v="3">3</button></span></div>
+          </div>
+        </div>
+        <div id="keepOut" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </section>
   <section id="tab-players" class="hide">
     <div class="panel">
       <div class="hd"><h2>Projection editor</h2><span class="pickcounter" style="margin-left:auto">Edit any Proj cell · Enter to save</span></div>
@@ -569,7 +592,7 @@
         <div class="bd">
           <div class="form-grid" style="margin-bottom:16px">
             <div class="field"><label>Format</label>
-              <div class="seg" id="s_format"><button data-v="redraft" class="on">Redraft</button><button data-v="dynasty">Dynasty</button></div>
+              <div class="seg" id="s_format"><button data-v="redraft" class="on">Redraft</button><button data-v="keeper">Keeper</button><button data-v="dynasty">Dynasty</button></div>
             </div>
             <div class="field" id="windowField"><label>Team window</label>
               <div class="seg" id="s_window"><button data-v="contend">Contend</button><button data-v="balanced" class="on">Balanced</button><button data-v="rebuild">Rebuild</button></div>
@@ -1682,6 +1705,7 @@ const TAB_RENDER={
   backtest:()=>renderBacktest(),
   season:  ()=>renderInSeason(),
   dynasty: ()=>renderDynasty(),
+  keepers: ()=>renderKeepers(),
   players: ()=>renderPlayersTab(),
   setup:   ()=>renderReplBox(),
   trade:   ()=>labCompute()             // the finder/evaluator below it build on demand
@@ -2123,6 +2147,26 @@ function selfTest(){
     state.settings.format=wf2; LABC={key:null};
     add("Superflex raises quarterback prices",qbSF>qb1*1.05,
         qb?`${qb.name}: ${Math.round(qb1).toLocaleString()} → ${Math.round(qbSF).toLocaleString()}`:"");
+    // ---- keeper leagues ----
+    const wasKF=state.settings.format, wasKeep=state.settings.keeper;
+    state.settings.format="keeper"; state.settings.keeper={max:3,esc:1,years:2}; PICKVAL={key:null};
+    const pvR=[1,2,3,4,5,6,8,10].map(r=>expectedPickValue(keeperPickNumber(r)));
+    add("A later pick is always worth less",pvR.every((v,i)=>i===0||v<=pvR[i-1]+1e-9),
+        pvR.map(v=>Math.round(v)).join(" → "));
+    const avD=[1,5,10,20,40,70].map(d=>auctionValueAt(d));
+    add("A bigger salary always buys more",avD.every((v,i)=>i===0||v>=avD[i-1]-1e-9),
+        avD.map(v=>Math.round(v)).join(" → "));
+    const kp=P.filter(x=>x.pos!=="K"&&x.pos!=="DST").sort((a,b)=>pts(b)-pts(a))[0];
+    const cheap=keeperSurplus(kp,{kind:"round",round:10},{max:3,esc:0,years:1}).total;
+    const dear =keeperSurplus(kp,{kind:"round",round:1 },{max:3,esc:0,years:1}).total;
+    add("The same player is worth more at a cheaper keeper cost",cheap>dear,
+        kp?`${kp.name}: +${Math.round(cheap)} at R10 vs +${Math.round(dear)} at R1`:"");
+    const kl=parseKeeperLine("Puka Nacua 8"), kl2=parseKeeperLine("Jayden Daniels $34");
+    add("Keeper lines parse (round and salary)",
+        kl&&kl.cost===8&&kl.kind==="round"&&/nacua/i.test(kl.name)
+        &&kl2&&kl2.cost===34&&kl2.kind==="auction"&&/daniels/i.test(kl2.name),
+        `"Puka Nacua 8" → ${kl?kl.name+" R"+kl.cost:"?"} · "Jayden Daniels $34" → ${kl2?kl2.name+" $"+kl2.cost:"?"}`);
+    state.settings.format=wasKF; state.settings.keeper=wasKeep; PICKVAL={key:null};
     add("TE premium raises tight end prices",teOn>teOff*1.05,
         te?`${te.name}: ${Math.round(teOff).toLocaleString()} → ${Math.round(teOn).toLocaleString()}`:"");
     // 3. mock drafts across formats: legal + no cap violations
@@ -2601,19 +2645,26 @@ function parseAssetLine(line){
 }
 function fuzzyPlayers(q,limit){
   const n=nrm(q); if(!n) return [];
+  const oneWord=n.indexOf(" ")<0;
   const out=[];
   state.players.forEach(p=>{
     const pn=nrm(p.name); let sc=0;
+    const pt=pn.split(" "), last=pt[pt.length-1];
     if(pn===n) sc=100;
-    else if(pn.startsWith(n)) sc=90;
+    // A single word is almost always a surname: "chase" means Ja'Marr Chase, not Chase Brown.
+    // Ranking a first-name prefix above a surname match got this exactly backwards.
+    else if(oneWord&&last===n) sc=92;
+    else if(pn.startsWith(n)) sc=86;
     else if(pn.indexOf(n)>=0) sc=78;
     else{
-      const qt=n.split(" "), pt=pn.split(" ");
+      const qt=n.split(" ");
       if(qt.every(t=>pt.some(x=>x.startsWith(t)))) sc=72;
-      else if(pt[pt.length-1]===qt[qt.length-1]) sc=62;
+      else if(last===qt[qt.length-1]) sc=64;
+      // initials shorthand: JSN, ARSB
+      else if(oneWord&&n.length>=2&&n.length<=5&&pt.map(x=>x[0]).join("")===n) sc=84;
     }
-    // tie-break toward the player people actually mean
-    if(sc) out.push({p,sc:sc+Math.min(8,(marketOf(p)||0)/1400)});
+    // then lean toward the player people actually mean — the one with real trade value
+    if(sc) out.push({p,sc:sc+Math.min(14,(marketOf(p)||0)/700)});
   });
   out.sort((a,b)=>b.sc-a.sc);
   return out.slice(0,limit||6).map(x=>x.p);
@@ -2801,6 +2852,227 @@ function labTeamImpact(give,get){
             :"Your value may balance, but this makes your team worse where it counts.")}
       ${giving.length&&!getting.length?" Note: only the players you're giving are on your roster, so the incoming side isn't scored here.":""}</div>
   </div></div>`);
+}
+/* ==================== KEEPER LEAGUES ====================
+   Nothing free serves keeper leagues, even though the question is sharper than any trade
+   question: a keeper is worth keeping only if he beats the pick you hand over for him.
+   Everything needed is already here — projections under your scoring, ADP for your format,
+   replacement levels, and (for multi-year keeps) the measured aging curves.
+
+   Surplus = what the player is worth over replacement
+           - what the pick you forfeit is worth over replacement.
+   Positive surplus means keep. That's the whole model, and it's the honest one. */
+function keeperIsOn(){ return state.settings.format==="keeper"; }
+function keeperCfg(){
+  const k=state.settings.keeper||(state.settings.keeper={});
+  return {max:k.max!=null?k.max:3, basis:k.basis||"round", esc:k.esc!=null?k.esc:1, years:k.years||1};
+}
+// Which overall pick does "round R" cost you, given your slot and snake order?
+function keeperPickNumber(round){
+  const T=state.settings.teams||12, slot=state.settings.slot||1;
+  const r=Math.max(1,Math.round(round));
+  const inRound=(state.settings.snake&&r%2===0)?(T-slot+1):slot;
+  return (r-1)*T+inRound;
+}
+/* What a pick is actually worth. The player you'd expect to draft there is the one whose ADP
+   sits at that pick, priced under YOUR scoring and format — so this moves correctly for
+   superflex, TE premium and standard scoring, where a fixed historical table would not.
+   Our projections are calibrated (median actual/projected 1.02 out of sample), so the
+   projection IS the expected outcome; no extra bust fudge is applied on top. */
+let PICKVAL={key:null};
+function pickValueTable(){
+  const s=state.settings;
+  const key=[s.teams,s.slot,s.snake,s.format,isSF(),s.adpSource,JSON.stringify(s.scoring),state.players.length].join("|");
+  if(PICKVAL.key===key) return PICKVAL;
+  const {levels}=replacementLevels();
+  /* Ranked by VALUE, not by ADP. By pick N the roughly N-1 most valuable players are gone, so
+     what the pick returns is about the Nth-best player left. Averaging players whose ADP sits
+     near the pick instead gave a non-monotone curve — round 3 came out worth MORE than round 2,
+     because ADP and value disagree (an early quarterback carries almost no value over
+     replacement in a 1QB league and dragged its neighbourhood down). Ranking by value is both
+     monotone by construction and the honest statement of what a pick buys. */
+  const board=state.players.filter(p=>p.pos!=="K"&&p.pos!=="DST")
+    .map(p=>({p,v:Math.max(0,pts(p)-(levels[p.pos]||0))}))
+    .sort((a,b)=>b.v-a.v);
+  PICKVAL={key,board};
+  return PICKVAL;
+}
+function expectedPickValue(overallPick){
+  const B=pickValueTable().board;
+  if(!B.length) return 0;
+  const i=Math.max(0,Math.min(B.length-1,Math.round(overallPick)-1));
+  const lo=Math.max(0,i-2), hi=Math.min(B.length,i+3);
+  let s=0,n=0; for(let j=lo;j<hi;j++){s+=B[j].v;n++;}
+  return n?s/n:0;
+}
+/* What a salary buys on the open market: the best player you could still afford at that price.
+   Monotone by construction — more money never buys less — which the previous approach (find the
+   player whose auction price is nearest the salary) was not, because hundreds of players sit at
+   the $1 floor and the nearest-match tie-break was arbitrary. */
+function auctionValueAt(dollars){
+  const A=auctionCtx(), {levels}=replacementLevels();
+  let best=0;
+  state.players.forEach(p=>{
+    if(p.pos==="K"||p.pos==="DST")return;
+    if(A.val(p)<=dollars) best=Math.max(best,Math.max(0,pts(p)-(levels[p.pos]||0)));
+  });
+  return best;
+}
+// Historical reality check for that round, straight from 11 seasons of drafts.
+function roundHitRate(round){
+  const t=(window.__FFDATA__&&window.__FFDATA__.BACKTEST||{})[btKey()];
+  const row=t&&t[String(Math.max(1,Math.round(round)))];
+  if(!row) return null;
+  let n=0,h=0; Object.values(row).forEach(x=>{n+=x.n;h+=x.n*x.hit;});
+  return n?h/n:null;
+}
+/* Multi-year keeps. Most leagues escalate the cost — a keeper costs a round earlier each year
+   you hold him — so the question isn't "is he worth it this year" but "for how many years does
+   he stay worth it". Future seasons are aged with the measured retention curves and discounted,
+   because a surplus three years out is worth less than one now. */
+function keeperSurplus(pl,cost,cfg){
+  const {levels}=replacementLevels();
+  const base=Math.max(0,pts(pl)-(levels[pl.pos]||0));
+  const years=Math.max(1,Math.min(4,cfg.years||1));
+  const auction=cost.kind==="auction";
+  const rows=[]; let total=0;
+  for(let y=0;y<years;y++){
+    // the cost climbs each year you hold him: a round earlier, or the usual salary raise
+    const round=auction?null:Math.max(1,cost.round-(cfg.esc||0)*y);
+    const salary=auction?cost.dollars*Math.pow(1.2,y):null;
+    const keep=y===0?1:retentionOf(pl.pos,pl.age||27,y);    // measured decay, washout included
+    const val=base*keep;
+    const c=auction?auctionValueAt(salary):expectedPickValue(keeperPickNumber(round));
+    const disc=Math.pow(0.9,y);
+    rows.push({year:y,round,salary,val,cost:c,surplus:(val-c)*disc});
+    total+=(val-c)*disc;
+  }
+  return {total,rows,base};
+}
+// "Puka Nacua 8", "Puka Nacua, r8", "Puka Nacua $32", "Bijan Robinson round 2"
+function parseKeeperLine(line){
+  const s=String(line||"").trim(); if(!s) return null;
+  const money=s.match(/\$\s*(\d+(?:\.\d+)?)/);
+  const rnd=s.match(/(?:^|[\s,])(?:r(?:ound)?\.?\s*)?(\d{1,2})\s*(?:st|nd|rd|th)?\s*$/i);
+  let cost=null,kind="round";
+  if(money){cost=+money[1];kind="auction";}
+  else if(rnd) cost=+rnd[1];
+  const name=s.replace(/\$\s*\d+(\.\d+)?/,"").replace(/[\s,]+(?:r(?:ound)?\.?\s*)?\d{1,2}\s*(?:st|nd|rd|th)?\s*$/i,"").replace(/[,;]+$/,"").trim();
+  return {name,cost,kind,raw:s};
+}
+function keeperRows(){
+  const cfg=keeperCfg();
+  const txt=($("#keepList")&&$("#keepList").value)||"";
+  const out=[];
+  txt.split("\n").forEach((line,i)=>{
+    const k=parseKeeperLine(line); if(!k||!k.name) return;
+    const cands=fuzzyPlayers(k.name,6);
+    const pinned=(state.ui.keepPin||{})[i];
+    const pl=(pinned!=null?state.players.find(p=>p.id===pinned):null)||cands[0]||null;
+    if(!pl){out.push({raw:k.raw,player:null,idx:i});return;}
+    const auction=(k.kind==="auction"&&k.cost!=null);
+    const round=auction?null:(k.cost!=null?k.cost:defaultKeeperRound(pl));
+    const cost=auction?{kind:"auction",dollars:k.cost}:{kind:"round",round};
+    const s=keeperSurplus(pl,cost,cfg);
+    out.push({raw:k.raw,player:pl,cands,idx:i,round,cost,costKind:auction?"auction":"round",costRaw:k.cost,
+              surplus:s.total,rows:s.rows,base:s.base,
+              pickVal:s.rows[0].cost, hit:auction?null:roundHitRate(round)});
+  });
+  return out;
+}
+// If no cost is given, assume you'd keep him at roughly where he's going this year.
+function defaultKeeperRound(pl){
+  const T=state.settings.teams||12;
+  return Math.max(1,Math.round((adpOf(pl)||T*10)/T+0.49));
+}
+/* Auction keepers: a salary and a draft round are the same thing said two ways. Find the player
+   this league's own auction pricing values at that salary, then ask where that player goes in
+   the draft — that's the round the salary costs. Reuses the auction engine rather than inventing
+   a second conversion that could disagree with it. */
+function auctionDollarsToRound(dollars){
+  const T=state.settings.teams||12;
+  const A=auctionCtx();
+  const priced=state.players.filter(p=>p.pos!=="K"&&p.pos!=="DST")
+    .map(p=>({p,$:A.val(p),adp:adpOf(p)}))
+    .filter(x=>isFinite(x.adp)).sort((a,b)=>b.$-a.$);
+  if(!priced.length) return 1;
+  let best=priced[0], bd=Infinity;
+  priced.forEach(x=>{const d=Math.abs(x.$-dollars); if(d<bd){bd=d;best=x;}});
+  return Math.max(1,Math.round(best.adp/T+0.49));
+}
+function renderKeepers(){
+  const box=$("#keepOut"); if(!box)return;
+  const cfg=keeperCfg();
+  const ctx=$("#keepCtx");
+  if(ctx)ctx.textContent=`${state.settings.teams}-team · pick ${state.settings.slot} · keep ${cfg.max}`
+    +(cfg.years>1?` · ${cfg.years} yrs`:"");
+  const rows=keeperRows();
+  if(!rows.length){
+    box.innerHTML=`<div class="note">List the players you could keep, one per line, with what each costs — a draft round or an auction salary:
+      <br><br><code>Puka Nacua 8</code> &nbsp; <code>Bijan Robinson, r2</code> &nbsp; <code>Jayden Daniels $34</code>
+      <br><br>Leave the cost off and it assumes you'd keep him near where he's going this year.
+      Every keeper is then measured against <b>the pick you'd give up</b> — that's the only thing that makes a keeper good or bad.</div>`;
+    return;
+  }
+  const good=rows.filter(r=>r.player).sort((a,b)=>b.surplus-a.surplus);
+  const keep=good.filter(r=>r.surplus>0).slice(0,cfg.max);
+  const keepIds=new Set(keep.map(r=>r.player.id));
+  const money=r=>r.costKind==="auction"?`$${r.costRaw}`:`R${r.round}`;
+  const where=r=>r.costKind==="auction"?"open market":`pick ${keeperPickNumber(r.round)}`;
+  const verdictOf=r=>{
+    if(!keepIds.has(r.player.id)&&r.surplus>0)
+      return ["ON THE BUBBLE","warn",`Worth keeping, but you only have ${cfg.max} slot${cfg.max>1?"s":""} and others are worth more.`];
+    if(r.surplus>60) return ["KEEP","good","Comfortably beats the pick it costs."];
+    if(r.surplus>15) return ["KEEP","good","Clearly worth the pick."];
+    if(r.surplus>0)  return ["MARGINAL","warn","Barely beats the pick — fine, but no edge."];
+    return ["LET HIM GO","crit","The pick you'd give up is worth more than he is."];
+  };
+  box.innerHTML=`
+    <div class="rec top"><div class="r1"><span class="nm">Keep ${keep.length?keep.map(r=>r.player.name).join(", "):"nobody"}</span></div>
+      <div class="why">${keep.length
+        ? `That's the best use of your ${cfg.max} keeper slot${cfg.max>1?"s":""} — together they're worth <b>${Math.round(keep.reduce((a,b)=>a+b.surplus,0))}</b> points more than the picks they cost you.`
+        : `None of these beat the picks they'd cost. Go into the draft with all your picks.`}</div></div>
+    <div style="overflow-x:auto;margin-top:10px"><table class="tbl"><thead><tr>
+      <th>Player</th><th>Costs</th><th class="r">His value</th><th class="r">That pick's value</th>
+      <th class="r">Surplus</th><th>Verdict</th></tr></thead><tbody>
+    ${good.map(r=>{const v=verdictOf(r);
+      return `<tr${keepIds.has(r.player.id)?' style="background:color-mix(in srgb,var(--good) 10%,transparent)"':''}>
+        <td>${r.cands&&r.cands.length>1
+          ? `<select class="keeppick" data-idx="${r.idx}">`+r.cands.map(c=>`<option value="${c.id}"${c.id===r.player.id?" selected":""}>${c.name} · ${c.pos}</option>`).join("")+`</select>`
+          : `<b>${r.player.name}</b> <span class="meta">${r.player.pos}</span>`}</td>
+        <td>${money(r)}<span class="meta"> · ${where(r)}</span></td>
+        <td class="r">${Math.round(r.base)}</td>
+        <td class="r">${Math.round(r.pickVal)}</td>
+        <td class="r"><b style="color:${r.surplus>=0?'var(--good)':'var(--crit)'}">${r.surplus>=0?"+":""}${Math.round(r.surplus)}</b></td>
+        <td><span class="chip ${v[1]}">${v[0]}</span></td></tr>`
+      +(cfg.years>1?`<tr><td colspan="6" class="meta" style="padding-top:0">
+          ${r.rows.map(y=>`yr${y.year+1} @${y.round?"R"+y.round:"$"+Math.round(y.salary)}: ${y.surplus>=0?"+":""}${Math.round(y.surplus)}`).join(" · ")}</td></tr>`:"");
+    }).join("")}
+    ${rows.filter(r=>!r.player).map(r=>`<tr><td colspan="6" class="meta">⚠️ Couldn't match “${r.raw}”</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="note" style="margin-top:10px">
+      <b>How this is judged:</b> every keeper is compared against the pick you hand over for him. “His value” and “that pick’s value” are both points above a replacement player at the position, under <b>your</b> scoring and format — so a superflex quarterback or a TE-premium tight end is priced correctly. A pick is worth what the best player still on the board at that slot projects for; a salary is worth the best player you could buy at that price.
+      ${good[0]&&good[0].hit!=null?` For context, 11 seasons of real drafts say a round-${good[0].round} pick returns a startable starter <b>${Math.round(good[0].hit*100)}%</b> of the time.`:""}
+      ${cfg.years>1?` Later years age each player along the measured retention curves (including the chance he's out of the league) and are discounted 10% a year, with the cost climbing ${cfg.esc} round${cfg.esc===1?"":"s"} per season (or a 20% salary raise in an auction league).`:""}
+    </div>`;
+  box.querySelectorAll("select.keeppick").forEach(sel=>{
+    sel.onchange=()=>{state.ui.keepPin=state.ui.keepPin||{};
+      state.ui.keepPin[sel.dataset.idx]=+sel.value; renderKeepers();};
+  });
+}
+function wireKeepers(){
+  const t=$("#keepList"); if(!t)return;
+  let deb=null;
+  t.oninput=()=>{clearTimeout(deb);deb=setTimeout(()=>{state.ui.keepPin={};renderKeepers();},160);};
+  $("#keepMax").oninput=()=>{(state.settings.keeper=state.settings.keeper||{}).max=Math.max(1,+$("#keepMax").value||1);renderKeepers();save();};
+  $$("#keepEsc button").forEach(b=>b.onclick=()=>{(state.settings.keeper=state.settings.keeper||{}).esc=+b.dataset.v;
+    $$("#keepEsc button").forEach(x=>x.classList.toggle("on",x===b));renderKeepers();save();});
+  $$("#keepYears button").forEach(b=>b.onclick=()=>{(state.settings.keeper=state.settings.keeper||{}).years=+b.dataset.v;
+    $$("#keepYears button").forEach(x=>x.classList.toggle("on",x===b));renderKeepers();save();});
+  const c=keeperCfg();
+  $("#keepMax").value=c.max;
+  $$("#keepEsc button").forEach(x=>x.classList.toggle("on",+x.dataset.v===c.esc));
+  $$("#keepYears button").forEach(x=>x.classList.toggle("on",+x.dataset.v===c.years));
 }
 function wireTradeLab(){
   const g=$("#labGive"), t=$("#labGet"); if(!g||!t)return;
@@ -3523,6 +3795,7 @@ function curveSVG(){
 function applyFormatUI(){
   const dyn=isDyno();
   $("#dynastyTabBtn").classList.toggle("hide",!dyn);
+  $("#keeperTabBtn").classList.toggle("hide",!keeperIsOn());
   $("#windowField").classList.toggle("hide",!dyn);
   $("#dynNote").classList.toggle("hide",!dyn);
   $$("#s_format button").forEach(b=>b.classList.toggle("on",b.dataset.v===state.settings.format));
@@ -3694,7 +3967,7 @@ function wireSetup(){
   $("#leagueLoadBtn").onclick=()=>loadMyLeagues();
   $("#selfTestBtn").onclick=()=>selfTest();
   $("#introBtn").onclick=()=>showOnboarding();
-  wireTradeLab();
+  wireTradeLab(); wireKeepers();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   $("#tradeFindBtn").onclick=()=>findTrades();
@@ -3710,7 +3983,7 @@ function wireSetup(){
     if(n>0)state.settings.adpSource="custom";
     const st=$("#adpPasteStatus");st.textContent=parsed.length?`✓ Matched ${n} of ${parsed.length} pasted players — now using Custom ADP`:"Couldn't read any lines — use “Name  ADP”, one per line";
     st.style.color=n>0?"var(--good)":"var(--warn)";SIMCACHE={key:null};loadSetupInputs();renderAll();};
-  $$("#s_format button").forEach(b=>b.onclick=()=>{state.settings.format=b.dataset.v;if(!isDyno()&&$("#tab-dynasty").offsetParent!==null)showTab("draft");loadSetupInputs();renderAll();flash(isDyno()?"Dynasty mode on":"Redraft mode on");});
+  $$("#s_format button").forEach(b=>b.onclick=()=>{state.settings.format=b.dataset.v;LABC={key:null};PICKVAL={key:null};if((!isDyno()&&$("#tab-dynasty").offsetParent!==null)||(!keeperIsOn()&&$("#tab-keepers").offsetParent!==null))showTab("draft");loadSetupInputs();renderAll();flash(isDyno()?"Dynasty mode on":"Redraft mode on");});
   $$("#s_window button").forEach(b=>b.onclick=()=>{state.settings.window=b.dataset.v;loadSetupInputs();renderAll();});
   $$("#s_bestball button").forEach(b=>b.onclick=()=>{state.settings.bestball=(b.dataset.v==="1");SIMCACHE={key:null};loadSetupInputs();renderAll();flash(state.settings.bestball?"Best ball on — valuing ceiling":"Best ball off");});
   $$("#s_auction button").forEach(b=>b.onclick=()=>{state.settings.auction=(b.dataset.v==="1");if(state.settings.auction&&state.ui.auctTeam==null)state.ui.auctTeam=myIdx();SIMCACHE={key:null};loadSetupInputs();renderAll();flash(state.settings.auction?"Auction mode on":"Auction mode off");});
