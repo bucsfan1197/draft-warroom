@@ -178,6 +178,10 @@
   .dc-lab{display:flex;justify-content:space-between;gap:6px;font-size:10px;color:var(--ink-2);
           margin-top:3px;text-align:center}
   .dc-lab span{flex:1;line-height:1.3}
+  .oddsline{display:flex;gap:10px;margin:6px 0 2px;flex-wrap:wrap}
+  .oddspill{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+            padding:4px 10px;font-size:13px;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
+  .oddspill .eyebrow{font-size:9.5px}
   .ncurve{width:100%;height:120px;display:block}
   .nc-band{fill:color-mix(in srgb,var(--accent) 9%,transparent)}
   .nc-fill{fill:color-mix(in srgb,var(--good) 16%,transparent)}
@@ -3153,6 +3157,39 @@ function selfTest(){
     const brOk=[2,4,6,8,12].every(n=>{const s=[...Array(n).keys()];
       return playBracket(s,wkOf(n,0),15)===0&&playBracket(s,wkOf(n,n-1),15)===n-1;});
     add("Playoff bracket resolves at every league size",brOk,"2/4/6/8/12 seeds, favourite and upset");
+    /* The odds-ranked trade finder rests on two properties of the season simulator. First, you
+       cannot win a title you don't reach, so title odds can never exceed playoff odds — if they
+       do, the bracket and the seeding have drifted apart. Second, the whole ranking depends on the
+       delta between two runs being the trade and not luck, which only holds if the same seed
+       reproduces the same season exactly. Both are checked on a synthetic league so the guard
+       needs no Sleeper sync. */
+    (()=>{
+      const savedT=TRADE.teams,savedMe=TRADE.me,savedSl=TRADE.slots,savedSc=TRADE.schedule;
+      const sk=P.filter(p=>["QB","RB","WR","TE","K","DST"].includes(p.pos)&&pts(p)>0)
+                .sort((a,b)=>pts(b)-pts(a)).slice(0,120);
+      const rs=Array.from({length:10},()=>[]);
+      sk.forEach((p,i)=>rs[i%10].push(p));
+      TRADE.teams=rs.map((pl,i)=>({rosterId:i+1,owner:"u"+i,name:"T"+i,players:pl,picks:[]}));
+      TRADE.me=0; TRADE.slots=["QB","RB","RB","WR","WR","TE","FLEX","K","DST"]; TRADE.schedule=null;
+      const rosters=TRADE.teams.map(t=>t.players);
+      const o=simOdds(rosters,TRADE.slots,300);
+      add("You can't win a title you don't make",o.title<=o.playoff,
+          `title ${o.title}% ≤ playoffs ${o.playoff}%`);
+      const a=oddsForRosters(rosters,TRADE.slots,300), b=oddsForRosters(rosters,TRADE.slots,300);
+      add("Same seed, same season — so a trade's delta is the trade",
+          a.title===b.title&&a.playoff===b.playoff,
+          `two runs: ${a.title}/${a.playoff} vs ${b.title}/${b.playoff}`);
+      /* And a genuinely better roster must not come back with WORSE odds. Hand my team the best
+         player in the league in place of my weakest starter and the title odds have to rise. */
+      const best=sk[0], mineIdx=TRADE.me;
+      if(!rosters[mineIdx].includes(best)){
+        const upgraded=rosters.map((r,i)=>i===mineIdx?r.concat([best]):r.filter(p=>p.id!==best.id));
+        const up=oddsForRosters(upgraded,TRADE.slots,300);
+        add("Adding the best player in the league can't lower your odds",up.titleRaw>=a.titleRaw-1e-9,
+            `${a.title}% → ${up.title}% after adding ${lastName(best.name)}`);
+      }
+      TRADE.teams=savedT;TRADE.me=savedMe;TRADE.slots=savedSl;TRADE.schedule=savedSc;
+    })();
     const wasFmt=state.settings.format; state.settings.format="dynasty";
     const y=CUR_SEASON(), PV=p=>dynValue(p);
     const p1=pickValue({season:y+1,round:1},PV), p2=pickValue({season:y+1,round:2},PV), pFar=pickValue({season:y+3,round:1},PV);
@@ -4927,26 +4964,65 @@ function findTrades(){
   });
   TRADE.lastSearch={ms:Math.round(performance.now()-t0),considered:cands.length,truncated};
   TRADE.lastCands=cands;                       // kept for inspection/debugging
-  // rank by what you gain, then by how likely the other manager is to actually sign it
-  cands.sort((a,b)=>(b.myGain+b.theirGain*0.35+b.even*40)-(a.myGain+a.theirGain*0.35+a.even*40));
-  const top=[];const seen=new Set(),perOpp={};
+
+  /* TWO STAGES, because the thing worth ranking on is expensive to compute.
+     Stage one is the cheap value filter above: it throws out the deals nobody would accept and the
+     ones that don't upgrade your lineup, leaving a shortlist. Stage two runs the championship
+     simulator on each survivor and ranks them by what they do to YOUR SEASON — the odds of making
+     the playoffs and of winning it all — not by trade-value points. Those two answers diverge all
+     the time: a deal can add lineup value and move your season not at all (you were already a lock,
+     or already out), and a smaller deal that patches your one thin position can move it a lot. Every
+     trade tool on the market ranks by value; this ranks by the only thing that decides your year. */
+  const value=c=>c.myGain+c.theirGain*0.35+c.even*40;
+  cands.sort((a,b)=>value(b)-value(a));
+  const shortlist=[];const seen=new Set(),perOpp={};
   for(const c of cands){ const k=c.oi+"|"+c.get.map(p=>p.id).join(",");
     if(seen.has(k))continue;
-    if((perOpp[c.oi]||0)>=2)continue;        // spread suggestions across managers
-    seen.add(k); perOpp[c.oi]=(perOpp[c.oi]||0)+1; top.push(c); if(top.length>=6)break; }
-  const baseline=simTitle(TRADE.teams.map(t=>t.players),slots,400);
-  renderTrades(top,base,slots,V,baseline);
+    if((perOpp[c.oi]||0)>=3)continue;        // spread suggestions across managers
+    seen.add(k); perOpp[c.oi]=(perOpp[c.oi]||0)+1; shortlist.push(c);
+    if(shortlist.length>=16)break; }
+
+  const ITERS=550;
+  const baseO=oddsForRosters(TRADE.teams.map(t=>t.players),slots,ITERS);
+  shortlist.forEach(c=>{
+    const after=TRADE.teams.map((t,i)=>i===TRADE.me?c.mineAfter:(i===c.oi?c.theirAfter:t.players));
+    const o=oddsForRosters(after,slots,ITERS);
+    c.playoffBefore=baseO.playoff; c.playoffAfter=o.playoff;
+    c.titleBefore=baseO.title;     c.titleAfter=o.title;
+    c.dTitle=o.titleRaw-baseO.titleRaw;
+    c.dPlayoff=o.playoffRaw-baseO.playoffRaw;
+  });
+  /* Rank by championship equity, which is the whole objective — the probability you win the league.
+     It already contains playoff odds (you can't win a title you don't make), so a bubble team's best
+     trades and a contender's best trades both rise to the top without a mode switch. When nothing
+     moves the title (you're eliminated, or a lock, so every delta is ~0), it falls through to
+     playoff odds, then to raw lineup value so the board is never empty. */
+  const EPS=0.004;   // below this a championship delta is simulation noise even under CRN
+  shortlist.sort((a,b)=>{
+    if(Math.abs(b.dTitle-a.dTitle)>EPS)return b.dTitle-a.dTitle;
+    if(Math.abs(b.dPlayoff-a.dPlayoff)>EPS)return b.dPlayoff-a.dPlayoff;
+    return value(b)-value(a);
+  });
+  TRADE.lastSearch.simmed=shortlist.length;
+  tradeStatus("");
+  renderTrades(shortlist.slice(0,6),base,slots,V,baseO.title);
 }
 function renderTrades(list,base,slots,V,baseline){
   const box=$("#tradeResults");
   if(!list.length){box.innerHTML=`<div class="emptystate">No trade improves both teams right now — your roster is balanced against theirs.</div>`;return;}
   const dyn=state.settings.format==="dynasty";
   box.innerHTML=list.map((c,i)=>{
-    const odds=(i<3)?tradeTitleDelta(c,slots,baseline):null;
+    const dP=Math.round((c.dPlayoff||0)*100), dT=Math.round((c.dTitle||0)*100);
+    const arrow=(a,b,d)=>{const col=b>a?"var(--good-ink)":b<a?"var(--crit-ink)":"var(--ink-2)";
+      return `<b>${a}% → <span style="color:${col}">${b}%</span></b>${d?` <span class="meta">(${d>0?"+":""}${d})</span>`:""}`;};
     return `<div class="rec${i===0?" top":""}" style="margin-bottom:10px">
       <div class="rank-badge">#${i+1}</div>
       <div class="r1"><span class="nm">${c.oppName}</span></div>
       <div class="cardmeta">You get <b>${c.get.map(p=>p.name).join(" + ")}</b> · You give <b>${c.give.map(p=>p.name).join(" + ")}</b></div>
+      <div class="oddsline">
+        <span class="oddspill"><span class="eyebrow">Playoffs</span> ${arrow(c.playoffBefore,c.playoffAfter,dP)}</span>
+        <span class="oddspill"><span class="eyebrow">Title</span> ${arrow(c.titleBefore,c.titleAfter,dT)}</span>
+      </div>
       ${(()=>{const rk=usageRanks();
         const buys=c.get.filter(p=>{if(p.isPick)return false;const g=usageSignal(p,rk);return g&&g.d>=8;}).map(p=>p.name.split(" ").slice(-1)[0]);
         const sells=c.give.filter(p=>{if(p.isPick)return false;const g=usageSignal(p,rk);return g&&g.d<=-8;}).map(p=>p.name.split(" ").slice(-1)[0]);
@@ -4954,14 +5030,18 @@ function renderTrades(list,base,slots,V,baseline){
         if(buys.length)h+=`<span class="chip good">📈 buy-low: ${buys.join(", ")} — usage outruns his production</span> `;
         if(sells.length)h+=`<span class="chip warn">📉 sell-high: ${sells.join(", ")} — production outruns his usage</span>`;
         return h?`<div style="margin:4px 0">${h}</div>`:"";})()}
-      <div class="why">Your starting lineup <b style="color:var(--good)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"pts"} · their side <b>+${Math.round(c.theirGain)}</b> (so it's plausibly accepted).
-        ${c.even!=null&&c.even<0.6?`<span class="meta">(only ${lopsidedPct(c.even)}% of real trades were this lopsided — expect pushback)</span>`:""}
-        ${odds?(()=>{const nz=oddsNoise(odds.before,400,odds.after,400);
-          return Math.abs(odds.after-odds.before)>=nz
-            ? ` Title odds <b>${odds.before}% → <span style="color:${odds.after>odds.before?'var(--good)':'var(--crit)'}">${odds.after}%</span></b> <span class="meta">±${nz}</span>.`
-            : ` Title odds unchanged (${odds.before}% <span class="meta">±${nz}</span>).`;})():""}</div>
+      <div class="why">${dP>0||dT>0
+          ? `Lifts your season — ${dP>0?`<b>+${dP}</b> points of playoff odds`:`title equity`}${dP>0&&dT>0?", ":""}${dT>0?`<b>+${dT}</b> toward the title`:""}.`
+          : `Adds <b style="color:var(--good-ink)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"lineup pts"} but barely moves your odds — you're ${c.playoffBefore>=85?"already a lock":c.playoffBefore<=15?"a long way from the bracket":"about where a trade can't shift much"}.`}
+        Their side <b>+${Math.round(c.theirGain)}</b> ${dyn?"value":"pts"}, so it's plausibly accepted.
+        ${c.even!=null&&c.even<0.6?`<span class="meta">(only ${lopsidedPct(c.even)}% of real trades were this lopsided — expect pushback)</span>`:""}</div>
     </div>`;}).join("")
-    +`<div class="note">Both sides are valued on <b>your league's actual starting slots</b> (${slots.join("/")}) using ${dyn?"age-adjusted dynasty value":"projected points"}${TRADE.hasPicks?", with future rookie picks valued as the dynasty asset they're expected to return":""}. Only deals that help both teams are shown — a trade the other manager would never accept is worthless. Title odds come from 400 simulated seasons ${TRADE.schedule?`on <b>your league's real remaining schedule</b> (through week ${TRADE.schedule.regEnd}, top ${TRADE.schedule.playoffTeams} make the playoffs, bracket from week ${TRADE.schedule.playoffStart}) with weeks already played counted as real results`:"on a synthetic round-robin (couldn't reach the league schedule)"}; swings inside the ± band are simulation noise, not signal.${TRADE.lastSearch?` <span class="meta">Searched ${TRADE.lastSearch.considered.toLocaleString()} viable packages in ${TRADE.lastSearch.ms}ms${TRADE.lastSearch.truncated?` (${TRADE.lastSearch.truncated.toLocaleString()} long-shot combinations skipped)`:""}.</span>`:""}</div>`;
+    +`<div class="note"><b>Ranked by what each deal does to your season, not by trade value.</b> Every shortlisted package is run through
+      the championship simulator ${TRADE.schedule?`on <b>your league's real schedule</b> (top ${TRADE.schedule.playoffTeams} make the playoffs, bracket from week ${TRADE.schedule.playoffStart}, weeks already played counted as fact)`:"on a generated schedule (couldn't reach your league's fixtures)"}
+      twice — with the trade and without — under the <b>same simulated seasons</b>, so the odds change you see is the trade's effect and not noise.
+      That is the number every other tool leaves out: a deal can add value and move your season nothing, if it upgrades a spot you were already winning.
+      Both sides are valued on your actual starting slots (${slots.join("/")}) and only deals the other manager plausibly accepts are shown.${TRADE.lastSearch?`
+      <span class="meta">Searched ${TRADE.lastSearch.considered.toLocaleString()} viable packages, simulated the top ${TRADE.lastSearch.simmed||0}, in ${TRADE.lastSearch.ms}ms.</span>`:""}</div>`;
 }
 /* Simulation error bar. A title percentage from N random seasons is a sample proportion, so it
    carries a standard error of sqrt(p(1-p)/N); comparing two of them compounds it. Anything
@@ -4989,8 +5069,13 @@ function playBracket(seeds,wk,startW){
   }
   return alive[0];
 }
-function simTitle(rosters,slots,iters){
-  const T=rosters.length, N=iters||400; let titles=0;
+function simTitle(rosters,slots,iters){ return simOdds(rosters,slots,iters).title; }
+/* The championship simulator, now reporting BOTH the odds of making the playoffs and the odds of
+   winning it all, for your team. Playoffs is the more actionable number and moves the most; the
+   title is the objective a trade is ultimately judged against. It's the same run either way, so
+   there's no reason to compute one without the other. */
+function simOdds(rosters,slots,iters){
+  const T=rosters.length, N=iters||400; let titles=0, playoffs=0;
   const S=TRADE.schedule;
   const regEnd=S?S.regEnd:14, pStart=S?S.playoffStart:15;
   const nSeeds=Math.min(T,S?S.playoffTeams:6);
@@ -5038,10 +5123,25 @@ function simTitle(rosters,slots,iters){
       for(let t=0;t<T;t++)pf[t]+=wk[t][w];
     }
     const seeds=[...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])).slice(0,nSeeds);
+    if(seeds.includes(TRADE.me))playoffs++;
     if(seeds.length<2){ if(seeds[0]===TRADE.me)titles++; continue; }
     if(playBracket(seeds,wk,pStart)===TRADE.me)titles++;
   }
-  return Math.round(titles/N*100);
+  return {title:Math.round(titles/N*100), playoff:Math.round(playoffs/N*100),
+          titleRaw:titles/N, playoffRaw:playoffs/N};
+}
+/* A trade's effect on your season, measured under COMMON RANDOM NUMBERS. The finder used to run
+   the before and after seasons on independent randomness, so the difference between two ~8% title
+   numbers was mostly sampling noise — which is exactly why the old finder could only DISPLAY odds
+   on a few cards and had to rank by value points instead. Seeding both runs to the same stream
+   makes every simulated season identical except for the players who changed hands, so the delta is
+   the trade and nothing else, and small real edges stop hiding in the noise band. */
+const TRADE_ODDS_SEED=76543;
+function oddsForRosters(rosters,slots,iters){
+  seedRng(TRADE_ODDS_SEED);
+  const r=simOdds(rosters,slots,iters);
+  unseedRng();
+  return r;
 }
 function tradeTitleDelta(c,slots,baseline){
   const after=TRADE.teams.map((t,i)=>i===TRADE.me?c.mineAfter:(i===c.oi?c.theirAfter:t.players));
@@ -7050,7 +7150,14 @@ function wireSetup(){
   wireTradeLab(); wireKeepers(); wireCap();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
-  $("#tradeFindBtn").onclick=()=>findTrades();
+  $("#tradeFindBtn").onclick=()=>{
+    // The finder runs the season simulator on every shortlisted deal, which takes a couple of
+    // seconds and blocks the thread. Paint an honest status first — this is real work, and saying
+    // so beats a frozen button — then hand off so the message shows before the loop starts.
+    tradeStatus("Simulating the rest of your season for each trade…","var(--ink-2)");
+    $("#tradeResults").innerHTML=`<div class="emptystate">Running the championship simulator on every shortlisted deal — this is the part no other tool does.</div>`;
+    setTimeout(findTrades,30);
+  };
   $("#evalRunBtn").onclick=()=>evalTrade();
   $("#leagueLearnBtn").onclick=()=>learnLeague($("#leagueSelect").value);
   $("#leagueClearBtn").onclick=()=>{ state.league=null; $("#leagueTend").classList.add("hide");
