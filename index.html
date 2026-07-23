@@ -845,12 +845,13 @@
       <div class="hd"><h2>Trade finder</h2><span id="tradeCtx" class="pickcounter" style="margin-left:auto"></span></div>
       <div class="bd">
         <div class="syncrow">
-          <button class="draftbtn alt" id="tradeLoadBtn">Load my league rosters</button>
+          <input type="text" id="tradeUser" class="search" placeholder="Your Sleeper username" style="min-width:180px">
+          <button class="draftbtn alt" id="tradeLoadBtn">Load my league</button>
           <select id="tradeLeague" class="hide" style="flex:1;min-width:200px"></select>
           <select id="tradeMe" class="hide" style="min-width:170px"></select>
           <button class="draftbtn hide" id="tradeFindBtn">Find trades</button>
         </div>
-        <div id="tradeStatus" class="meta" style="margin-top:6px">Pulls every manager's real roster from Sleeper, then searches for deals that improve <b>both</b> teams.</div>
+        <div id="tradeStatus" class="meta" style="margin-top:6px"><b>Type your Sleeper username, load your league, pick your team, hit Find trades.</b> It pulls every manager's real roster and ranks deals by how much each one raises <b>your</b> playoff and title odds — not by trade value.</div>
         <div id="tradeResults" style="margin-top:12px"></div>
       </div>
     </div>
@@ -3719,8 +3720,16 @@ function tradeVal(){
   return p=>{ let v=memo.get(p.id); if(v===undefined){ v=raw(p); memo.set(p.id,v); } return v; };
 }
 async function tradeLoadLeagues(){
-  const user=($("#syncUser").value||"").trim()||localStorage.getItem("ffwr_syncuser")||"";
-  if(!user){tradeStatus("Add your Sleeper username in League Setup first.","var(--crit)");return;}
+  /* Take the username from the field right here on the trade tab first, then fall back to the one
+     on League Setup or whatever was stored. It used to read ONLY the League Setup field, so the
+     Load button on this tab failed with "add your username in League Setup" and no field in sight
+     — the thing you needed wasn't where you were standing. */
+  const user=($("#tradeUser")&&$("#tradeUser").value.trim())||($("#syncUser")&&$("#syncUser").value.trim())
+             ||localStorage.getItem("ffwr_syncuser")||"";
+  if(!user){tradeStatus("Type your Sleeper username in the box above.","var(--crit)");
+            if($("#tradeUser"))$("#tradeUser").focus(); return;}
+  try{localStorage.setItem("ffwr_syncuser",user);}catch(e){}
+  if($("#tradeUser")&&!$("#tradeUser").value)$("#tradeUser").value=user;
   tradeStatus("Finding your leagues…");
   try{
     const u=await SJ(`https://api.sleeper.app/v1/user/${encodeURIComponent(user)}`);
@@ -7150,6 +7159,13 @@ function wireSetup(){
   wireTradeLab(); wireKeepers(); wireCap();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
+  // Prefill the username if it's already known, and let Enter load — small things, but this is the
+  // one gate between the user and the whole feature.
+  if($("#tradeUser")){
+    const known=localStorage.getItem("ffwr_syncuser")||($("#syncUser")&&$("#syncUser").value.trim())||"";
+    if(known)$("#tradeUser").value=known;
+    $("#tradeUser").onkeydown=e=>{if(e.key==="Enter")tradeLoadLeagues();};
+  }
   $("#tradeFindBtn").onclick=()=>{
     // The finder runs the season simulator on every shortlisted deal, which takes a couple of
     // seconds and blocks the thread. Paint an honest status first — this is real work, and saying
