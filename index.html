@@ -172,6 +172,31 @@
   .liverow .meta.num{min-width:56px;text-align:right}
   .livescore{font-variant-numeric:tabular-nums}
   @media(max-width:700px){.liveHero{grid-template-columns:1fr auto 1fr;gap:6px}.livebig{font-size:30px}}
+  /* AI GM copilot */
+  .aifab{position:fixed;right:20px;bottom:20px;width:52px;height:52px;border-radius:50%;border:1px solid var(--line-2);
+         background:var(--panel);box-shadow:var(--shadow);font-size:24px;cursor:pointer;z-index:60;line-height:1}
+  .aifab:hover{background:var(--panel-2);transform:translateY(-1px)}
+  .aipanel{position:fixed;right:20px;bottom:20px;width:min(400px,calc(100vw - 32px));max-height:min(620px,80vh);
+           display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);
+           border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.28);z-index:61;overflow:hidden}
+  .aihd{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px}
+  .aihd .meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .aidot{width:8px;height:8px;border-radius:50%;background:var(--good-ink);flex:none}
+  .aibody{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-height:120px}
+  .aimsg{font-size:13px;line-height:1.5;padding:9px 11px;border-radius:10px;max-width:92%;white-space:pre-wrap}
+  .aimsg.user{align-self:flex-end;background:var(--accent-soft,var(--panel-2));border:1px solid var(--line-2)}
+  .aimsg.bot{align-self:flex-start;background:var(--panel-2)}
+  .aimsg.err{align-self:stretch;background:color-mix(in srgb,var(--crit-ink) 12%,transparent);max-width:100%}
+  .aimsg b{font-weight:700}
+  .aiquick{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}
+  .aichip{font-size:11.5px;padding:5px 9px;border-radius:14px;border:1px solid var(--line-2);background:var(--panel-2);
+          color:var(--ink-2);cursor:pointer}
+  .aichip:hover{color:var(--ink);border-color:var(--accent)}
+  .airow{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+  .airow input{flex:1;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+  .aifoot{padding:0 14px 10px;font-size:11px}
+  .aithinking{display:inline-block;opacity:.6}
+  @media(max-width:700px){.aipanel{right:8px;bottom:8px;left:8px;width:auto;max-height:78vh}.aifab{right:14px;bottom:14px}}
   /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
   .lcmp{width:100%}
   .lcmp td,.lcmp th{padding:5px 8px;font-size:12.5px}
@@ -1276,10 +1301,45 @@
       <div class="note" style="margin-top:12px">These are the players left over if you skip a position entirely — the best one at each spot that <b>nobody in your league is starting</b>. That makes each row a target: drafting a quarterback only helps you as much as he beats the quarterback in the QB row, because that one is free.
       <br><br>It's also why the same points are worth different amounts at different positions. If the leftover running back scores 180 and the leftover receiver scores 210, then a 250-point back is a bigger prize than a 250-point receiver — he's beating a weaker free option by more.</div></div>
     </div>
+    <div class="panel" style="margin-top:16px" id="aiSetupPanel">
+      <div class="hd"><h2>🤖 AI GM copilot</h2><span class="pickcounter" style="margin-left:auto" id="aiStatusChip">not connected</span></div>
+      <div class="bd">
+        <div class="note" style="margin-bottom:12px">A general manager in your pocket that <b>explains this tool's own numbers in plain English</b> — why a pick, whether a trade is worth it, who to stream — grounded in the live simulation, and told <b>never to invent a stat</b>. It's <b>free</b>: a Google <b>Gemini</b> key has a no-credit-card free tier that easily covers a season. Your key is stored <b>only in this browser</b> and used only to call the AI directly — it never touches any server of ours.</div>
+        <div class="form-grid">
+          <div class="field"><label>Provider</label>
+            <div class="seg" id="ai_provider"><button data-v="gemini" class="on">Gemini · free</button><button data-v="anthropic">Claude</button><button data-v="openai">OpenAI</button></div>
+          </div>
+          <div class="field" style="grid-column:1/-1"><label>API key <span class="meta" id="aiKeyHint">— grab a free one at <b>aistudio.google.com/apikey</b> (sign in, “Create API key”, paste it here)</span></label>
+            <div class="syncrow">
+              <input type="password" id="ai_key" placeholder="Paste your API key — stored only on this device" autocomplete="off">
+              <button class="draftbtn" id="aiSaveKey">Save</button>
+              <button class="ghost" id="aiClearKey">Clear</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+          <button class="ghost sm" id="aiTestBtn">Test connection</button>
+          <span id="aiSetupStatus" class="meta"></span>
+        </div>
+      </div>
+    </div>
   </section>
 </div>
 
 <div class="flashwrap"><div class="flash" id="flash"></div></div>
+
+<button id="aiFab" class="aifab hide" title="Ask the GM copilot" aria-label="Ask the GM copilot">🤖</button>
+<div id="aiPanel" class="aipanel hide" role="dialog" aria-label="AI GM copilot">
+  <div class="aihd"><span class="aidot"></span><b>GM copilot</b><span class="meta" id="aiCtxLabel"></span>
+    <button class="ghost sm" id="aiClose" style="margin-left:auto" aria-label="Close">✕</button></div>
+  <div class="aibody" id="aiThread"></div>
+  <div class="aiquick" id="aiQuick"></div>
+  <div class="airow">
+    <input type="text" id="aiInput" placeholder="Ask about your team, a trade, the wire…" autocomplete="off">
+    <button class="draftbtn" id="aiSend" style="width:auto;padding:8px 14px">Ask</button>
+  </div>
+  <div class="aifoot meta">Explains the app's own numbers — it won't invent stats. <span id="aiProvLabel"></span></div>
+</div>
 
 <script src="data.js"></script>
 <script>
@@ -1951,6 +2011,135 @@ function liveNow(units){ let t=0; for(const u of units) if(u.live) t+=u.live.pts
 function liveMean(units){ let t=0; for(const u of units) t+=(u.live?u.live.pts+u.base*u.mult*u.live.frac:u.base*u.mult); return t; }
 // players who can still add points (not final)
 function liveRemaining(units){ return units.filter(u=>!u.live||u.live.frac>0); }
+
+/* ================= AI GM copilot — bring-your-own-key, free via Gemini =================
+   A general manager that explains THIS tool's own numbers in plain English. The whole design rests on one
+   rule: it reasons only over a CONTEXT block of numbers the app already computed (odds, VORP, waiver value,
+   trade equity), and is told never to invent a stat. That's what separates it from a fantasy chatbot that
+   hallucinates — it has no player knowledge of its own, only the calibrated simulation's output.
+   Runs entirely client-side: the key is stored in this browser and used to call the provider directly
+   (Gemini's free tier, or a Claude/OpenAI key). No backend, nothing billed to the site. Absent a key, the
+   whole feature hides and every number in the app still works exactly as before. */
+let AI={provider:"gemini",key:"",model:""};
+const AI_MODELS={gemini:"gemini-2.0-flash",anthropic:"claude-3-5-haiku-latest",openai:"gpt-4o-mini"};
+const AI_KEYURL={gemini:"https://aistudio.google.com/apikey",anthropic:"https://console.anthropic.com/settings/keys",openai:"https://platform.openai.com/api-keys"};
+function aiLoad(){ try{const s=JSON.parse(localStorage.getItem("ffwr_ai")||"{}"); AI.provider=s.provider||"gemini"; AI.key=s.key||""; AI.model=s.model||""; }catch(e){} }
+function aiSave(){ try{localStorage.setItem("ffwr_ai",JSON.stringify(AI));}catch(e){} }
+function aiConfigured(){ return !!(AI.key&&AI.key.trim()); }
+function aiModel(){ return AI.model||AI_MODELS[AI.provider]||AI_MODELS.gemini; }
+const AI_SYSTEM=`You are the GM copilot built into "Draft War Room", a fantasy football tool. Answer ONLY from the CONTEXT block sent with each question — it holds numbers the app already computed from a Monte Carlo simulation plus the user's league settings, rosters, projections, odds and waiver/trade math.
+Hard rules:
+- NEVER invent or recall stats, projections, injuries, ages, schedules, ADP or news that are not in the context. You have no knowledge of real players beyond what the context states.
+- If the answer isn't in the context, say so plainly and name the tab that would show it. Do not guess.
+- Be concise and decisive: give a clear recommendation and the reason, citing the app's own numbers (win %, VORP/value, projected points, equity swing, FAAB).
+- You are explaining THIS tool's output to its user. Talk like a sharp fantasy GM. No preamble, no hedging, no disclaimers.`;
+async function askAI(context, question){
+  if(!aiConfigured()) throw new Error("Add a free API key in League Setup first.");
+  const prov=AI.provider, model=aiModel();
+  const user=`CONTEXT (the app's computed numbers — reason only from this):\n${context}\n\nQUESTION: ${question}`;
+  if(prov==="gemini"){
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(AI.key)}`;
+    const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system_instruction:{parts:[{text:AI_SYSTEM}]},contents:[{role:"user",parts:[{text:user}]}],
+        generationConfig:{temperature:0.4,maxOutputTokens:900}})});
+    const d=await r.json(); if(!r.ok) throw new Error((d.error&&d.error.message)||("HTTP "+r.status));
+    const t=(((d.candidates||[])[0]||{}).content||{}).parts; return (t&&t[0]&&t[0].text)||"(no answer returned)";
+  }
+  if(prov==="anthropic"){
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"content-type":"application/json","x-api-key":AI.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model,max_tokens:900,system:AI_SYSTEM,messages:[{role:"user",content:user}]})});
+    const d=await r.json(); if(!r.ok) throw new Error((d.error&&d.error.message)||("HTTP "+r.status));
+    return (d.content&&d.content[0]&&d.content[0].text)||"(no answer returned)";
+  }
+  const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",
+    headers:{"content-type":"application/json","authorization":"Bearer "+AI.key},
+    body:JSON.stringify({model,temperature:0.4,max_tokens:900,messages:[{role:"system",content:AI_SYSTEM},{role:"user",content:user}]})});
+  const d=await r.json(); if(!r.ok) throw new Error((d.error&&d.error.message)||("HTTP "+r.status));
+  return (d.choices&&d.choices[0]&&d.choices[0].message.content)||"(no answer returned)";
+}
+/* The grounding: turn whatever tab you're on into a compact block of the app's real numbers. Every question
+   is answered against this, so the model literally cannot talk about players it wasn't handed. */
+function aiActiveTab(){ const s=[...document.querySelectorAll("section[id^='tab-']")].find(x=>!x.classList.contains("hide")); return s?s.id.replace("tab-",""):"draft"; }
+function aiPlLine(p){ return `${p.name} (${p.pos}${p.team?" "+p.team:""}) ${fmt(pts(p))}pt${p.bye?" bye"+p.bye:""}${p.inj?" ["+p.inj+"]":""}`; }
+function aiContext(){
+  const s=state.settings, me=myIdx();
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"full PPR":rec>0?"half-PPR":"standard (non-PPR)";
+  const roster=Object.entries(s.roster).filter(([k,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(", ");
+  const L=[];
+  L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. Starting lineup: ${roster}. ${leagueSynced()?`Synced to live league${TRADE.leagueName?` "${TRADE.leagueName}"`:""}.`:"Not synced to a live league (using the draft board)."}`);
+  const myR=((leagueSynced()?myLiveRoster():teamRoster(me))||[]).filter(p=>p&&!p.isPick);
+  if(myR.length) L.push(`Your roster (${myR.length} players): ${myR.map(aiPlLine).join("; ")}`);
+  const tab=aiActiveTab(); let label="GM", quick=["What should I do next?"];
+  try{
+    if(tab==="draft"){
+      const drafted=new Set(state.picks.map(p=>p.playerId));
+      const avail=state.players.filter(p=>inLeague(p)&&!drafted.has(p.id)).sort((a,b)=>valueOf(b)-valueOf(a)).slice(0,14);
+      L.push(`Best available now (ranked by this app's value): ${avail.map(p=>`${aiPlLine(p)} adp${Math.round(adpOf(p))}`).join("; ")}`);
+      label="Draft"; quick=["Who should I take and why?","Where am I weakest?","Best value left on the board?"];
+    } else if(tab==="waivers"||tab==="season"){
+      const wk=state.ui.seasonWeek||1;
+      const wb=waiverBoard(myR,wk,10,6)||[];
+      if(wb.length) L.push(`Top waiver pickups (week ${wk}, by starting-lineup value): ${wb.slice(0,10).map(w=>{const p=w.p||w.pl||w;return `${p.name} (${p.pos})${w.gain!=null?" +"+fmt(w.gain):w.val!=null?" +"+fmt(w.val):""}${w.faab!=null?" $"+w.faab:""}`;}).join("; ")}`);
+      label="Waivers"; quick=["Who should I add this week?","Any drops I should make?","Best streaming play?"];
+    } else if(tab==="matchups"){
+      const anyLive=(typeof liveActive==="function"&&liveActive());
+      L.push(`It is week ${state.ui.mWeek||state.ui.seasonWeek||1}. ${anyLive?"Games are in progress (live).":"See the Matchups tab for your win probability and start/sit."}`);
+      label="Matchups"; quick=["Who should I start this week?","How do I win this matchup?","Any risky starts?"];
+    } else if(tab==="injuries"){
+      const inj=myR.filter(p=>p&&p.inj); if(inj.length)L.push(`Your injured players: ${inj.map(p=>`${p.name} ${p.inj}${p.injPart?" ("+p.injPart+")":""}${p.injNote?" — "+p.injNote:""}`).join("; ")}`);
+      label="Injuries"; quick=["Who's a real concern?","Who should I replace?"];
+    } else if(tab==="trade"){
+      label="Trades"; quick=["What should I target in a trade?","Who can I sell high?","Am I a contender or rebuild?"];
+    } else if(tab==="players"){ label="Projections"; quick=["Who's overrated on this board?","Explain a player's projection"]; }
+    else if(tab==="team"){ label="My Team"; quick=["What are my roster holes?","Am I contender or rebuild?"]; }
+    else if(tab==="dynasty"||tab==="keepers"||tab==="cap"){ label="Dynasty"; quick=["Contend or rebuild?","Who should I keep?"]; }
+  }catch(e){ L.push("(some tab detail unavailable this render)"); }
+  return {text:L.join("\n"), label, quick, tab};
+}
+// tiny, safe formatter: escape, then **bold** and newlines
+function aiFmt(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+  .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/\n/g,"<br>"); }
+let AI_BUSY=false;
+function aiPush(cls,html){ const th=$("#aiThread"); if(!th)return null;
+  const d=document.createElement("div"); d.className="aimsg "+cls; d.innerHTML=html; th.appendChild(d); th.scrollTop=th.scrollHeight; return d; }
+async function aiAsk(question){
+  if(!question||AI_BUSY)return;
+  if(!aiConfigured()){ aiPush("err","Add a free API key in <b>League Setup → AI GM copilot</b> first — it takes 30 seconds and there's a no-charge Gemini option."); return; }
+  AI_BUSY=true; $("#aiInput").value="";
+  aiPush("user",aiFmt(question));
+  const think=aiPush("bot",'<span class="aithinking">thinking…</span>');
+  try{
+    const ctx=aiContext();
+    const ans=await askAI(ctx.text,question);
+    think.className="aimsg bot"; think.innerHTML=aiFmt(ans);
+  }catch(e){ think.className="aimsg err"; think.innerHTML="Couldn't reach the AI: "+aiFmt(e.message||String(e))+"<br><span class='meta'>Check your key in League Setup.</span>"; }
+  $("#aiThread").scrollTop=$("#aiThread").scrollHeight; AI_BUSY=false;
+}
+function aiRenderQuick(){
+  const q=$("#aiQuick"); if(!q)return; const c=aiContext();
+  $("#aiCtxLabel").textContent="· "+c.label;
+  q.innerHTML=c.quick.map(t=>`<button class="aichip">${t.replace(/</g,"&lt;")}</button>`).join("");
+  q.querySelectorAll(".aichip").forEach((b,i)=>b.onclick=()=>aiAsk(c.quick[i]));
+}
+function aiOpen(){ if(!$("#aiPanel"))return; $("#aiPanel").classList.remove("hide"); $("#aiFab").classList.add("hide");
+  if(!$("#aiThread").children.length){ const c=aiContext();
+    aiPush("bot",`I'm your GM copilot — I read the numbers on your <b>${c.label}</b> screen and explain them straight. Ask me anything, or tap a prompt below.`); }
+  aiRenderQuick(); setTimeout(()=>{try{$("#aiInput").focus();}catch(e){}},30); }
+function aiClosePanel(){ if($("#aiPanel"))$("#aiPanel").classList.add("hide"); aiRefreshFab(); }
+function aiRefreshFab(){ const fab=$("#aiFab"); if(!fab)return;
+  const panelOpen=$("#aiPanel")&&!$("#aiPanel").classList.contains("hide");
+  fab.classList.toggle("hide", !aiConfigured() || panelOpen);
+  const pl=$("#aiProvLabel"); if(pl)pl.textContent=aiConfigured()?("· "+({gemini:"Gemini",anthropic:"Claude",openai:"OpenAI"}[AI.provider]||AI.provider)):""; }
+function aiRefreshSetup(){
+  const chip=$("#aiStatusChip"); if(chip){ chip.textContent=aiConfigured()?"connected ✓":"not connected"; chip.className="pickcounter"; }
+  const hint=$("#aiKeyHint"); if(hint){ const u=AI_KEYURL[AI.provider];
+    hint.innerHTML=AI.provider==="gemini"?`— grab a free one at <b>aistudio.google.com/apikey</b> (sign in → “Create API key” → paste here)`
+      :`— from <b>${u.replace(/^https?:\/\//,"")}</b>`; }
+  $$("#ai_provider button").forEach(b=>b.classList.toggle("on",b.dataset.v===AI.provider));
+  const k=$("#ai_key"); if(k&&document.activeElement!==k)k.value=AI.key||"";
+  aiRefreshFab();
+}
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
   if(pl.idp) return pl.adpIdp!=null?pl.adpIdp:(pl.adp||999);
@@ -3922,6 +4111,26 @@ function selfTest(){
       if(wr){ const before=pts(wr); const keep=D.USAGE_WK; D.USAGE_WK=null; const without=pts(wr); D.USAGE_WK=keep;
         add("Usage never leaks into a projection",Math.abs(before-without)<1e-9,
             `${lastName(wr.name)} scores ${fmt(before)} with or without usage`); }
+    })();
+    /* AI GM copilot. Three things must hold regardless of whether a key is set: with no key the feature
+       hides and the app is untouched; the context handed to the model is the app's REAL numbers (so it
+       can't talk about players it wasn't given); and the model is explicitly forbidden from inventing
+       stats. Also that answers are HTML-escaped before display. No network call is made here. */
+    (()=>{
+      const savedKey=AI.key;
+      AI.key=""; aiRefreshFab();
+      const fabHidden=$("#aiFab")?$("#aiFab").classList.contains("hide"):true;
+      add("With no AI key, the copilot hides and every number still works",!aiConfigured()&&fabHidden,
+          "no key → 🤖 hidden, app fully functional");
+      const c=aiContext();
+      const grounded=!!(c&&c.text&&c.text.indexOf(state.settings.teams+" teams")>=0&&c.quick&&c.quick.length);
+      add("The AI is grounded in the app's real numbers",grounded,
+          grounded?`context: "${c.text.slice(0,44)}…" (${c.tab} tab)`:"context is missing the league's own numbers");
+      add("The AI is instructed never to invent stats",/NEVER invent/.test(AI_SYSTEM)&&/only from the CONTEXT/i.test(AI_SYSTEM),
+          "system prompt binds it to the context block");
+      const safe=!/<script/i.test(aiFmt("<script>x<\/script> **b**"))&&/<b>b<\/b>/.test(aiFmt("**b**"));
+      add("AI answers are HTML-escaped before display",safe,"tags neutralised, only **bold** rendered");
+      AI.key=savedKey; aiRefreshFab();
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -8461,6 +8670,8 @@ function showTab(name){
   // opening Matchups pulls fresh live scores if what we have is stale (or we've never fetched)
   if(name==="matchups"&&typeof LIVE!=="undefined"&&!LIVE.loading&&(!LIVE.ts||Date.now()-LIVE.ts>60000))
     try{ refreshLive(); }catch(e){}
+  // the copilot follows you: if it's open, re-point its prompts at the new tab
+  try{ if(typeof aiRenderQuick==="function"&&$("#aiPanel")&&!$("#aiPanel").classList.contains("hide"))aiRenderQuick(); }catch(e){}
 }
 
 /* ---- theme ---- */
@@ -8544,6 +8755,8 @@ function boot(){
   refreshInjuries();
   // Live scores: fetch once, then poll while the Matchups tab is open. Also non-blocking.
   refreshLive(); startLivePolling();
+  // AI copilot: load any saved key, reveal the 🤖 button if one exists.
+  aiLoad(); aiRefreshSetup();
 }
 function startLivePolling(){
   if(LIVE.timer)return;
@@ -8567,6 +8780,21 @@ function init(){
   segWire("#s_injscope",v=>{state.ui.injScope=v;renderInjuries();save();});
   if($("#injRefreshBtn"))$("#injRefreshBtn").onclick=()=>refreshInjuries();
   if($("#mLiveRefresh"))$("#mLiveRefresh").onclick=()=>{ if($("#mLiveTs"))$("#mLiveTs").textContent="loading…"; refreshLive(); };
+  // ---- AI GM copilot wiring ----
+  if($("#aiFab"))$("#aiFab").onclick=aiOpen;
+  if($("#aiClose"))$("#aiClose").onclick=aiClosePanel;
+  if($("#aiSend"))$("#aiSend").onclick=()=>aiAsk($("#aiInput").value.trim());
+  if($("#aiInput"))$("#aiInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();aiAsk($("#aiInput").value.trim());} });
+  $$("#ai_provider button").forEach(b=>b.onclick=()=>{ AI.provider=b.dataset.v; AI.model=""; aiSave(); aiRefreshSetup(); });
+  if($("#aiSaveKey"))$("#aiSaveKey").onclick=()=>{ AI.key=($("#ai_key").value||"").trim(); aiSave(); aiRefreshSetup();
+    flash(aiConfigured()?"AI copilot connected — look for 🤖 bottom-right":"Key cleared"); };
+  if($("#aiClearKey"))$("#aiClearKey").onclick=()=>{ AI.key=""; if($("#ai_key"))$("#ai_key").value=""; aiSave(); aiRefreshSetup(); flash("Key cleared"); };
+  if($("#aiTestBtn"))$("#aiTestBtn").onclick=async()=>{ const st=$("#aiSetupStatus");
+    AI.key=($("#ai_key").value||"").trim(); aiSave(); aiRefreshSetup();
+    if(!aiConfigured()){ st.textContent="Paste a key first."; return; }
+    st.textContent="testing…";
+    try{ const a=await askAI("League: test.","Reply with exactly: connection OK"); st.innerHTML="✓ "+aiFmt(a.slice(0,60)); }
+    catch(e){ st.innerHTML="✗ "+aiFmt(e.message||String(e)); } };
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
