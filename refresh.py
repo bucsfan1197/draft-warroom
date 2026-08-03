@@ -73,8 +73,14 @@ def pull_sleeper_players():
             if p.get("position") not in ("QB","RB","WR","TE","K"): continue
             nm=p.get("full_name") or ""
             if not nm: continue
+            bp=p.get("injury_body_part")
             out[norm(nm)]={"name":nm,"pos":p.get("position"),"age":p.get("age"),"team":p.get("team"),
-                           "inj":p.get("injury_status"),"depth":p.get("depth_chart_order"),"sid":str(pid)}
+                           "inj":p.get("injury_status"),"depth":p.get("depth_chart_order"),"sid":str(pid),
+                           # a real anatomical body part when Sleeper has one — the browser overlays
+                           # ESPN's live status on top, but this is the baked baseline so the injury
+                           # tab reads sensibly even before the live feed lands (or if it's offline).
+                           "injPart":(bp if bp and bp!="Undisclosed" else None),
+                           "injNews":p.get("news_updated")}
         log(f"  Sleeper players: {len(out)}")
     except Exception as ex: log("  Sleeper players fail:",ex)
     return out
@@ -436,6 +442,8 @@ def build_data():
         if io:
             if io.get("inj"): p["inj"]=io["inj"]
             if io.get("depth") is not None: p["depth"]=io["depth"]
+            if io.get("injPart"): p["injPart"]=io["injPart"]
+            if io.get("injNews"): p["injNews"]=io["injNews"]
         # extra ADP sources
         ea=espn_adp.get((pos, team if pos=="DST" else k))
         if ea:
@@ -495,6 +503,8 @@ def build_data():
         if info.get("sid"): p["sid"]=info["sid"]
         if info.get("inj"): p["inj"]=info["inj"]
         if info.get("depth") is not None: p["depth"]=info["depth"]
+        if info.get("injPart"): p["injPart"]=info["injPart"]
+        if info.get("injNews"): p["injNews"]=info["injNews"]
         if ea:
             if ea.get("s"): p["adpE"]=ea["s"]
             if ea.get("sf"): p["adpEsf"]=ea["sf"]

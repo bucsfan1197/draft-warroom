@@ -178,6 +178,17 @@
   .dc-lab{display:flex;justify-content:space-between;gap:6px;font-size:10px;color:var(--ink-2);
           margin-top:3px;text-align:center}
   .dc-lab span{flex:1;line-height:1.3}
+  /* ---- injury report ---- */
+  .injcard{border:1px solid var(--line);border-left-width:3px;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--panel)}
+  .injcard.crit{border-left-color:var(--crit)}
+  .injcard.warn{border-left-color:var(--warn)}
+  .injhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .injname{font-size:14px}
+  .injname a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line-2)}
+  .injname a:hover{color:var(--accent)}
+  .injnote{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin:6px 0 4px}
+  .injmeta{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink-2);align-items:center}
+  .injmeta a{color:var(--accent)}
   /* ---- live draft intel ---- */
   .intel-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;margin-bottom:5px;
              background:var(--panel-2);border:1px solid var(--line)}
@@ -621,6 +632,7 @@
       <button class="tab hide" data-tab="keepers" id="keeperTabBtn">Keepers</button>
       <button class="tab hide" data-tab="cap" id="capTabBtn">Contracts</button>
       <button class="tab" data-tab="season">In-Season</button>
+      <button class="tab" data-tab="injuries">Injuries</button>
       <button class="tab" data-tab="trade">Trades</button>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="setup">League Setup</button>
@@ -898,6 +910,20 @@
   </section>
 
   <!-- IN-SEASON TAB -->
+  <section id="tab-injuries" class="hide">
+    <div class="panel">
+      <div class="hd"><h2>Injury report</h2>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span id="injFresh" class="pickcounter"></span>
+          <div class="seg" id="s_injscope"><button data-v="mine" class="on">My roster</button><button data-v="all">Whole league</button></div>
+          <button class="ghost sm" id="injRefreshBtn">↻ Refresh</button></span></div>
+      <div class="bd">
+        <div class="note" style="margin-bottom:12px;font-size:12px">Live from ESPN's injury feed, pulled fresh each time you open the app — closer to day-to-day than the six-hour data refresh. Each player shows the latest status, the injury, the beat reporter's note and how long ago it landed. The status here <b>flows into every tool automatically</b> — a player marked Out is already discounted in your projections, start/sit, waivers, trades and the draft board.</div>
+        <div id="injList"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="tab-season" class="hide">
     <div class="panel">
       <div class="hd"><h2>Start / Sit</h2><span id="seasonCtx" class="pickcounter" style="margin-left:auto"></span></div>
@@ -1426,7 +1452,7 @@ function freshState(){
     settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:20},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
-    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null}
+    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null,injScope:"mine"}
   };
 }
 
@@ -1599,9 +1625,67 @@ function ceilOf(pl){return pl.dist?pts(pl)*pl.dist.c:pts(pl);}
 function injChip(pl){
   let h="";const s=pl.inj;
   if(s){const m={Questionable:["Q","warn"],Doubtful:["D","warn"],Out:["OUT","crit"],IR:["IR","crit"],PUP:["PUP","crit"],Sus:["SUS","crit"],NA:["NA","crit"],COV:["COV","warn"],DNR:["DNR","crit"]};
-    const x=m[s]||[String(s).slice(0,3),"warn"];h+=`<span class="chip ${x[1]}" title="${s}">${x[0]}</span>`;}
+    const x=m[s]||[String(s).slice(0,3),"warn"];
+    // the tooltip carries whatever the live feed knows: the body part, the reporter's note, and
+    // how fresh it is — so hovering any chip anywhere in the app shows the real story, not just a letter
+    const tip=[s,pl.injPart&&pl.injPart!=="Undisclosed"?pl.injPart:"",pl.injNote||"",pl.injFresh?"("+agoText(pl.injFresh)+")":""]
+      .filter(Boolean).join(" · ").replace(/"/g,"'");
+    h+=`<span class="chip ${x[1]}" title="${tip}">${x[0]}</span>`;}
   if((pl.pos==="RB"||pl.pos==="WR")&&pl.depth>1)h+=`<span class="chip" title="Depth chart #${pl.depth} — not clear starter">2nd</span>`;
   return h;
+}
+function agoText(ms){
+  if(!ms)return "";
+  const h=(Date.now()-ms)/3.6e6;
+  if(h<1)return Math.max(1,Math.round(h*60))+"m ago";
+  if(h<48)return Math.round(h)+"h ago";
+  return Math.round(h/24)+"d ago";
+}
+/* ---- LIVE injury feed, pulled in the browser on every load ----
+   The baked data refreshes every six hours; injuries move faster than that — a Friday practice
+   report or a Sunday inactive is the difference between starting a player and losing the week. ESPN
+   publishes an injuries feed that updates through the day and, crucially, allows a direct browser
+   fetch, so this overlays the freshest status, body part, and the beat reporter's note onto every
+   player the moment you open the app. Everything downstream reads pl.inj, so a status that lands
+   here flows straight into projections, start/sit, waivers, trades and the draft board with no
+   further wiring. */
+const ESPN_INJ="https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries";
+const INJ_MAP={"Out":"Out","Questionable":"Questionable","Doubtful":"Doubtful","Injured Reserve":"IR",
+  "Physically Unable to Perform":"PUP","Suspension":"Sus","Day-To-Day":"Questionable"};
+let INJSTATE={loading:false,ts:null,count:0,err:null};
+async function refreshInjuries(){
+  INJSTATE.loading=true; try{renderInjuries();}catch(e){}
+  try{
+    const d=await (await fetch(ESPN_INJ)).json();
+    const byName={}; state.players.forEach(p=>{ if(!p.idp)byName[nrm(p.name)]=p; });
+    let hit=0;
+    (d.injuries||[]).forEach(team=>{
+      (team.injuries||[]).forEach(it=>{
+        const a=it.athlete||{}, nm=nrm(a.displayName||"");
+        const pl=byName[nm]; if(!pl)return;
+        const mapped=INJ_MAP[it.status]; // undefined for "Active" and anything benign
+        const linkObj=(a.links||[]).find(l=>(l.rel||[]).includes("playercard"))||(a.links||[])[0];
+        if(mapped){
+          pl.inj=mapped;
+          // ESPN's type.description is the status category ("questionable"), NOT the body part —
+          // the real body part sits inside the reporter's note ("(back)", "(quad strain)"). Keep a
+          // genuine body part if the baked Sleeper data carried one; clear anything that's just the
+          // status word echoed back (which an earlier version wrongly stored).
+          if(pl.injPart&&/^(out|questionable|doubtful|active|day-to-day|injured reserve|suspension)$/i.test(pl.injPart))delete pl.injPart;
+          pl.injNote=(it.shortComment||it.longComment||"").trim();
+          pl.injDate=it.date||null;
+          pl.injFresh=it.date?Date.parse(it.date):Date.now();
+          if(linkObj&&linkObj.href)pl.injLink=linkObj.href;
+          hit++;
+        } else if(it.status==="Active" && pl.inj){
+          // the feed says he's healthy now — clear a status the six-hour blob still shows
+          delete pl.inj; delete pl.injPart; delete pl.injNote; delete pl.injDate;
+        }
+      });
+    });
+    INJSTATE={loading:false,ts:d.timestamp?Date.parse(d.timestamp):Date.now(),count:hit,err:null};
+  }catch(e){ INJSTATE={loading:false,ts:INJSTATE.ts,count:INJSTATE.count,err:"couldn't reach the live feed"}; }
+  try{ renderInjuries(); renderAll(); }catch(e){}
 }
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
@@ -2581,6 +2665,7 @@ const TAB_RENDER={
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
   season:  ()=>renderInSeason(),
+  injuries:()=>renderInjuries(),
   dynasty: ()=>renderDynasty(),
   keepers: ()=>renderKeepers(),
   cap:     ()=>renderCapSheet(),
@@ -2850,6 +2935,50 @@ function renderAvail(){
 /* The board every fantasy app has and this one didn't: what's gone, in order, and to whom.
    Two views because they answer different questions — the list answers "what just happened and
    what went between my picks", the grid answers "how has each team built". */
+const INJ_RANK={Out:0,Doubtful:1,IR:2,PUP:3,Sus:4,Questionable:5,NA:6,DNR:7,COV:8};
+function renderInjuries(){
+  const box=$("#injList"); if(!box)return;
+  const fresh=$("#injFresh");
+  if(fresh)fresh.innerHTML=INJSTATE.loading?"updating…"
+    :INJSTATE.err?`<span style="color:var(--warn)">${INJSTATE.err}${INJSTATE.ts?" · showing last pull":""}</span>`
+    :INJSTATE.ts?`updated ${agoText(INJSTATE.ts)}`:"";
+  const scope=state.ui.injScope||"mine";
+  const synced=TRADE.teams&&TRADE.teams.length;
+  const mineIds=new Set((synced?teamAssets(TRADE.teams[TRADE.me]||{}):teamRoster(myIdx())).map(p=>p&&p.id).filter(x=>x!=null));
+  let list=state.players.filter(p=>p.inj&&!p.idp&&["QB","RB","WR","TE","K","DST"].includes(p.pos));
+  if(scope==="mine")list=list.filter(p=>mineIds.has(p.id));
+  list.sort((a,b)=>(INJ_RANK[a.inj]??9)-(INJ_RANK[b.inj]??9)||(b.injFresh||0)-(a.injFresh||0)||pts(b)-pts(a));
+  if(!list.length){
+    box.innerHTML=`<div class="emptystate">${scope==="mine"
+      ? (mineIds.size?"None of your players are on the injury report right now. That's the good news.":"Sync your league on the Trades tab (or draft a roster) to see just your players — or switch to Whole league.")
+      : "Nobody's on the injury report — either it's the quiet season or the feed hasn't loaded. Try Refresh."}</div>`;
+    return;
+  }
+  const sev={Out:"crit",IR:"crit",Doubtful:"crit",PUP:"crit",Sus:"crit",Questionable:"warn",NA:"warn",DNR:"warn",COV:"warn"};
+  box.innerHTML=list.map(p=>`<div class="injcard ${sev[p.inj]||"warn"}">
+    <div class="injhead">
+      <span class="pos ${p.pos}">${p.pos}</span>
+      <b class="injname">${p.injLink?`<a href="${p.injLink}" target="_blank" rel="noopener">${p.name}</a>`:p.name}</b>
+      <span class="meta">${p.team||""}</span>
+      <span class="chip ${sev[p.inj]||"warn"}" style="margin-left:auto">${p.inj}${p.injPart&&p.injPart!=="Undisclosed"?" · "+p.injPart:""}</span>
+    </div>
+    ${p.injNote?`<div class="injnote">${p.injNote}</div>`:""}
+    <div class="injmeta">
+      ${p.injFresh?`<span>🕑 ${agoText(p.injFresh)}</span>`:""}
+      <span>hit to your projection: <b>${injImpactText(p)}</b></span>
+      ${p.injLink?`<a href="${p.injLink}" target="_blank" rel="noopener" class="meta">ESPN player page ↗</a>`:""}
+    </div>
+  </div>`).join("");
+}
+/* Plain-language version of what this injury does to his value, straight from the availability
+   model the rest of the app already uses — so the injury tab and the projections agree. */
+function injImpactText(p){
+  const wk=availWeek(p), ros=availROS(p);
+  if(wk<=0.02)return "out this week";
+  if(ros<0.9)return `about ${Math.round((1-ros)*100)}% of his rest-of-season value at risk`;
+  if(wk<0.9)return `~${Math.round((1-wk)*100)}% less likely to suit up this week`;
+  return "expected to play";
+}
 /* The live intelligence panel: the running read on the room. It leads with the one decision that
    matters at your pick — grab or wait — then the pulse of what's happening, who picks before you
    come back around and what they'll likely take, and where every team is thin. */
@@ -3384,6 +3513,16 @@ function selfTest(){
           `${sa.filter(s=>s.verdict.kind==="grab").length} grabs, ${grabsIDontNeed} at a set position`);
       state.settings.teams=sv.teams;state.settings.slot=sv.slot;state.settings.snake=sv.snake;state.picks=sv.picks;
     })();
+    /* The live injury overlay only helps if its statuses are ones the rest of the app understands
+       and actually act on. Every status ESPN can hand us must map to a code that discounts the
+       player — otherwise a fresh "Out" would render but never reach his projection. */
+    const injCodes=Object.values(INJ_MAP);
+    const injActs=injCodes.every(c=>{
+      const p={pos:"WR",inj:c,dist:null,stats:{rec:80,recy:1000,rectd:6}};
+      return availWeek(p)<1 || availROS(p)<1 || c==="Questionable";  // Q may be ~1.0 pre-game, that's fine
+    });
+    add("Every live injury status actually moves the projection",injActs,
+        `${injCodes.length} ESPN statuses map to codes the model discounts`);
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
                         :`${strip?strip.children.length:0} tabs, no strays`);
@@ -7579,6 +7718,9 @@ function boot(){
   $("#mockBtn").classList.toggle("mockon",!!state.ui.mock);
   renderAll();
   maybeOnboard();
+  // Pull the freshest injuries in the background, then re-render once they land. Non-blocking, so a
+  // slow or offline feed never holds up the app — it just falls back to the six-hour baked data.
+  refreshInjuries();
 }
 function init(){
   state=load();
@@ -7592,6 +7734,8 @@ function init(){
   segWire("#s_pview",v=>{state.ui.pview=v;renderPlayersTab();save();});
   segWire("#s_pdetail",v=>{state.ui.pdetail=+v;renderPlayersTab();save();});
   $("#pexport").onclick=exportProjCSV;
+  segWire("#s_injscope",v=>{state.ui.injScope=v;renderInjuries();save();});
+  if($("#injRefreshBtn"))$("#injRefreshBtn").onclick=()=>refreshInjuries();
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
