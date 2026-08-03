@@ -154,6 +154,24 @@
   .h2hscore{font-size:34px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
   .h2hscore.win{color:var(--good-ink)} .h2hscore.loss{color:var(--crit-ink)}
   @media(max-width:700px){.h2h{grid-template-columns:1fr;gap:14px}.h2hside.right{text-align:left}}
+  /* live in-game panel */
+  .livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--crit-ink);
+           margin-left:8px;vertical-align:middle;animation:livepulse 1.4s ease-in-out infinite}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.28}}
+  @media(prefers-reduced-motion:reduce){.livedot{animation:none}}
+  .liveHero{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+  .liveSide{min-width:0}.liveSide.right{text-align:right}
+  .liveMid{text-align:center;padding:0 4px;display:flex;flex-direction:column;align-items:center}
+  .livebig{font-size:40px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1;color:var(--ink-2)}
+  .livebig.win{color:var(--good-ink)}
+  .liveNeed{margin-top:10px;padding:9px 12px;background:var(--panel-2);border-radius:8px;font-size:13px;line-height:1.5}
+  .liverow{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:8px;
+           padding:4px 0;border-bottom:1px solid var(--line);min-width:0}
+  .liverow .lvname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .liverow .num{font-variant-numeric:tabular-nums}
+  .liverow .meta.num{min-width:56px;text-align:right}
+  .livescore{font-variant-numeric:tabular-nums}
+  @media(max-width:700px){.liveHero{grid-template-columns:1fr auto 1fr;gap:6px}.livebig{font-size:30px}}
   /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
   .lcmp{width:100%}
   .lcmp td,.lcmp th{padding:5px 8px;font-size:12.5px}
@@ -769,6 +787,13 @@
 
   <!-- MATCHUPS TAB -->
   <section id="tab-matchups" class="hide">
+    <div class="panel" id="mLivePanel" style="margin-bottom:16px">
+      <div class="hd"><h2>Live<span id="mLiveDot" class="livedot hide"></span></h2>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="meta" id="mLiveTs"></span>
+          <button class="ghost sm" id="mLiveRefresh" title="Refresh live scores">↻</button></span></div>
+      <div class="bd"><div id="mLive"></div></div>
+    </div>
     <div class="panel">
       <div class="hd"><h2>This week</h2>
         <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
@@ -1689,6 +1714,47 @@ function injChip(pl){
   if((pl.pos==="RB"||pl.pos==="WR")&&pl.depth>1)h+=`<span class="chip" title="Depth chart #${pl.depth} — not clear starter">2nd</span>`;
   return h;
 }
+/* ---- Vegas game environment (context only) ----
+   The betting market's implied team total is the cleanest one-glance read on game script — a back whose
+   team is favored by two touchdowns sees more carries; a receiver on a double-digit underdog gets more
+   garbage-time targets. It is deliberately NOT folded into any player's projected points: tools_vegas.py
+   measured, out of sample across four seasons, that the consensus projection already prices the line, so
+   an adjustment adds noise, not accuracy. Shown as context, it's information no model has to be trusted for. */
+function vegasFor(pl,w){
+  const D=window.__FFDATA__; if(!D||!D.VEGAS||!pl||!pl.team||pl.pos==="DST")return null;
+  const arr=D.VEGAS[pl.team]; if(!arr)return null; return arr[(w||1)-1]||null;
+}
+function envWord(tot){ return tot>=48?{t:"shootout",c:"good"}:tot<=41.5?{t:"low-scoring",c:"warn"}:{t:"even",c:""}; }
+function gameEnvChip(pl,w){
+  const v=vegasFor(pl,w); if(!v)return "";
+  const fav=v.line<0, spread=Math.abs(v.line);
+  const tip=`Vegas game script: team implied ${v.itt} pts · ${fav?`${spread}-pt favorite`:spread===0?"pick'em":`${spread}-pt underdog`} vs ${v.opp} · game total ${v.tot}`.replace(/"/g,"'");
+  return `<span class="chip ${envWord(v.tot).c}" title="${tip}">${v.itt} impl</span>`;
+}
+/* ---- In-season usage / opportunity (context only) ----
+   Opportunity is the stickiest thing in fantasy: targets and carries carry week to week far better than the
+   points they produce, which is why a back who just took over a backfield is a buy before the box score
+   catches up. tools_usage.py measured that recent usage adds a small, every-fold-positive lift to the
+   consensus WEEKLY projection out of sample — but a shrinking one, so it's shown as decision context, not
+   folded into the number. Empty in the pre-season; lights up once real games are on the board. */
+function usageWkFor(pl){
+  const D=window.__FFDATA__; if(!D||!D.USAGE_WK||!pl)return null;
+  return D.USAGE_WK[nrm(pl.name)]||null;
+}
+function usageTrend(u){ // recent 3-game form vs season pace
+  if(!u||!u.g||u.g<3)return null;
+  const d=u.r3-u.ppg;
+  if(d>=3)return {t:"heating up",c:"good",d};
+  if(d<=-3)return {t:"cooling off",c:"warn",d};
+  return {t:"steady",c:"",d};
+}
+function usageChip(pl){
+  const u=usageWkFor(pl); if(!u)return "";
+  const tr=usageTrend(u);
+  const touches=(u.tgt+u.car).toFixed(1);
+  const tip=`This season: ${u.tgt} targets + ${u.car} carries per game over ${u.g} game${u.g===1?"":"s"} · ${u.ppg} ppg (last 3: ${u.r3})${tr?" · "+tr.t:""}`.replace(/"/g,"'");
+  return `<span class="chip ${tr?tr.c:""}" title="${tip}">${touches} tch/g${tr&&tr.t!=="steady"?" "+(tr.d>0?"↑":"↓"):""}</span>`;
+}
 function agoText(ms){
   if(!ms)return "";
   const h=(Date.now()-ms)/3.6e6;
@@ -1742,6 +1808,149 @@ async function refreshInjuries(){
   }catch(e){ INJSTATE={loading:false,ts:INJSTATE.ts,count:INJSTATE.count,err:"couldn't reach the live feed"}; }
   try{ renderInjuries(); renderAll(); }catch(e){}
 }
+/* ================= LIVE in-game engine =================
+   Pregame, this whole app answers "what should happen". On game day the only question that matters is
+   "what IS happening, and can I still win?" — and it's the one thing every projection tool drops. ESPN's
+   scoreboard and box-score feeds update live and allow a direct browser fetch (same as the injury feed),
+   so this pulls every player's real points as they score them, runs them through YOUR league's scoring,
+   and re-runs the same matchup simulation with the game clock baked in. A finished player is locked at
+   what he scored (zero variance); a player mid-game keeps only the variance of the snaps he has left; a
+   player who hasn't kicked off is unchanged. That yields a win probability that moves as the games do —
+   plus the number nobody else surfaces: exactly how many points you still need from who you have left. */
+const ESPN_SB="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
+const ESPN_SUM="https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=";
+let LIVE={loading:false,ts:null,week:null,seasonType:null,map:{},dst:{},games:[],err:null,timer:null};
+
+const _num=v=>{const n=parseFloat(String(v==null?"":v).replace(/,/g,""));return isFinite(n)?n:0;};
+const _slash=v=>_num(String(v==null?"":v).split("/")[0]); // "3/4" -> 3
+// fraction of the game still to be played, from the clock (1 = not kicked off, 0 = final)
+function liveFrac(st){
+  const s=(st&&st.type&&st.type.state)||"pre";
+  if(s==="pre")return 1;
+  if(s==="post")return 0;
+  const per=(st&&st.period)||1, clk=st&&st.clock!=null?st.clock:0; // clock = seconds left in the period
+  if(per>=5)return 0.02;                                           // overtime — almost nothing left
+  const secsLeft=(4-per)*900+Math.max(0,Math.min(900,clk));
+  return Math.max(0,Math.min(1,secsLeft/3600));
+}
+// fantasy points for an assembled offensive stat line under the league's scoring
+function liveFptsOff(x,s){
+  return (x.py||0)*s.passYd+(x.ptd||0)*s.passTd+(x.int||0)*s.int
+    +(x.ry||0)*s.rushYd+(x.rtd||0)*s.rushTd
+    +(x.rec||0)*s.rec+(x.recy||0)*s.recYd+(x.rectd||0)*s.recTd
+    +(x.fl||0)*(s.fl||0);
+}
+// K: distance bonuses aren't in the live box, so this is the common base (FG 3, XP 1) — noted in the UI
+function liveFptsK(x){ return (x.fgm||0)*3+(x.xpm||0)*1; }
+// DST: the standard scheme, since offensive scoring settings don't carry a DST block. Points-allowed
+// tier + turnovers + defensive scores. Leagues vary on DST more than offense, so it's labelled a base.
+function dstTier(pa){ return pa===0?10:pa<=6?7:pa<=13?4:pa<=20?1:pa<=27?0:pa<=34?-1:-4; }
+// pull one athlete stat by its ESPN key name, robust to column reordering
+function _statBy(cat,key){ const i=(cat.keys||[]).indexOf(key); return i; }
+// assemble every player in one team's box into {nrm(name):{stats…}} and the team's defensive totals
+function parseTeamBox(tb){
+  const abbr=stdTeam(tb.team&&(tb.team.abbreviation||tb.team.abbrev));
+  const players={}; const def={sack:0,intc:0,fr:0,td:0};
+  (tb.statistics||[]).forEach(cat=>{
+    const nm=cat.name, keys=cat.keys||[];
+    (cat.athletes||[]).forEach(a=>{
+      const ath=a.athlete||{}, key=nrm(ath.displayName||""); if(!key)return;
+      const st=a.stats||[]; const g=k=>{const i=keys.indexOf(k);return i>=0?_num(st[i]):0;};
+      const gs=k=>{const i=keys.indexOf(k);return i>=0?_slash(st[i]):0;};
+      const rec=players[key]||(players[key]={name:ath.displayName,team:abbr,id:ath.id});
+      if(nm==="passing"){rec.py=g("passingYards");rec.ptd=g("passingTouchdowns");rec.int=g("interceptions");}
+      else if(nm==="rushing"){rec.ry=g("rushingYards");rec.rtd=g("rushingTouchdowns");}
+      else if(nm==="receiving"){rec.rec=g("receptions");rec.recy=g("receivingYards");rec.rectd=g("receivingTouchdowns");rec.tgt=g("receivingTargets");}
+      else if(nm==="fumbles"){rec.fl=g("fumblesLost");}
+      else if(nm==="kicking"){rec.fgm=gs("fieldGoalsMade/fieldGoalAttempts");rec.xpm=gs("extraPointsMade/extraPointAttempts");rec.isK=1;}
+      // team defensive aggregates
+      if(nm==="defensive"){def.sack+=g("sacks");def.td+=g("defensiveTouchdowns");}
+      else if(nm==="interceptions"){def.intc+=g("interceptions");def.td+=g("interceptionTouchdowns");}
+      else if(nm==="fumbles"){def.fr+=g("fumblesRecovered");}
+    });
+  });
+  return {abbr,players,def};
+}
+async function refreshLive(){
+  if(LIVE.loading)return; LIVE.loading=true;
+  try{
+    const sb=await (await fetch(ESPN_SB,{cache:"no-store"})).json();
+    LIVE.week=sb.week&&sb.week.number; LIVE.seasonType=sb.season&&sb.season.type;
+    const games=[], live=[];
+    (sb.events||[]).forEach(ev=>{
+      const comp=(ev.competitions||[])[0]; if(!comp)return;
+      const st=comp.status||ev.status||{}, sState=(st.type&&st.type.state)||"pre";
+      const cs=comp.competitors||[];
+      const home=cs.find(c=>c.homeAway==="home")||cs[0]||{}, away=cs.find(c=>c.homeAway==="away")||cs[1]||{};
+      const g={id:ev.id, a:stdTeam(home.team&&home.team.abbreviation), b:stdTeam(away.team&&away.team.abbreviation),
+        scoreA:_num(home.score), scoreB:_num(away.score), state:sState, status:st, frac:liveFrac(st),
+        clock:st.displayClock||"", period:st.period||0, short:ev.shortName||""};
+      games.push(g);
+      if(sState==="in"||sState==="post")live.push(g);
+    });
+    LIVE.games=games;
+    const map={}, dst={};
+    const s=state.settings.scoring;
+    await Promise.all(live.map(async g=>{
+      try{
+        const sum=await (await fetch(ESPN_SUM+g.id,{cache:"no-store"})).json();
+        const players=(sum.boxscore&&sum.boxscore.players)||[];
+        const parsed=players.map(parseTeamBox);
+        parsed.forEach(tb=>{
+          Object.keys(tb.players).forEach(k=>{
+            const r=tb.players[k];
+            const p=r.isK?liveFptsK(r):liveFptsOff(r,s);
+            // keep the entry whose team matches; if a name collides across games, don't clobber a real match
+            if(!map[k]||map[k].team===tb.abbr) map[k]={pts:p,frac:g.frac,state:g.state,team:tb.abbr,line:r};
+          });
+        });
+        // DST for each side = opponent's points allowed + that side's takeaways/scores
+        if(parsed.length===2){
+          const pa=[g.scoreB,g.scoreA]; // team0 allows the away score's total? map by abbr below
+          parsed.forEach((tb,i)=>{
+            const oppScore=tb.abbr===g.a?g.scoreB:g.scoreA;
+            const d=tb.def;
+            const dp=d.sack*1+d.intc*2+d.fr*2+d.td*6+dstTier(oppScore);
+            dst[tb.abbr]={pts:dp,frac:g.frac,state:g.state,def:d,pa:oppScore};
+          });
+        }
+      }catch(e){}
+    }));
+    LIVE.map=map; LIVE.dst=dst; LIVE.ts=Date.now(); LIVE.err=null;
+  }catch(e){ LIVE.err="couldn't reach the live feed"; }
+  LIVE.loading=false;
+  try{ if(!$("#tab-matchups").classList.contains("hide")) renderMatchups(); }catch(e){}
+}
+function liveActive(){ return LIVE.games.some(g=>g.state==="in"||g.state==="post"); }
+function gameForTeam(team){ return LIVE.games.find(g=>g.a===team||g.b===team); }
+// look up a starter's live state; team-checked so a shared name can't pull the wrong player's box
+function liveOf(pl){
+  if(pl.pos==="DST"){ const d=LIVE.dst[pl.team]; return d?{pts:d.pts,frac:d.frac,state:d.state}:null; }
+  const r=LIVE.map[nrm(pl.name)];
+  if(r && (!r.team||!pl.team||r.team===pl.team)) return {pts:r.pts,frac:r.frac,state:r.state,line:r.line};
+  const g=gameForTeam(pl.team);
+  if(g&&g.state!=="pre") return {pts:0,frac:g.frac,state:g.state}; // his game is live but he has no stat line yet
+  return null; // pregame or unknown → treat as a normal projection
+}
+// attach live state to a unit array (from weekUnits); units without live info are untouched
+function attachLive(units){ return units.map(u=>{const lv=liveOf(u.pl); return lv?Object.assign({},u,{live:lv}):u;}); }
+// one simulated final score for a unit: locked points + only the variance of the snaps still to come
+function drawUnitLive(u){
+  if(u.live){ const rem=Math.max(0,u.base*u.mult*u.live.frac); return u.live.pts+rem*seasonFactor(u.sd)*weekFactor(u.cv); }
+  return u.base*u.mult*seasonFactor(u.sd)*weekFactor(u.cv);
+}
+function drawScoreLive(units){ let t=0; for(const u of units)t+=drawUnitLive(u); return t; }
+function simMatchupLive(A,B,iters){
+  const N=iters||3000; let win=0,tie=0; const mg=[];
+  for(let i=0;i<N;i++){ const a=drawScoreLive(A), b=drawScoreLive(B); mg.push(a-b);
+    if(Math.abs(a-b)<0.05)tie++; else if(a>b)win++; }
+  return {p:(win+tie/2)/N, margin:mg};
+}
+// points already banked (final + in-progress) vs the projected final mean, for a lineup
+function liveNow(units){ let t=0; for(const u of units) if(u.live) t+=u.live.pts; return t; }
+function liveMean(units){ let t=0; for(const u of units) t+=(u.live?u.live.pts+u.base*u.mult*u.live.frac:u.base*u.mult); return t; }
+// players who can still add points (not final)
+function liveRemaining(units){ return units.filter(u=>!u.live||u.live.frac>0); }
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
   if(pl.idp) return pl.adpIdp!=null?pl.adpIdp:(pl.adp||999);
@@ -3628,6 +3837,91 @@ function selfTest(){
           gemLeak?"leaked a re-rostered drop":"re-rostered drops are excluded");
       TRADE.transactions=savedTx;
       TRADE.teams=savedTeams;
+    })();
+    /* ---- LIVE in-game engine ----
+       There are no regular-season games in August, so the live win probability can't be checked
+       against a real board here. What CAN be pinned down is the maths it's built on, with synthetic
+       inputs: does the box-score parser read ESPN's columns correctly, does the fantasy scoring add
+       up, and — the one that actually matters — is a finished player locked at what he scored while a
+       player who hasn't kicked off is unchanged? If those hold, the live panel is just the pregame
+       simulator with the clock folded in, which is exactly the intent. */
+    (()=>{
+      const saved={map:LIVE.map,dst:LIVE.dst,games:LIVE.games};
+      // 1. clock → fraction remaining
+      const fPre=liveFrac({type:{state:"pre"}}), fPost=liveFrac({type:{state:"post"}});
+      const fMid=liveFrac({type:{state:"in"},period:2,clock:450}); // (4-2)*900+450 = 2250/3600
+      add("Live clock converts to time-remaining correctly",
+          fPre===1&&fPost===0&&Math.abs(fMid-0.625)<1e-9,
+          `pre ${fPre} · half-2 7:30 → ${fMid.toFixed(3)} · final ${fPost}`);
+      // 2. box-score parser reads ESPN's columns
+      const tb={team:{abbreviation:"BAL"},statistics:[
+        {name:"passing",keys:["completions/passingAttempts","passingYards","yardsPerPassAttempt","passingTouchdowns","interceptions","sacks-sackYardsLost","adjQBR","QBRating"],
+         athletes:[{athlete:{displayName:"Lamar Jackson",id:"1"},stats:["26/41","273","6.7","2","1","1-6","59.3","90.8"]}]},
+        {name:"rushing",keys:["rushingAttempts","rushingYards","yardsPerRushAttempt","rushingTouchdowns","longRushing"],
+         athletes:[{athlete:{displayName:"Lamar Jackson",id:"1"},stats:["8","46","5.8","0","14"]}]},
+        {name:"receiving",keys:["receptions","receivingYards","yardsPerReception","receivingTouchdowns","longReception","receivingTargets"],
+         athletes:[{athlete:{displayName:"Zay Flowers",id:"2"},stats:["7","90","12.9","1","30","10"]}]},
+        {name:"kicking",keys:["fieldGoalsMade/fieldGoalAttempts","fieldGoalPct","longFieldGoalMade","extraPointsMade/extraPointAttempts","totalKickingPoints"],
+         athletes:[{athlete:{displayName:"Justin Tucker",id:"3"},stats:["3/3","100.0","48","2/2","11"]}]}]};
+      const pr=parseTeamBox(tb), lj=pr.players[nrm("Lamar Jackson")], zf=pr.players[nrm("Zay Flowers")], jt=pr.players[nrm("Justin Tucker")];
+      const parseOk=lj&&lj.py===273&&lj.ptd===2&&lj.int===1&&lj.ry===46&&zf&&zf.rec===7&&zf.recy===90&&zf.rectd===1&&jt&&jt.fgm===3&&jt.xpm===2;
+      add("Box-score parser reads ESPN's stat columns",parseOk,
+          parseOk?`Jackson 273/2/1 +46 rush · Flowers 7-90-1 · Tucker 3 FG 2 XP`:"column mapping is off");
+      // 3. fantasy scoring adds up (fixed PPR scoring so the test is independent of the user's league)
+      const ppr={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0.1,recTd:6,fl:-2};
+      const ljPts=liveFptsOff({py:273,ptd:2,int:1,ry:46,rtd:0,rec:0,recy:0,rectd:0,fl:0},ppr); // 10.92+8-2+4.6 = 21.52
+      const zfPts=liveFptsOff({rec:7,recy:90,rectd:1},ppr); // 7+9+6 = 22
+      add("Live fantasy scoring adds up under the league's rules",
+          Math.abs(ljPts-21.52)<1e-6&&Math.abs(zfPts-22)<1e-6&&liveFptsK({fgm:3,xpm:2})===11,
+          `Jackson ${ljPts.toFixed(2)} · Flowers ${zfPts} · Tucker 11`);
+      // 4. THE property that matters: a final player is locked, a pregame player is unchanged
+      const mk=live=>({pl:{pos:"WR",name:"t",team:"BAL"},base:2,mult:1,sd:0.35,cv:0.6,live});
+      const finalU=mk({pts:15,frac:0,state:"post"});
+      const lockSet=new Set(); for(let i=0;i<40;i++)lockSet.add(Math.round(drawUnitLive(finalU)*1e6));
+      const pregameU=mk(null); const preSet=new Set(); for(let i=0;i<40;i++)preSet.add(Math.round(drawUnitLive(pregameU)*1e6));
+      add("A finished player is locked; one who hasn't played still varies",
+          lockSet.size===1&&[...lockSet][0]===15e6&&preSet.size>1,
+          `final: ${lockSet.size} value (locked at 15) · pregame: ${preSet.size} distinct draws`);
+      // 5. a huge locked lead reads as near-certain live
+      const A=[mk({pts:120,frac:0,state:"post"})], B=[mk({pts:5,frac:0,state:"post"})];
+      const wp=simMatchupLive(A,B,400).p;
+      add("A commanding live lead reads as near-certain",wp>0.99,`120–5 locked → ${Math.round(wp*100)}% win`);
+      LIVE.map=saved.map; LIVE.dst=saved.dst; LIVE.games=saved.games;
+    })();
+    /* Vegas game environment is shown as context and, by design, never folded into a projection —
+       tools_vegas.py measured that consensus already prices the line. If the data is present, a game's
+       two implied team totals must sum to the game total (that's the definition), and no implied total
+       can be absurd. And pts() must be untouched by it: the same player scores the same with or without
+       a line, which is the guarantee that the market never silently leaks into the number. */
+    (()=>{
+      const V=D.VEGAS, w=state.ui.seasonWeek||1;
+      if(!V){ add("Vegas game environment stays out of projections",true,"no lines in this data yet — fills in on next refresh"); return; }
+      let checked=0,bad=0,sane=true;
+      Object.keys(V).forEach(t=>{ const e=V[t]&&V[t][w-1]; if(!e||!e.opp)return;
+        if(!(e.itt>=8&&e.itt<=42))sane=false;
+        const o=V[e.opp]&&V[e.opp][w-1]; if(!o)return;
+        checked++; if(Math.abs((e.itt+o.itt)-e.tot)>0.2)bad++; });
+      add("Vegas implied totals are internally consistent and sane",(checked===0||bad===0)&&sane,
+          checked?`${checked} games — paired implied totals sum to the game total, all in 8–42`:"no lines for this week yet");
+      // the market must not touch a player's points: pts() is identical whether or not VEGAS exists
+      const wr=P.find(p=>p.pos==="WR"&&pts(p)>0);
+      if(wr){ const before=pts(wr); const keep=D.VEGAS; D.VEGAS=null; const without=pts(wr); D.VEGAS=keep;
+        add("The betting line never leaks into a projection",Math.abs(before-without)<1e-9,
+            `${lastName(wr.name)} scores ${fmt(before)} with or without the line`); }
+    })();
+    /* In-season usage is context, exactly like the betting line: measured to add only a shrinking edge
+       over consensus, so it's shown, never folded in. Empty in the pre-season. When present, the numbers
+       must be sane, and — the guarantee that matters — a player's points must not depend on it. */
+    (()=>{
+      const U=D.USAGE_WK;
+      if(!U||!Object.keys(U).length){ add("In-season usage stays out of projections",true,"no games played yet — usage panels dormant until Week 1"); return; }
+      let bad=0,n=0; Object.values(U).forEach(u=>{ n++;
+        if(!(u.g>=1&&u.tgt>=0&&u.tgt<=20&&u.car>=0&&u.car<=40&&u.ppg>=0))bad++; });
+      add("In-season usage figures are sane",bad===0,`${n} players, all opportunity/ppg in range`);
+      const wr=P.find(p=>p.pos==="WR"&&pts(p)>0&&usageWkFor(p));
+      if(wr){ const before=pts(wr); const keep=D.USAGE_WK; D.USAGE_WK=null; const without=pts(wr); D.USAGE_WK=keep;
+        add("Usage never leaks into a projection",Math.abs(before-without)<1e-9,
+            `${lastName(wr.name)} scores ${fmt(before)} with or without usage`); }
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -7204,6 +7498,95 @@ function renderSeasonOutlook(SC,rosters,me,wk){
       <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
   }).join("");
 }
+/* The live matchup panel. Only lights up when real games touch this matchup's players; otherwise it
+   says so plainly instead of drawing a dead scoreboard. Everything here is the same simulation engine
+   as the pregame view, with the game clock folded in — so the win probability is continuous with the
+   number you saw before kickoff, not a separate, differently-calibrated "live" model. */
+function liveClock(u){
+  if(!u.live)return "";
+  if(u.live.state==="post")return "Final";
+  const g=gameForTeam(u.pl.team);
+  if(g&&g.state==="in"){ const q=g.period>4?"OT":"Q"+g.period; return `${q} ${g.clock||""}`.trim(); }
+  return "";
+}
+function renderLiveMatchup(A,B,opp,wk){
+  const box=$("#mLive"); if(!box)return;
+  const dot=$("#mLiveDot"), tsEl=$("#mLiveTs");
+  if(tsEl)tsEl.textContent=LIVE.ts?("updated "+agoText(LIVE.ts)):(LIVE.err?LIVE.err:(LIVE.loading?"loading…":""));
+  const anyGame=liveActive();
+  if(dot)dot.classList.toggle("hide",!anyGame);
+
+  if(!A.starters.length){
+    box.innerHTML=`<div class="emptystate">Draft your team and, on game day, this becomes a live scoreboard — real points, a win probability that moves with the games, and exactly what you still need from who's left.</div>`;
+    return;
+  }
+  const liveA=attachLive(A.starters), liveB=attachLive(B.starters);
+  const mine=liveA.filter(u=>u.live), theirs=liveB.filter(u=>u.live);
+  if(!mine.length&&!theirs.length){
+    // nobody in this matchup is on the field. Say why, and point at the next kickoff if we know it.
+    let msg;
+    if(anyGame){ const n=LIVE.games.filter(g=>g.state==="in").length;
+      msg=`${n} game${n===1?"":"s"} in progress, but none of your or ${teamLabel(opp)}'s starters are on the field yet. This fills in the moment one of them kicks off.`; }
+    else if(LIVE.seasonType&&LIVE.seasonType!==2){ msg=`It's the pre-season — live scoring switches on when Week 1 kicks off. The feed is wired and tested; nothing to do but wait.`; }
+    else { msg=`No games in progress right now. When your week kicks off, this shows live points, a moving win probability, and the points you still need.`; }
+    box.innerHTML=`<div class="emptystate">${msg}</div>`;
+    return;
+  }
+  // Live simulation — same engine, clock baked in.
+  const sim=simMatchupLive(liveA,liveB,3000);
+  const p=sim.p, pctL=Math.round(p*100), word=oddsWord(p);
+  const myNow=liveNow(liveA), oppNow=liveNow(liveB);
+  const myMean=liveMean(liveA), oppMean=liveMean(liveB);
+  const remA=liveRemaining(liveA), remB=liveRemaining(liveB);
+  const need=Math.max(0,oppMean-myNow);         // to reach their projected finish from what you've banked
+  const myLeft=myMean-myNow, oppLeft=oppMean-oppNow;
+
+  const y33=`<span class="livescore ${myNow>=oppNow?"win":""}">${fmt(myNow)}</span>`;
+  const teamCol=(u)=>{
+    const c=liveClock(u); const rem=u.live?u.base*u.mult*u.live.frac:u.base*u.mult;
+    const done=u.live&&u.live.state==="post";
+    return `<div class="liverow">
+      <span class="pos ${u.pl.pos}">${u.slot==="FLEX"||u.slot==="SUPERFLEX"?u.slot.slice(0,4):u.pl.pos}</span>
+      <span class="lvname">${u.pl.name} ${injChip(u.pl)} ${gameEnvChip(u.pl,wk)}<span class="meta"> ${c||(u.live?"":"pre")}</span></span>
+      <b class="num">${u.live?fmt(u.live.pts):"—"}</b>
+      <span class="meta num">${done?"final":"proj +"+fmt(rem)}</span></div>`;
+  };
+  const remLine=remA.length
+    ? `${remA.length} of yours still to play${myLeft>0?`, projected to add <b>${fmt(myLeft)}</b>`:""}`
+    : `all your starters are final`;
+
+  box.innerHTML=`
+    <div class="liveHero">
+      <div class="liveSide">
+        <div class="h2hname">You</div>
+        <div class="livebig ${myNow>=oppNow?"win":""}">${fmt(myNow)}</div>
+        <div class="meta">proj final ${fmt(myMean)}</div>
+      </div>
+      <div class="liveMid">
+        <div class="winbig ${word.c}">${pctL}%</div>
+        <div class="meta" style="text-align:center">win probability, live</div>
+        <div class="chip ${word.c}" style="margin-top:6px">${word.t}</div>
+      </div>
+      <div class="liveSide right">
+        <div class="h2hname">${teamLabel(opp)}</div>
+        <div class="livebig ${oppNow>myNow?"win":""}">${fmt(oppNow)}</div>
+        <div class="meta">proj final ${fmt(oppMean)}</div>
+      </div>
+    </div>
+    <div class="liveNeed">
+      ${need<=0
+        ? `You're <b>ahead of their projected finish</b> — hold serve and this is yours. ${remLine}.`
+        : `You need about <b>${fmt(need)}</b> more to reach their projected <b>${fmt(oppMean)}</b>. ${remLine}${remB.length?`; they have ${remB.length} left (${fmt(oppLeft)} to come)`:``}.`}
+    </div>
+    <div class="mchartwrap" style="margin-top:6px">${marginChart(sim.margin,p)}
+      <div class="meta" style="margin-top:4px">Same simulation as before kickoff, with the clock folded in: finished players are locked, players in-game keep only the swing of the snaps they have left. That's why this moves as the games do.</div></div>
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:10px;gap:14px">
+      <div><h3 class="eyebrow" style="margin-bottom:6px">Your live lineup</h3>${mine.map(teamCol).join("")||`<div class="meta">nobody on the field yet</div>`}</div>
+      <div><h3 class="eyebrow" style="margin-bottom:6px">${teamLabel(opp)}</h3>${theirs.map(teamCol).join("")||`<div class="meta">nobody on the field yet</div>`}</div>
+    </div>
+    ${(LIVE.dst&&Object.keys(LIVE.dst).length)||true?"":""}
+    <div class="meta" style="margin-top:8px">Kicker points use the common base (FG 3, XP 1) — distance bonuses aren't in the live feed. DST uses the standard scheme (points-allowed tier + turnovers + defensive scores).</div>`;
+}
 function renderMatchups(){
   const T=state.settings.teams, me=myIdx();
   const SC=seasonSchedule(), rosters=[...Array(T).keys()].map(teamRoster);
@@ -7221,6 +7604,7 @@ function renderMatchups(){
   const pair=wobj.pairs.find(p=>p.includes(me));
   const opp=pair[0]===me?pair[1]:pair[0];
   const A=weekUnits(rosters[me],wk), B=weekUnits(rosters[opp],wk);
+  try{ renderLiveMatchup(A,B,opp,wk); }catch(e){ if($("#mLive"))$("#mLive").innerHTML=""; }
 
   /* Nothing on this tab means anything until there are players to field. Before the draft the
      maths still runs and still produces confident-looking output — a 0.0 projection reported as
@@ -7322,7 +7706,7 @@ function renderMatchups(){
         const nd=i>=0?needFrom(A.starters,i,B.starters,1200):null;
         return `<div class="swingrow">
         <span class="pos ${x.pl.pos}">${x.slot==="FLEX"||x.slot==="SUPERFLEX"?x.slot.slice(0,4):x.pl.pos}</span>
-        <span class="swname">${x.pl.name} ${injChip(x.pl)}
+        <span class="swname">${x.pl.name} ${injChip(x.pl)} ${gameEnvChip(x.pl,wk)} ${usageChip(x.pl)}
           ${nd?`<span class="needline">${nd.need<=0
               ?`the rest of your lineup already covers it — anything he adds is cushion`
               :`needs <b>${fmt(nd.need)}</b> if everyone else scores as projected — he clears that ${Math.round(nd.p*100)}% of the time`}</span>`:""}</span>
@@ -7601,6 +7985,11 @@ function detailRow(pl,span){
       <div class="kv"><span>They are</span><b>${sp?`${Math.round(sp.rel*100)}% apart`:"—"}</b></div>
       ${["QB","RB","WR","TE"].includes(pl.pos)?`<div class="kv"><span>Schedule (1.00 = average)</span><b>${sosOf(pl,1,14).toFixed(2)}</b></div>
       <div class="kv"><span>Fantasy playoffs, weeks 15–17</span><b>${sosOf(pl,15,17).toFixed(2)}</b></div>`:""}
+      ${(()=>{const v=vegasFor(pl,state.ui.seasonWeek||1);if(!v)return "";
+        const fav=v.line<0,sp=Math.abs(v.line);
+        return `<div class="kv"><span>This week's game (Vegas)</span><b title="game total ${v.tot} — context only, not in the projection">${v.itt} implied · ${fav?sp+"-pt fav":sp===0?"pick'em":sp+"-pt dog"} vs ${v.opp}</b></div>`;})()}
+      ${(()=>{const u=usageWkFor(pl);if(!u)return "";const tr=usageTrend(u);
+        return `<div class="kv"><span>This season's usage</span><b title="over ${u.g} game${u.g===1?"":"s"} · ${u.ppg} ppg, last 3 ${u.r3} — context only">${u.tgt} tgt + ${u.car} car/g${tr&&tr.t!=="steady"?" · "+tr.t:""}</b></div>`;})()}
       ${wk?`<div class="eyebrow" style="margin-top:12px">Week by week</div>
         <div class="spark">${wk.map((v,i)=>`<span class="sb${v<=0?" bye":""}" style="height:${mx?Math.max(3,v/mx*100):3}%" title="Week ${i+1}: ${v>0?fmt(v)+" pts":"bye"}"></span>`).join("")}</div>
         <div class="meta" style="display:flex;justify-content:space-between"><span>Wk 1</span><span>Wk ${wk.length}</span></div>`:""}
@@ -8069,6 +8458,9 @@ function showTab(name){
   // derive from the DOM so a new tab can never be silently left out of this list
   $$("section[id^='tab-']").forEach(s=>s.classList.toggle("hide",s.id!=="tab-"+name));
   if(typeof state!=="undefined"&&state&&TABDIRTY[name])renderTab(name);   // draw it on first open
+  // opening Matchups pulls fresh live scores if what we have is stale (or we've never fetched)
+  if(name==="matchups"&&typeof LIVE!=="undefined"&&!LIVE.loading&&(!LIVE.ts||Date.now()-LIVE.ts>60000))
+    try{ refreshLive(); }catch(e){}
 }
 
 /* ---- theme ---- */
@@ -8150,6 +8542,15 @@ function boot(){
   // Pull the freshest injuries in the background, then re-render once they land. Non-blocking, so a
   // slow or offline feed never holds up the app — it just falls back to the six-hour baked data.
   refreshInjuries();
+  // Live scores: fetch once, then poll while the Matchups tab is open. Also non-blocking.
+  refreshLive(); startLivePolling();
+}
+function startLivePolling(){
+  if(LIVE.timer)return;
+  LIVE.timer=setInterval(()=>{
+    const vis=$("#tab-matchups")&&!$("#tab-matchups").classList.contains("hide");
+    if(vis&&!LIVE.loading&&liveActive())refreshLive();
+  },45000);
 }
 function init(){
   state=load();
@@ -8165,6 +8566,7 @@ function init(){
   $("#pexport").onclick=exportProjCSV;
   segWire("#s_injscope",v=>{state.ui.injScope=v;renderInjuries();save();});
   if($("#injRefreshBtn"))$("#injRefreshBtn").onclick=()=>refreshInjuries();
+  if($("#mLiveRefresh"))$("#mLiveRefresh").onclick=()=>{ if($("#mLiveTs"))$("#mLiveTs").textContent="loading…"; refreshLive(); };
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));

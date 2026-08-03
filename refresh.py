@@ -339,25 +339,82 @@ def pull_kickoffs():
         if not rows:
             log(f"  kickoffs: nflverse has no REG rows for {SEASON} yet — drift chart stays off")
             return None
-        KICK={}
-        missing=0
+        KICK={}; VEGAS={}
+        missing=0; vhit=0
         for r in rows:
             try: wk=int(r["week"])
             except (TypeError,ValueError): continue
             if not 1<=wk<=18: continue
+            home,away=std((r.get("home_team") or "").strip()),std((r.get("away_team") or "").strip())
             day, tm = (r.get("gameday") or "").strip(), (r.get("gametime") or "").strip()
-            if not day or not tm:
-                missing+=1; continue        # published later; left null rather than guessed at
-            for t in (r.get("home_team"), r.get("away_team")):
-                t=std((t or "").strip())
-                if not t: continue
-                KICK.setdefault(t,[None]*18)[wk-1]=f"{day}T{tm}"
+            if day and tm:
+                for t in (home,away):
+                    if t: KICK.setdefault(t,[None]*18)[wk-1]=f"{day}T{tm}"
+            else:
+                missing+=1
+            # Vegas game environment: implied team total = total/2 +/- spread/2. spread_line > 0 == home
+            # favored. Stored as raw market context for the UI — validated (tools_vegas.py) NOT to beat the
+            # consensus projection out of sample, because consensus already prices the line, so it is shown
+            # as game script, never folded into a player's points.
+            try:
+                tot=float(r["total_line"]); spr=float(r["spread_line"])
+                if home:
+                    VEGAS.setdefault(home,[None]*18)[wk-1]={"itt":round(tot/2+spr/2,1),"tot":tot,"line":round(-spr,1),"opp":away,"home":1}
+                if away:
+                    VEGAS.setdefault(away,[None]*18)[wk-1]={"itt":round(tot/2-spr/2,1),"tot":tot,"line":round(spr,1),"opp":home,"home":0}
+                vhit+=1
+            except Exception: pass
         filled=sum(1 for arr in KICK.values() for v in arr if v)
         log(f"  kickoffs: {len(rows)} games, {len(KICK)} teams, {filled} team-weeks"
-            +(f", {missing} games still without a time" if missing else ""))
-        return KICK if len(KICK)>=28 else None
+            +(f", {missing} games still without a time" if missing else "")
+            +f" · vegas lines on {vhit} games")
+        return (KICK if len(KICK)>=28 else None), (VEGAS if vhit>=10 else None)
     except Exception as ex:
-        log("  kickoff pull failed:",ex); return None
+        log("  kickoff pull failed:",ex); return None, None
+
+def pull_usage_week():
+    """Season-to-date OPPORTUNITY per player — targets, carries, receptions per game, plus a recent-form
+    read — from nflverse weekly stats for the CURRENT season.
+
+    tools_usage.py measured that recent usage adds a small, every-fold-positive improvement to the
+    consensus WEEKLY projection out of sample — but a shrinking one (barely moves against 2024 consensus,
+    which now prices usage itself). So this is deliberately NOT folded into a player's points, the same
+    call as the betting line: it's surfaced as decision context, because opportunity is sticky and drives
+    start/sit and waiver calls even where it no longer beats the point projection. In the pre-season there
+    are no games, so this comes back empty and every usage panel stays dormant until Week 1 is on the board.
+    """
+    url=f"https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{SEASON}.csv"
+    try:
+        import csv, io
+        raw=get(url, timeout=90).decode("utf-8","replace")
+    except Exception as ex:
+        log(f"  usage: no {SEASON} weekly stats yet ({ex.__class__.__name__}) — usage panels stay dormant")
+        return {}
+    perp={}   # norm name -> list[(week, pos, pts, tgt, car, rec)]
+    try:
+        for r in csv.DictReader(io.StringIO(raw)):
+            if (r.get("season_type") or "REG")!="REG": continue
+            pos=r.get("position")
+            if pos not in ("QB","RB","WR","TE"): continue
+            try: w=int(r["week"])
+            except Exception: continue
+            fn=lambda k:(float(r.get(k) or 0))
+            perp.setdefault(norm(r.get("player_display_name") or ""),[]).append(
+                (w,pos,fn("fantasy_points_ppr"),fn("targets"),fn("carries"),fn("receptions")))
+    except Exception as ex:
+        log("  usage parse failed:",ex); return {}
+    out={}
+    for nm,lst in perp.items():
+        if not lst: continue
+        lst.sort(); g=len(lst)
+        tgt=sum(x[3] for x in lst)/g; car=sum(x[4] for x in lst)/g; rec=sum(x[5] for x in lst)/g
+        ppg=sum(x[2] for x in lst)/g
+        last3=lst[-3:]; r3=sum(x[2] for x in last3)/len(last3)
+        out[nm]={"g":g,"tgt":round(tgt,1),"car":round(car,1),"rec":round(rec,1),
+                 "ppg":round(ppg,1),"r3":round(r3,1),"pos":lst[-1][1]}
+    weeks=max((x[0] for lst in perp.values() for x in lst), default=0)
+    log(f"  usage: {len(out)} players through week {weeks} of {SEASON}")
+    return out
 
 def archive_projections(players):
     """Snapshot what we projected, before the games are played.
@@ -394,7 +451,8 @@ def build_data():
     log("Pulling live sources…")
     ffc,ffc_drafts=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
     espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp(); fpe=pull_fantasypros_ecr()
-    kick=pull_kickoffs()
+    kick,vegas=pull_kickoffs()
+    usage_wk=pull_usage_week()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -589,7 +647,7 @@ def build_data():
     archive_projections(players)
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
-         "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,
+         "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,
          "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,

@@ -1,0 +1,10 @@
+{
+ "years": 4,
+ "n": 10666,
+ "testYear": 2024,
+ "consensusMAE": 5.291,
+ "usageOnlyMAE": 5.527,
+ "consensusPlusUsageMAE": 5.287,
+ "oosPct": -0.074,
+ "beatsEveryFold": true
+}
