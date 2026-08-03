@@ -178,6 +178,28 @@
   .dc-lab{display:flex;justify-content:space-between;gap:6px;font-size:10px;color:var(--ink-2);
           margin-top:3px;text-align:center}
   .dc-lab span{flex:1;line-height:1.3}
+  /* ---- live draft intel ---- */
+  .intel-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;margin-bottom:5px;
+             background:var(--panel-2);border:1px solid var(--line)}
+  .intel-row.crit{border-color:color-mix(in srgb,var(--crit) 40%,transparent);background:color-mix(in srgb,var(--crit) 8%,transparent)}
+  .intel-row.warn{border-color:color-mix(in srgb,var(--warn) 35%,transparent);background:color-mix(in srgb,var(--warn) 7%,transparent)}
+  .intel-row.good{border-color:color-mix(in srgb,var(--good) 30%,transparent)}
+  .intel-row .ir-body{flex:1;min-width:0;font-size:12.5px;line-height:1.3}
+  .intel-row .ir-body .meta{display:block;font-size:10.5px}
+  .intel-row .ir-ic{font-size:15px}
+  .intel-preds{display:flex;flex-direction:column;gap:2px}
+  .pred-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 6px;border-radius:6px}
+  .pred-row:hover{background:var(--panel-2)}
+  /* The intel panel lives in a ~300px column, so everything in it has to be able to shrink or the
+     whole page scrolls sideways — which it did until these min-width:0 and wrap rules went in. */
+  #draftIntel{min-width:0}
+  #draftIntel *{min-width:0}
+  .holegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}
+  .hole-team{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:3px 5px;border-radius:6px;
+             background:var(--panel-2);font-size:11px;overflow:hidden}
+  .hole-team.me{outline:1px solid color-mix(in srgb,var(--accent) 45%,transparent)}
+  .ht-name{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:58px;flex:1}
+  .ht-holes{display:flex;gap:2px;flex-wrap:wrap;justify-content:flex-end}
   .oddsline{display:flex;gap:10px;margin:6px 0 2px;flex-wrap:wrap}
   .oddspill{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
             padding:4px 10px;font-size:13px;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
@@ -660,6 +682,10 @@
 
       <!-- RIGHT: your roster + queue -->
       <div class="sticky-col">
+        <div class="panel" style="margin-bottom:14px" id="intelPanel">
+          <div class="hd"><h2>Live draft intel</h2><span id="intelCtx" class="pickcounter" style="margin-left:auto"></span></div>
+          <div class="bd" id="draftIntel"></div>
+        </div>
         <div class="panel" style="margin-bottom:14px">
           <div class="hd"><h2>Picks so far</h2>
             <span class="seg" id="logMode" style="margin-left:auto;transform:scale(.85);transform-origin:right">
@@ -1718,6 +1744,144 @@ function positionalNeed(roster){
   return {need,flexNeed,superNeed,have};
 }
 
+/* ========================= LIVE DRAFT INTELLIGENCE =========================
+   Everything below reads the actual pick stream as it comes in over the Sleeper sync and turns it
+   into the things a sharp drafter tracks in their head under the clock: who's about to be gone,
+   which position is running, where the cliffs are, and which rooms are soft. The primitives it
+   stands on — positional need, learned manager tendencies, survival odds, tiering — already exist;
+   this fuses them into what to do RIGHT NOW. No mainstream draft tool predicts opponents' picks or
+   flags a value cliff before it opens. */
+
+/* How much a team wants each position, as a multiplier on player value. A team that still needs two
+   receivers weights receivers up; one already stacked at a position weights it down toward zero. */
+function needWeight(roster){
+  const {need,flexNeed,superNeed}=positionalNeed(roster);
+  const w={};
+  ["QB","RB","WR","TE","K","DST","DL","LB","DB"].forEach(p=>{
+    let n=need[p]||0;
+    if(FLEX_POS.includes(p))n+=flexNeed*0.5;
+    if(SUPER_POS.includes(p))n+=superNeed*0.4;
+    // even a filled position keeps a little pull (depth, upside), so nothing is ever exactly zero
+    w[p]=0.25+n;
+  });
+  return w;
+}
+/* Greedily play the draft forward from the current pick to your next one, having each opponent take
+   the best player on the board weighted by what THEY need and how they've drafted before. It's a
+   point estimate, not a Monte Carlo — the honest use is "these are the names likely gone", not a
+   precise probability — but it's dramatically better than assuming the board just runs by raw ADP,
+   because it knows the QB-heavy manager two seats down will reach and the RB-thin team will pounce. */
+function predictNextPicks(){
+  const T=state.settings.teams;
+  /* The horizon is the picks between now and the next time YOU are on the clock. If you're on the
+     clock right now, that means the picks AFTER the one you're about to make — the whole point of
+     "grab or wait" is whether he survives if you pass. Measuring to your current pick made survival
+     read ~100% and nothing ever flagged. */
+  const onClock=teamForPick(currentPick())===myIdx();
+  const now=onClock?currentPick()+1:currentPick();
+  const mine=myNextPick(now);
+  const drafted=draftedIds(), gone=new Map();          // playerId -> {byTeam, pos}
+  const preds=[];
+  const pool=state.players.filter(p=>inLeague(p)&&!drafted.has(p.id));
+  const rostersGained={};                               // simulated additions per team
+  const rosterOf=t=>teamRoster(t).concat((rostersGained[t]||[]));
+  for(let pk=now; pk<mine && pk<now+T*2+2; pk++){
+    const t=teamForPick(pk);
+    if(t===myIdx())continue;
+    const w=needWeight(rosterOf(t));
+    const round=Math.floor(pk/T)+1, bias=oppBias(t,round);
+    let best=null,bestScore=-1;
+    for(const p of pool){
+      if(gone.has(p.id))continue;
+      let s=valueOf(p)*w[p.pos];
+      if(bias&&bias[p.pos])s*=(1+bias[p.pos]);          // learned lean for this manager, this round
+      if(s>bestScore){bestScore=s;best=p;}
+    }
+    if(best){ gone.set(best.id,{byTeam:t,pos:best.pos});
+      (rostersGained[t]=rostersGained[t]||[]).push(best);
+      preds.push({pick:pk,team:t,pl:best}); }
+  }
+  return {gone,preds,mine,now};
+}
+/* The pulse of the room: what just happened and what it means. Runs (a position going repeatedly),
+   the last few reaches and steals against ADP, and how thin each starting position has become. */
+function draftPulse(){
+  const T=state.settings.teams, recent=state.picks.slice(-Math.min(state.picks.length,Math.max(6,T)));
+  const runWindow=state.picks.slice(-6).map(p=>state.players[p.playerId]).filter(Boolean);
+  const runCount={}; runWindow.forEach(p=>runCount[p.pos]=(runCount[p.pos]||0)+1);
+  const runs=Object.entries(runCount).filter(([p,n])=>n>=3&&FLEX_POS.concat("QB").includes(p))
+    .map(([p,n])=>({pos:p,n})).sort((a,b)=>b.n-a.n);
+  // reaches and steals in the recent window, measured against ADP
+  const moves=recent.map((pk,i)=>{const pl=state.players[pk.playerId]; if(!pl)return null;
+    const adp=adpOf(pl), at=state.picks.length-recent.length+i+1;
+    if(adp==null||adp>=900)return null;
+    return {pl,delta:Math.round(adp-at)};}).filter(Boolean);
+  const steals=moves.filter(m=>m.delta>=10).sort((a,b)=>b.delta-a.delta).slice(0,2);
+  const reaches=moves.filter(m=>m.delta<=-10).sort((a,b)=>a.delta-b.delta).slice(0,2);
+  return {runs,steals,reaches};
+}
+/* Tier state per position: how many startable-quality players are left, and whether the best one on
+   the board sits right in front of a cliff. A cliff is a drop to the next player clearly bigger than
+   the typical step between neighbours — the point past which waiting costs you real points. */
+function tierState(pos){
+  const drafted=draftedIds();
+  const list=state.players.filter(p=>p.pos===pos&&inLeague(p)&&!drafted.has(p.id))
+    .sort((a,b)=>valueOf(b)-valueOf(a));
+  if(list.length<2)return {left:list.length,cliffAfter:list.length?1:0,best:list[0]||null,drop:0};
+  const gaps=[]; for(let i=1;i<Math.min(list.length,12);i++)gaps.push(valueOf(list[i-1])-valueOf(list[i]));
+  const sorted=[...gaps].sort((a,b)=>a-b), med=sorted[sorted.length>>1]||0;
+  let cliffAfter=list.length;
+  for(let i=0;i<gaps.length;i++){ if(gaps[i]>med*2.2&&gaps[i]>3){cliffAfter=i+1;break;} }
+  return {left:list.length,cliffAfter,best:list[0],drop:gaps[cliffAfter-1]||0,list};
+}
+/* The real question at your pick: grab now, or safely wait? A player is a GRAB when he probably
+   won't make it back to you AND the drop to the next man at his position is a cliff — waiting costs
+   you the player and the tier. A position is SAFE to punt when the board is deep and the best
+   available will still be there next time. This is the timing every drafter wants and no tool
+   computes: it fuses the opponent-pick prediction with the tier cliffs. */
+function stealAlerts(){
+  const pn=predictNextPicks(), gone=pn.gone, mineNext=pn.mine;
+  const onClock=teamForPick(currentPick())===myIdx();
+  const away=Math.max(0,mineNext-currentPick());
+  const mineRoster=teamRoster(myIdx());
+  const {need,flexNeed,superNeed}=positionalNeed(mineRoster);
+  const posSet=(idpOn()?ALLPOS:["QB","RB","WR","TE","K","DST"]).filter(p=>(state.settings.roster[p]||0)>0
+      ||(FLEX_POS.includes(p)&&state.settings.roster.FLEX)||(SUPER_POS.includes(p)&&state.settings.roster.SUPERFLEX));
+  const out=[];
+  posSet.forEach(pos=>{
+    const ts=tierState(pos); if(!ts.best)return;
+    // do YOU want this position? a grab you don't need isn't a grab for you.
+    let myNeed=(need[pos]||0);
+    if(FLEX_POS.includes(pos))myNeed+=flexNeed*0.5;
+    if(SUPER_POS.includes(pos))myNeed+=superNeed*0.4;
+    const survive=gone.has(ts.best.id)?0:pAvailAt(ts.best,mineNext);
+    const willReturn=survive>=0.5;
+    const cliff=ts.cliffAfter<=3 && ts.drop>6;           // a real drop right behind the top man
+    // urgency drives the ranking: how much waiting could cost — the cliff you'd fall off, scaled by
+    // how likely you are to fall off it and how much you actually need the spot.
+    const urgency=(cliff?ts.drop:0)*(1-survive)*Math.min(1.5,0.4+myNeed);
+    let verdict;
+    if(myNeed<0.5)              verdict={kind:"set",why:`you're set here`};
+    else if(!willReturn&&cliff) verdict={kind:"grab",why:`won't be back and it's a cliff to the next ${pos} (−${Math.round(ts.drop)} pts)`};
+    else if(!willReturn)        verdict={kind:"soon",why:`likely gone before your ${away>2?"next pick":"turn comes back"}`};
+    else if(ts.left<=2)         verdict={kind:"thin",why:`only ${ts.left} startable ${pos}${ts.left===1?"":"s"} left`};
+    else                        verdict={kind:"wait",why:`${ts.left} left — ${lastName(ts.best.name)} should still be here`};
+    out.push({pos,best:ts.best,verdict,ts,urgency,myNeed,survive,onClock,away});
+  });
+  const order={grab:0,soon:1,thin:2,wait:3,set:4};
+  return out.sort((a,b)=>(order[a.verdict.kind]-order[b.verdict.kind])||(b.urgency-a.urgency));
+}
+/* Every team's biggest holes, so you can see who competes for what you want (they'll take it before
+   it gets back to you) and who's soft (leave them a gap to exploit). */
+function roomHoles(){
+  const T=state.settings.teams;
+  return [...Array(T).keys()].map(t=>{
+    const {need,flexNeed}=positionalNeed(teamRoster(t));
+    const holes=["QB","RB","WR","TE"].filter(p=>(need[p]||0)>0);
+    return {team:t,holes,need,flexNeed,me:t===myIdx()};
+  });
+}
+
 /* ---- recommendation engine ---- */
 // Research-based roster construction targets, scaled to your roster size.
 // Redraft PPR (4for4 / DraftSharks / FantasyPros): ~2 QB, 4-6 RB, 4-6 WR, 1-2 TE, 1 K, 1 DST.
@@ -2412,7 +2576,7 @@ function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show"
    rest dirty, and showTab draws a dirty tab the moment you open it. The pick clock and header
    stay global because the timer can auto-draft while you're reading another tab. */
 const TAB_RENDER={
-  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderTiers();},
+  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderTiers();renderDraftIntel();},
   team:    ()=>renderTeamTab(),
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
@@ -2686,6 +2850,68 @@ function renderAvail(){
 /* The board every fantasy app has and this one didn't: what's gone, in order, and to whom.
    Two views because they answer different questions — the list answers "what just happened and
    what went between my picks", the grid answers "how has each team built". */
+/* The live intelligence panel: the running read on the room. It leads with the one decision that
+   matters at your pick — grab or wait — then the pulse of what's happening, who picks before you
+   come back around and what they'll likely take, and where every team is thin. */
+function renderDraftIntel(){
+  const box=$("#draftIntel"); if(!box)return;
+  if(!state.picks.length&&currentPick()===0){
+    box.innerHTML=`<div class="emptystate">Sync a live Sleeper draft (League Setup tab) or start a mock, and this reads the room in real time — what's running, who's about to be gone, and whether to grab or wait.</div>`;
+    $("#intelCtx").textContent=""; return;
+  }
+  const onClock=teamForPick(currentPick())===myIdx();
+  const away=Math.max(0,myNextPick()-currentPick());
+  $("#intelCtx").textContent=onClock?"you're on the clock":`your pick in ${away}`;
+
+  const sa=stealAlerts();
+  const grabs=sa.filter(s=>s.verdict.kind==="grab"||s.verdict.kind==="soon"||s.verdict.kind==="thin").slice(0,3);
+  const waits=sa.filter(s=>s.verdict.kind==="wait").slice(0,2);
+  const kicon={grab:"🔥",soon:"⏳",thin:"⚠️",wait:"✅"};
+  const kcls={grab:"crit",soon:"warn",thin:"warn",wait:"good"};
+
+  const pulse=draftPulse();
+  const {preds}=predictNextPicks();
+
+  let h="";
+  // 1. the decision
+  h+=`<div class="eyebrow" style="margin-bottom:6px">${onClock?"Grab or wait — you're up":`Before your pick (${away} away)`}</div>`;
+  if(grabs.length){
+    h+=grabs.map(s=>`<div class="intel-row ${kcls[s.verdict.kind]}">
+      <span class="pos ${s.pos}">${s.pos}</span>
+      <span class="ir-body"><b>${s.verdict.kind==="grab"?"Grab":s.verdict.kind==="thin"?"Getting thin":"Going soon"}: ${lastName(s.best.name)}</b>
+        <span class="meta">${s.verdict.why}${s.survive>0?` · ${Math.round(s.survive*100)}% to survive`:""}</span></span>
+      <span class="ir-ic">${kicon[s.verdict.kind]}</span></div>`).join("");
+  } else {
+    h+=`<div class="meta" style="margin-bottom:8px">Nothing's forcing your hand — the positions you need are deep enough to wait.</div>`;
+  }
+  if(waits.length)h+=`<div class="meta" style="margin:2px 0 8px">Safe to wait on: ${waits.map(s=>`${s.pos} (${lastName(s.best.name)})`).join(", ")}.</div>`;
+
+  // 2. the pulse
+  const pulseBits=[];
+  pulse.runs.forEach(r=>pulseBits.push(`<span class="chip crit">🏃 ${r.pos} run — ${r.n} of last 6</span>`));
+  pulse.steals.forEach(m=>pulseBits.push(`<span class="chip good">🏷 ${lastName(m.pl.name)} slid ${m.delta} past ADP</span>`));
+  pulse.reaches.forEach(m=>pulseBits.push(`<span class="chip warn">📈 ${lastName(m.pl.name)} reached ${-m.delta} early</span>`));
+  if(pulseBits.length)h+=`<div class="eyebrow" style="margin:10px 0 5px">The room</div><div style="display:flex;flex-wrap:wrap;gap:5px">${pulseBits.join("")}</div>`;
+
+  // 3. who's up before you, and what they likely take
+  if(preds.length && !onClock){
+    h+=`<div class="eyebrow" style="margin:12px 0 5px">Likely gone before you (predicted)</div>`
+      +`<div class="intel-preds">`+preds.slice(0,6).map(p=>`<div class="pred-row">
+          <span class="meta">${teamLabel(p.team)}</span>
+          <span><span class="pos ${p.pl.pos}">${p.pl.pos}</span> ${lastName(p.pl.name)}</span></div>`).join("")+`</div>`;
+  }
+
+  // 4. the room's holes — who competes, who's soft
+  const rh=roomHoles().filter(t=>!t.me);
+  if(rh.length){
+    h+=`<div class="eyebrow" style="margin:12px 0 5px">Where the league is thin</div>`
+      +`<div class="holegrid">`+roomHoles().map(t=>`<div class="hole-team${t.me?" me":""}">
+          <span class="ht-name">${t.me?"You":teamLabel(t.team)}</span>
+          <span class="ht-holes">${t.holes.length?t.holes.map(p=>`<span class="pos ${p}">${p}</span>`).join(""):'<span class="meta">full</span>'}</span></div>`).join("")+`</div>`
+      +`<div class="meta" style="margin-top:6px">Teams sharing your holes will take those players before they get back to you; soft teams are where a run won't start.</div>`;
+  }
+  box.innerHTML=h;
+}
 function renderPickLog(){
   const box=$("#pickLog"); if(!box)return;
   const T=state.settings.teams||12, picks=state.picks||[];
@@ -3137,6 +3363,27 @@ function selfTest(){
           wbT.rows.length?`${wbT.rows.length} targets, smallest +${wbT.rows[wbT.rows.length-1].gain.toFixed(1)} pts`
                          :"nothing on the wire cracks the lineup");
     }
+    /* Live draft intelligence, on a mid-draft board. The prediction must never spend one of YOUR
+       picks (it forecasts opponents), must not predict more players gone than there are picks in
+       the horizon, and a "grab" must be a position you actually need — a grab you're set at is
+       noise. These are the ways the fusion of need + tendency + tiers quietly goes wrong. */
+    (()=>{
+      const sv={teams:state.settings.teams,slot:state.settings.slot,snake:state.settings.snake,picks:state.picks.slice()};
+      state.settings.teams=12;state.settings.slot=6;state.settings.snake=1;
+      const pool=state.players.filter(inLeague).slice().sort((a,b)=>(a.adp||999)-(b.adp||999));
+      state.picks=[]; for(let i=0;i<28;i++)state.picks.push({teamIdx:teamForPick(i),playerId:pool[i].id});
+      const pn=predictNextPicks();
+      const predsMine=pn.preds.filter(p=>p.team===myIdx()).length;
+      add("Draft prediction never spends your pick",predsMine===0,
+          `${pn.preds.length} opponent picks forecast, ${predsMine} of them yours`);
+      add("No more players predicted gone than picks in the window",pn.gone.size<=pn.preds.length,
+          `${pn.gone.size} gone across ${pn.preds.length} forecast picks`);
+      const sa=stealAlerts();
+      const grabsIDontNeed=sa.filter(s=>s.verdict.kind==="grab"&&s.myNeed<0.5).length;
+      add("Only flags a grab at a position you need",grabsIDontNeed===0,
+          `${sa.filter(s=>s.verdict.kind==="grab").length} grabs, ${grabsIDontNeed} at a set position`);
+      state.settings.teams=sv.teams;state.settings.slot=sv.slot;state.settings.snake=sv.snake;state.picks=sv.picks;
+    })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
                         :`${strip?strip.children.length:0} tabs, no strays`);
