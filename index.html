@@ -3155,6 +3155,17 @@ function selfTest(){
         !!(DC&&DC.cv&&DC.cv.RB>(D.WEEKCV&&D.WEEKCV.weekCv&&D.WEEKCV.weekCv.RB||0)),
         DC?`draw CV RB ${DC.cv.RB} vs around-mean ${D.WEEKCV&&D.WEEKCV.weekCv?D.WEEKCV.weekCv.RB:"?"} · calibration error ${DC.calMeanErr}pp (was ${DC.calMeanErrOld})`
           :"absent — using assumed spread");
+    /* A single week's range must be wider than the season's, because season totals average their
+       noise away. When wkRange borrowed the season floor/ceiling multipliers it drew them equal,
+       which understated every weekly band. */
+    (()=>{
+      const wr=P.find(p=>p.pos==="WR"&&p.dist&&(p.wk&&p.wk.length));
+      if(!wr)return;
+      const wk=wkRange(wr,1), wkW=(wk[1]-wk[0])/Math.max(1e-6,wkPts(wr,1));
+      const seasonW=wr.dist.c-wr.dist.f;
+      add("A single week is wider than the whole season",wkW>seasonW,
+          `${wr.name.split(" ").slice(-1)[0]}: week ±${wkW.toFixed(2)} vs season ±${seasonW.toFixed(2)} of the mean`);
+    })();
     add("Projections carry the measured bias correction",
         !!(PF&&PF.bias&&PF.bias.QB<0),
         PF&&PF.bias?`QB ${PF.bias.QB} · validated across ${(PF.years||[]).length} seasons, beats consensus every fold: ${PF.beatsEveryFold!==false}`
@@ -5214,7 +5225,18 @@ function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w)*availWeek(pl); }
    surface it as an explicit range so a 12.0 with a 4–23 spread never reads like a safe 12.
    Independent players' ranges are combined in quadrature, not summed — a full lineup is far
    more predictable than any one player in it. */
-function wkRange(pl,w){ const v=wkPts(pl,w), d=pl.dist; return d?[v*d.f,v*d.c]:[v*0.6,v*1.5]; }
+/* A SINGLE WEEK's range, from the weekly bands measured against real outcomes — not the season
+   floor/ceiling multipliers this used to borrow. Those describe a full-season total, which is far
+   narrower relative to its mean because seventeen weeks of noise average out; using them for one
+   week drew a band far too tight (a receiver shown at 0.5×–1.5× when his real weekly 15th–85th is
+   0.29×–1.67×). The projection is a mean, and weekly scoring is right-skewed, so the band is
+   deliberately lopsided around it — more room above than below, which is what actually happens. */
+function wkRange(pl,w){
+  const v=wkPts(pl,w);
+  const rb=window.__FFDATA__&&__FFDATA__.DRAWCV&&__FFDATA__.DRAWCV.ratioBands&&__FFDATA__.DRAWCV.ratioBands[pl.pos];
+  if(rb) return [v*rb.p15, v*rb.p85];
+  const d=pl.dist; return d?[v*d.f,v*d.c]:[v*0.6,v*1.5];
+}
 function rosRange(pl,fromWeek){ const v=rosPts(pl,fromWeek), d=pl.dist; return d?[v*d.f,v*d.c]:[v*0.6,v*1.5]; }
 function bandOf(ranges,mid){
   let lo=0,hi=0; ranges.forEach(([a,b],i)=>{const m=(a+b)/2;lo+=(m-a)**2;hi+=(b-m)**2;});
