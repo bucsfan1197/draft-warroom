@@ -2241,13 +2241,24 @@ function gauss(){let u=0,v=0;while(!u)u=rnd();while(!v)v=rnd();return Math.sqrt(
    K/DST/IDP keep assumed values; nflverse weekly stats don't carry them, and that's flagged
    rather than papered over. */
 const WEEK_CV_ASSUMED={QB:0.43,RB:0.64,WR:0.67,TE:0.72,K:0.55,DST:0.75,DL:0.72,LB:0.55,DB:0.78};
+/* The spread to draw a weekly score around its PROJECTION. This is subtler than it looks and got
+   it wrong for a long time. WEEK_CV was first measured as a player's week-to-week spread around
+   his OWN season mean — but the simulator draws around the PROJECTION, and the actual outcome
+   misses the projection by two things: the projection being wrong about his level (forecast error)
+   and his weekly noise. Drawing with only the second made every distribution too narrow, so every
+   probability was pushed toward the extremes — an 85%-predicted matchup was really winning ~74%.
+   tools_calibrate.py measured the spread of actual/projection directly (which carries both) and
+   verified against 4,000 synthetic matchups that it nearly halves the calibration error, 4.5 → 2.9
+   points. So the draw now uses that calibrated figure (DRAWCV) where it exists, the around-mean
+   figure next, the assumed value last — K/DST/IDP have no measured value and keep the assumption. */
 const WEEK_CV=(()=>{
-  const m=(window.__FFDATA__&&__FFDATA__.WEEKCV&&__FFDATA__.WEEKCV.weekCv)||{};
-  return Object.assign({},WEEK_CV_ASSUMED,m);
+  const draw=(window.__FFDATA__&&__FFDATA__.DRAWCV&&__FFDATA__.DRAWCV.cv)||{};
+  const mean=(window.__FFDATA__&&__FFDATA__.WEEKCV&&__FFDATA__.WEEKCV.weekCv)||{};
+  return Object.assign({},WEEK_CV_ASSUMED,mean,draw);
 })();
 function weekCvMeasured(pos){
-  const m=window.__FFDATA__&&__FFDATA__.WEEKCV;
-  return !!(m&&m.weekCv&&m.weekCv[pos]!=null);
+  const d=window.__FFDATA__&&__FFDATA__.DRAWCV;
+  return !!(d&&d.cv&&d.cv[pos]!=null);
 }
 function normPdf(z){return Math.exp(-z*z/2)/Math.sqrt(2*Math.PI);}
 /* Weekly scoring is strongly right-skewed — a floor at zero and the occasional three-times
@@ -3135,6 +3146,15 @@ function selfTest(){
        would quietly make every projection worse, so it's worth a guard even though it's applied
        upstream in the refresher. */
     const PF=D.PROJFIX;
+    /* The probabilities are calibrated against real outcomes, not just internally consistent. The
+       draw spread must be the one measured around the PROJECTION (wider, because it carries
+       forecast error) rather than around a player's own mean — using the narrower one is what made
+       the old model over-confident at the extremes. */
+    const DC=D.DRAWCV;
+    add("Weekly draw is calibrated to real matchup outcomes",
+        !!(DC&&DC.cv&&DC.cv.RB>(D.WEEKCV&&D.WEEKCV.weekCv&&D.WEEKCV.weekCv.RB||0)),
+        DC?`draw CV RB ${DC.cv.RB} vs around-mean ${D.WEEKCV&&D.WEEKCV.weekCv?D.WEEKCV.weekCv.RB:"?"} · calibration error ${DC.calMeanErr}pp (was ${DC.calMeanErrOld})`
+          :"absent — using assumed spread");
     add("Projections carry the measured bias correction",
         !!(PF&&PF.bias&&PF.bias.QB<0),
         PF&&PF.bias?`QB ${PF.bias.QB} · validated across ${(PF.years||[]).length} seasons, beats consensus every fold: ${PF.beatsEveryFold!==false}`
