@@ -196,6 +196,11 @@
   .airow input{flex:1;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
   .aifoot{padding:0 14px 10px;font-size:11px}
   .aithinking{display:inline-block;opacity:.6}
+  .aiwhy{margin-top:8px;width:100%;font-size:12px;font-weight:600;color:var(--ink-2);background:var(--panel-2);
+         border:1px solid var(--line-2);border-radius:8px;padding:7px 10px;cursor:pointer}
+  .aiwhy:hover{color:var(--ink);border-color:var(--accent)} .aiwhy:disabled{opacity:.6;cursor:default}
+  .aiwhyout:not(:empty){margin-top:8px;padding:9px 11px;background:var(--panel-2);border-radius:8px;
+         font-size:12.5px;line-height:1.5;border-left:2px solid var(--accent)}
   @media(max-width:700px){.aipanel{right:8px;bottom:8px;left:8px;width:auto;max-height:78vh}.aifab{right:14px;bottom:14px}}
   /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
   .lcmp{width:100%}
@@ -2164,6 +2169,41 @@ function aiRefreshSetup(){
   const k=$("#ai_key"); if(k&&document.activeElement!==k)k.value=AI.key||"";
   aiRefreshFab();
 }
+/* ---- Proactive surface #1: "Why this pick?" on the draft board ----
+   The recommendation cards already say WHAT to take and a one-liner why. This adds a one-tap, plain-English
+   second opinion grounded in the same board: the pick's value and tier, the players you'd pass on, what
+   you'd fall back to at the position if you wait, and your roster shape. It only appears once a key is set,
+   and the card works exactly as before without one. */
+function aiWhyBtn(id){ return aiConfigured()?`<button class="aiwhy" data-aiwhy="${id}">🤖 Why this pick?</button><div class="aiwhyout"></div>`:""; }
+function aiWhyContext(pl){
+  const s=state.settings, me=myIdx();
+  const drafted=new Set(state.picks.map(p=>p.playerId));
+  const avail=state.players.filter(p=>inLeague(p)&&!drafted.has(p.id)&&p.id!==pl.id).sort((a,b)=>valueOf(b)-valueOf(a));
+  let vv=0; try{ const {levels}=replacementLevels(); vv=Math.round(vorp(pl,levels)); }catch(e){}
+  const samePos=avail.filter(p=>p.pos===pl.pos).slice(0,3);
+  const myR=((leagueSynced()?myLiveRoster():teamRoster(me))||[]).filter(p=>p&&!p.isPick);
+  const posCounts=["QB","RB","WR","TE","K","DST"].map(P=>`${P} ${myR.filter(p=>p.pos===P).length}`).join(", ");
+  const need=Object.entries(s.roster).filter(([k,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(", ");
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
+  const L=[];
+  L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. Starting lineup: ${need}.`);
+  L.push(`Pick under consideration: ${aiPlLine(pl)}, ADP ${Math.round(adpOf(pl))}, value-over-replacement ${vv}.`);
+  L.push(`Best players you'd pass on (next available overall): ${avail.slice(0,4).map(p=>`${aiPlLine(p)} adp${Math.round(adpOf(p))}`).join("; ")}.`);
+  L.push(`If you wait, your fallback at ${pl.pos}: ${samePos.length?samePos.map(p=>`${p.name} ${Math.round(pts(p))}pt`).join("; "):"little of value left"}.`);
+  L.push(`Your roster so far: ${myR.length?posCounts:"empty — first pick"}.`);
+  const v=vegasFor(pl,state.ui.seasonWeek||1); if(v)L.push(`(context) his team's Vegas implied total is ${v.itt}.`);
+  return L.join("\n");
+}
+async function aiWhyRun(id,out,btn){
+  const pl=state.players[id]; if(!pl||!out)return;
+  out.innerHTML=`<span class="aithinking">reading the board…</span>`;
+  try{
+    const ans=await askAI(aiWhyContext(pl),
+      `In 2-3 sentences, tell me straight whether drafting ${pl.name} here is the right call, using the numbers — his value versus the players I'd pass on, how scarce his position is about to get, and how he fits my roster. Be concrete and decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="🤖 Ask again"; }
+}
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
   if(pl.idp) return pl.adpIdp!=null?pl.adpIdp:(pl.adp||999);
@@ -3274,7 +3314,7 @@ function renderSimRecs(){
         <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span>${injChip(pl)}</div>
         <div class="cardmeta">${pl.team} · bye ${pl.bye||"—"} · <b>${Math.round(pts(pl))}</b> proj pts · <b>${(r.title*100).toFixed(0)}%</b> <span class="meta">±${(simSE(r.title)*196).toFixed(1)}</span> to win title · ${Math.round(r.playoff*100)}% make playoffs</div>
         <div class="why">${line}</div>
-        <button class="draftbtn" data-draft="${r.id}">Draft to my team</button></div>`;
+        <button class="draftbtn" data-draft="${r.id}">Draft to my team</button>${aiWhyBtn(r.id)}</div>`;
     }).join("")+`<button class="draftbtn alt" id="reSimBtn" style="margin-top:2px">↻ Re-run</button>`;
   wire();
   $$("#recList [data-draft]").forEach(b=>b.onclick=()=>doDraft(+b.dataset.draft));
@@ -3344,7 +3384,7 @@ function renderHeurRecs(){
       <div class="cardmeta">${r.pl.team} · bye ${r.pl.bye||"—"} · <b>${Math.round(pts(r.pl))}</b> proj pts${metaExtra} · <span class="tier ${tier.cls}">${tier.label}</span></div>
       <div class="why">${line}</div>
       ${warn.length?`<div class="r2" style="margin-top:7px">${warn.join("")}</div>`:""}
-      <button class="draftbtn ${(auct||isMe)?"":"alt"}" data-${auct?'buy':'draft'}="${r.pl.id}">${auct?`Buy${state.ui.auctPrice?` for $${state.ui.auctPrice}`:` ($${actx.val(r.pl)})`}`:(isMe?"Draft to my team":"Mark taken")}</button>
+      <button class="draftbtn ${(auct||isMe)?"":"alt"}" data-${auct?'buy':'draft'}="${r.pl.id}">${auct?`Buy${state.ui.auctPrice?` for $${state.ui.auctPrice}`:` ($${actx.val(r.pl)})`}`:(isMe?"Draft to my team":"Mark taken")}</button>${aiWhyBtn(r.pl.id)}
     </div>`;
   }).join("") || `<div class="emptystate">No players available.</div>`;
   $$("#recList [data-draft]").forEach(b=>b.onclick=()=>doDraft(+b.dataset.draft));
@@ -4154,6 +4194,14 @@ function selfTest(){
           "system prompt binds it to the context block");
       const safe=!/<script/i.test(aiFmt("<script>x<\/script> **b**"))&&/<b>b<\/b>/.test(aiFmt("**b**"));
       add("AI answers are HTML-escaped before display",safe,"tags neutralised, only **bold** rendered");
+      // "Why this pick?" surface: hidden without a key, present with one, and grounded in the board.
+      const noBtn=aiWhyBtn(1)==="";
+      AI.key="test"; const yesBtn=/data-aiwhy="1"/.test(aiWhyBtn(1));
+      const somePl=P.find(p=>["QB","RB","WR"].includes(p.pos)&&pts(p)>0);
+      const wc=somePl?aiWhyContext(somePl):"";
+      const whyGrounded=!!(somePl&&wc.indexOf(somePl.name)>=0&&/pass on|fallback/i.test(wc)&&wc.indexOf(state.settings.teams+" teams")>=0);
+      add(`"Why this pick?" appears only with a key and is grounded in the board`,noBtn&&yesBtn&&whyGrounded,
+          whyGrounded?`no key → no button; with key → grounded card for ${somePl?lastName(somePl.name):"?"}`:"button/context guard failed");
       AI.key=savedKey; aiRefreshFab();
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
@@ -8819,6 +8867,10 @@ function init(){
     st.textContent="testing…";
     try{ const a=await askAI("League: test.","Reply with exactly: connection OK"); st.innerHTML="✓ "+aiFmt(a.slice(0,60)); }
     catch(e){ st.innerHTML="✗ "+aiFmt(e.message||String(e)); } };
+  // "Why this pick?" — delegated so it survives every re-render of the recommendation list
+  if($("#recList"))$("#recList").addEventListener("click",e=>{ const b=e.target.closest("[data-aiwhy]"); if(!b)return;
+    e.preventDefault(); const card=b.closest(".rec"), out=card&&card.querySelector(".aiwhyout"); if(!out)return;
+    b.disabled=true; b.textContent="🤖 …"; aiWhyRun(+b.dataset.aiwhy,out,b); });
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
