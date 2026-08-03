@@ -792,8 +792,9 @@
   <!-- MY TEAM TAB -->
   <section id="tab-team" class="hide">
     <div class="panel" style="margin-bottom:16px">
-      <div class="hd"><h2>How good is my team?</h2></div>
-      <div class="bd" id="teamReport"></div>
+      <div class="hd"><h2>How good is my team?</h2>
+        <button class="ghost sm hide" id="teamReportBtn" style="margin-left:auto">🤖 GM report</button></div>
+      <div class="bd"><div id="teamReport"></div><div id="teamAIReport" class="aiwhyout"></div></div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr">
       <div class="panel">
@@ -2242,6 +2243,55 @@ async function aiWaiverBrief(){
   try{
     const ans=await askAI(aiWaiverContext(),
       `Give me this week's waiver plan as 3-4 tight bullets: the best 1-2 adds and exactly how much FAAB to bid, who to drop to make room, cover for any injured starter, and the best streamer. Use the numbers; call out when a top add's edge is within noise. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* ---- Proactive surface #3: state-of-your-roster GM report ----
+   The My Team tab already grades the roster — rank, strongest/weakest slot vs a free agent, bye pileups,
+   playoff schedule, injury flags, dynasty age. This narrates all of it into a straight GM verdict:
+   biggest strength, most urgent hole, contend-now vs build, and the single highest-leverage move. */
+function aiRosterContext(){
+  const s=state.settings, mine=(myLiveRoster()||[]).filter(p=>p&&!p.isPick);
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. Starting lineup: ${Object.entries(s.roster).filter(([k,v])=>v>0).map(([k,v])=>`${v} ${k}`).join(", ")}.`);
+  if(!mine.length){ L.push("Roster is empty — nothing to analyze yet."); return L.join("\n"); }
+  try{
+    const allR=liveRosters(), meT=myTeamIdx();
+    const lineupPts=r=>{const F=fillLineup(r);return F.slots.reduce((a,x)=>a+(x.pl?pts(x.pl):0),0);};
+    const myPts=lineupPts(mine);
+    const others=[]; for(let i=0;i<allR.length;i++){ if(i!==meT&&allR[i].length)others.push(lineupPts(allR[i])); }
+    const avg=others.length?others.reduce((a,b)=>a+b,0)/others.length:myPts;
+    const rank=others.length?others.length+1-others.filter(x=>x<myPts).length:1;
+    L.push(`Projected starting lineup: ~${fmt(myPts)} pts/season, ranked ${others.length?rank+" of "+(others.length+1):"(no other rosters)"}${others.length?`, ${myPts>=avg?fmt(myPts-avg)+" above":fmt(avg-myPts)+" below"} league average`:""}.`);
+    const {levels}=replacementLevels();
+    const F=fillLineup(mine), filled=F.slots.filter(x=>x.pl);
+    const scored=filled.map(x=>({slot:x.slot,pl:x.pl,edge:Math.round(vorp(x.pl,levels))})).sort((a,b)=>b.edge-a.edge);
+    L.push(`Starters, strongest to weakest (points better than a free agent at that slot): ${scored.map(x=>`${slotLabel(x.slot)} ${x.pl.name} +${x.edge}${x.pl.inj?" ["+x.pl.inj+"]":""}`).join("; ")}.`);
+    const empty=F.slots.filter(x=>!x.pl).map(x=>slotLabel(x.slot)); if(empty.length) L.push(`Empty starting slots: ${empty.join(", ")}.`);
+    const byPos={}; mine.forEach(p=>byPos[p.pos]=(byPos[p.pos]||0)+1);
+    L.push(`Roster depth: ${["QB","RB","WR","TE","K","DST"].map(P=>`${P} ${byPos[P]||0}`).join(", ")} (${mine.length} total).`);
+    const byeCount={}; filled.forEach(x=>{if(x.pl.bye)byeCount[x.pl.bye]=(byeCount[x.pl.bye]||0)+1;});
+    const wb=Object.entries(byeCount).sort((a,b)=>b[1]-a[1])[0]; if(wb&&wb[1]>=2) L.push(`Bye pileup: week ${wb[0]} sits ${wb[1]} of your starters.`);
+    const sk=filled.filter(x=>["QB","RB","WR","TE"].includes(x.pl.pos));
+    const psos=sk.length?sk.reduce((a,x)=>a+sosOf(x.pl,15,17),0)/sk.length:1;
+    L.push(`Fantasy-playoff schedule (wk 15-17): ${psos>=1.04?"favorable":psos<=0.96?"tough":"average"} (${psos.toFixed(2)}, 1.00=average).`);
+    const hurt=mine.filter(p=>p.inj); if(hurt.length) L.push(`Injury flags: ${hurt.map(p=>`${p.name} ${p.inj}`).join("; ")}.`);
+    if(s.format==="dynasty"){
+      const ages=mine.filter(p=>p.age&&["QB","RB","WR","TE"].includes(p.pos));
+      if(ages.length){ const avgAge=ages.reduce((a,p)=>a+p.age,0)/ages.length;
+        const old=ages.filter(p=>p.age>=29).map(p=>`${p.name} ${p.age}`), young=ages.filter(p=>p.age<=24).map(p=>`${p.name} ${p.age}`);
+        L.push(`Dynasty age: avg starter ${avgAge.toFixed(1)}. Win-now vets (29+): ${old.join(", ")||"none"}. Young core (≤24): ${young.join(", ")||"none"}. Window setting: ${s.window||"balanced"}.`); }
+    }
+  }catch(e){ L.push("(some roster detail unavailable this render)"); }
+  return L.join("\n");
+}
+async function aiRosterReport(){
+  const out=$("#teamAIReport"), btn=$("#teamReportBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">grading your roster…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiRosterContext(),
+      `Give me a straight state-of-my-roster read in 4-5 sentences: my biggest strength, my most urgent hole, whether I'm built to contend now or should think longer-term, and the single highest-leverage move to make. Use the numbers. Be specific and decisive — no hedging.`);
     out.innerHTML=aiFmt(ans);
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
@@ -4248,6 +4298,10 @@ function selfTest(){
       add("Weekly waiver brief is grounded in the league's numbers",
           wbg.indexOf(state.settings.teams+" teams")>=0&&/Week 1/.test(wbg),
           "brief context carries the league, roster and week — no network, no invented players");
+      const rrg=aiRosterContext();
+      add("State-of-roster report is grounded in the roster grade",
+          rrg.indexOf(state.settings.teams+" teams")>=0&&/lineup|empty|Roster/i.test(rrg),
+          "report context carries league, projected lineup and depth — no network");
       AI.key=savedKey; aiRefreshFab();
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
@@ -6918,6 +6972,7 @@ const BUZZ={cache:null};
 /* ---- Team report card: where you actually stand, and what to fix ---- */
 function renderTeamReport(){
   const el=$("#teamReport"); if(!el)return;
+  { const b=$("#teamReportBtn"); if(b)b.classList.toggle("hide",!aiConfigured()); }
   const mine=myLiveRoster();
   if(!mine.length){el.innerHTML=`<div class="emptystate">Draft a few players and your report card appears here.</div>`;return;}
   const allR=liveRosters(), T=allR.length, meT=myTeamIdx();
@@ -8919,6 +8974,7 @@ function init(){
     e.preventDefault(); const card=b.closest(".rec"), out=card&&card.querySelector(".aiwhyout"); if(!out)return;
     b.disabled=true; b.textContent="🤖 …"; aiWhyRun(+b.dataset.aiwhy,out,b); });
   if($("#wwBriefBtn"))$("#wwBriefBtn").onclick=aiWaiverBrief;
+  if($("#teamReportBtn"))$("#teamReportBtn").onclick=aiRosterReport;
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
