@@ -191,6 +191,14 @@
   .injnote{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin:6px 0 4px}
   .injmeta{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink-2);align-items:center}
   .injmeta a{color:var(--accent)}
+  /* ---- league moves feed ---- */
+  .mv-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 7px;border-radius:7px;font-size:12.5px}
+  .mv-row:hover{background:var(--panel-2)}
+  .mv-body{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mv-kind{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:5px;margin-right:4px}
+  .mv-kind.add{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good-ink)}
+  .mv-kind.waiver{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .mv-kind.trade{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn-ink)}
   /* ---- live draft intel ---- */
   .intel-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;margin-bottom:5px;
              background:var(--panel-2);border:1px solid var(--line)}
@@ -965,6 +973,10 @@
       <div class="panel"><div class="hd"><h2>If someone goes down</h2>
         <span class="pickcounter" style="margin-left:auto">What your bench is really covering</span></div>
         <div class="bd" id="contBox"></div></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="hd"><h2>League moves</h2><span id="movesCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd" id="movesBox"></div>
     </div>
   </section>
 
@@ -3567,6 +3579,15 @@ function selfTest(){
                  && myLiveRoster().length===a.length;
       add("Synced, a free agent is nobody's rostered player",faOk,
           `${a.length+b.length} rostered excluded from ${liveFreeAgents().length} free agents`);
+      /* A "just dropped, still available" gem must actually be available — a player who was dropped
+         and then re-added (so he's on a roster again) is not a pickup, and surfacing him would send
+         you to claim someone you can't. */
+      const savedTx=TRADE.transactions;
+      TRADE.transactions=[{kind:"free_agent",adds:[],drops:[{pl:a[0],rid:2}],week:1,bid:null,when:1,rosters:[2]}];
+      const gemLeak=droppedGems(1,18).some(g=>g.p.id===a[0].id);   // a[0] is still on team A
+      add("A just-dropped gem must still be a free agent",!gemLeak,
+          gemLeak?"leaked a re-rostered drop":"re-rostered drops are excluded");
+      TRADE.transactions=savedTx;
       TRADE.teams=savedTeams;
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
@@ -4241,6 +4262,7 @@ async function tradeLoadRosters(leagueId){
     TRADE.scoringApplied=applyLeagueSettings(lg);
     await tradeLoadPicks(leagueId,lg,rosters);
     await tradeLoadSchedule(leagueId,lg);
+    await loadTransactions(leagueId,lg);
     const sel=$("#tradeMe");
     sel.innerHTML=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name} (${t.players.length}${t.picks&&t.picks.length?" +"+t.picks.length+" picks":""})</option>`).join("");
     sel.classList.remove("hide"); $("#tradeFindBtn").classList.remove("hide");
@@ -4290,6 +4312,50 @@ async function tradeLoadPicks(leagueId,lg,rosters){
    other; your actual title odds depend on which specific opponents you still have to beat, how
    many playoff spots this league pays out, and the record you already own. Sleeper exposes all
    of it: /matchups/{week} pairs rosters by matchup_id, and weeks already played carry points. */
+/* Recent roster moves across the league — the waiver signal every good manager watches. Sleeper
+   records every add, drop, waiver claim (with the FAAB bid) and trade; this pulls the most recent
+   weeks and normalises them into a feed. The point isn't the history, it's the edge: a player
+   someone just dropped who is still sitting in free agency, and what people are actually paying to
+   claim, which is the truest FAAB calibration there is. */
+async function loadTransactions(leagueId,lg){
+  TRADE.transactions=[];
+  try{
+    const bySid={}; state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
+    const leg=Math.max(1,Math.min(18,(lg&&lg.settings&&lg.settings.leg)||1));
+    const weeks=[]; for(let w=leg;w>=Math.max(1,leg-3);w--)weeks.push(w);
+    const batches=await Promise.all(weeks.map(w=>
+      SJ(`https://api.sleeper.app/v1/league/${leagueId}/transactions/${w}`).catch(()=>null)));
+    const all=[];
+    batches.forEach((tr,i)=>{ (tr||[]).forEach(t=>{
+      if(t.status!=="complete")return;
+      const norm=o=>Object.entries(o||{}).map(([sid,rid])=>({pl:bySid[String(sid)],rid})).filter(x=>x.pl);
+      const adds=norm(t.adds), drops=norm(t.drops);
+      if(!adds.length&&!drops.length&&t.type!=="trade")return;
+      all.push({kind:t.type,adds,drops,week:weeks[i],
+        bid:(t.settings&&t.settings.waiver_bid)||null,when:t.created||0,rosters:t.roster_ids||[]});
+    });});
+    all.sort((a,b)=>b.when-a.when);
+    TRADE.transactions=all.slice(0,40);
+  }catch(e){ TRADE.transactions=[]; }
+}
+/* The freshest waiver targets: players a leaguemate just cut who are still unclaimed, ranked by
+   what they'd add to YOUR starting lineup. A recent drop of real value is the cleanest pickup there
+   is — someone already did the work of freeing him. */
+function droppedGems(from,to){
+  if(!TRADE.transactions||!TRADE.transactions.length)return [];
+  const rostered=rosteredIds(), mine=myLiveRoster(), seen=new Set(), out=[];
+  const size=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  const drop=mine.length>=size?dropCandidate(mine,from,to):null;
+  const base=drop?mine.filter(p=>p.id!==drop.id):mine;
+  TRADE.transactions.forEach(t=>t.drops.forEach(d=>{
+    const p=d.pl;
+    if(!p||seen.has(p.id)||rostered.has(p.id)||!inLeague(p))return;   // still a free agent only
+    seen.add(p.id);
+    const gain=marginalROS(p,base,from,to);
+    out.push({p,gain,when:t.when,byTeam:d.rid});
+  }));
+  return out.filter(x=>x.gain>0.5).sort((a,b)=>b.gain-a.gain).slice(0,4);
+}
 async function tradeLoadSchedule(leagueId,lg){
   TRADE.schedule=null;
   try{
@@ -5703,6 +5769,49 @@ function weeklyLineup(roster,w){
   [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
   return {slots,bench:roster.filter(x=>!used.has(x.id)).sort((a,b)=>score(b)-score(a))};
 }
+function moveAgo(ms){ return ms?agoText(ms):""; }
+function renderLeagueMoves(from,to){
+  const box=$("#movesBox"); if(!box)return;
+  const ctx=$("#movesCtx");
+  if(!leagueSynced()){
+    box.innerHTML=`<div class="emptystate">Connect your league above and this shows every add, drop, waiver claim and trade as it happens — and flags anyone just cut who's still worth grabbing.</div>`;
+    if(ctx)ctx.textContent=""; return;
+  }
+  const tx=TRADE.transactions||[];
+  if(ctx)ctx.textContent=tx.length?`${tx.length} recent`:"quiet";
+  const teamName=rid=>{const t=TRADE.teams.find(x=>x.rosterId===rid);return t?t.name:("Team "+rid);};
+  // 1. the edge: just-dropped players still on waivers, worth grabbing
+  const gems=droppedGems(from,to);
+  const gemHtml=gems.length?`<div class="eyebrow" style="margin-bottom:6px">Just dropped — still available, worth a claim</div>`
+    +gems.map(g=>`<div class="intel-row crit">
+        <span class="pos ${g.p.pos}">${g.p.pos}</span>
+        <span class="ir-body"><b>${g.p.name}</b> ${injChip(g.p)}
+          <span class="meta">+${g.gain.toFixed(1)} pts to your lineup · cut by ${teamName(g.byTeam)} ${moveAgo(g.when)}</span></span>
+        <span class="ir-ic">🎯</span></div>`).join("")
+    :"";
+  // 2. the feed
+  const line=t=>{
+    if(t.kind==="trade"){
+      const sides={}; (t.rosters||[]).forEach(r=>sides[r]=[]);
+      t.adds.forEach(a=>{(sides[a.rid]=sides[a.rid]||[]).push(a.pl.name);});
+      const who=(t.rosters||[]).map(teamName).join(" ↔ ");
+      return `<span class="mv-kind trade">trade</span> <b>${who}</b>`;
+    }
+    const add=t.adds[0], drop=t.drops[0];
+    return `<span class="mv-kind ${t.kind==="waiver"?"waiver":"add"}">${t.kind==="waiver"?"waiver":"add"}</span> `
+      +`<b>${teamName((add||drop||{}).rid)}</b> `
+      +(add?`＋${add.pl.name}`:"")+(add&&drop?" ":"")+(drop?`<span class="meta">－${drop.pl.name}</span>`:"")
+      +(t.bid?` <span class="chip">$${t.bid}</span>`:"");
+  };
+  const feed=tx.length?`<div class="eyebrow" style="margin:${gems.length?"12px":"0"} 0 6px">Recent activity</div>`
+    +tx.slice(0,14).map(t=>`<div class="mv-row"><span class="mv-body">${line(t)}</span><span class="meta">${moveAgo(t.when)}</span></div>`).join("")
+    :`<div class="meta">No moves yet this week.</div>`;
+  // 3. FAAB context — what winning claims actually cost
+  const bids=tx.filter(t=>t.bid>0).map(t=>t.bid);
+  const faab=bids.length?`<div class="note" style="margin-top:10px">Winning FAAB claims lately: ${bids.slice(0,6).map(b=>"$"+b).join(", ")}${bids.length>6?"…":""}
+    <span class="meta">— the truest read on what a pickup actually costs in your league.</span></div>`:"";
+  box.innerHTML=gemHtml+feed+faab;
+}
 /* The connect banner at the top of the in-season tab: sync your league here and the whole tab —
    start/sit, waivers, the season odds — runs live on it, under its scoring. Reuses the same Sleeper
    sync as the trade finder, so connecting once serves both. */
@@ -5933,6 +6042,7 @@ function renderInSeason(){
   const avail=state.players.filter(p=>!rostered.has(p.id)&&inLeague(p)).sort((a,b)=>val(b)-val(a)).slice(0,6);
   renderROS(w,roster,rostered);
   renderBuzz(roster);
+  renderLeagueMoves(wbFrom,wbTo);
   $("#tradeBox").innerHTML=`<h3 class="eyebrow" style="margin-bottom:6px">Your roster${dyn?" (dynasty value)":""}</h3>`
     +mine.slice(0,10).map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
     +`<h3 class="eyebrow" style="margin:12px 0 6px">Best available</h3>`
