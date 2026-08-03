@@ -1014,6 +1014,11 @@
         <button class="ghost sm" id="wwRefresh" style="margin-left:auto">↻ Refresh</button>
       </div>
     </div>
+    <div class="panel hide" style="margin-bottom:14px" id="wwBriefPanel">
+      <div class="hd"><h2>🤖 This week's brief</h2>
+        <button class="ghost sm" id="wwBriefBtn" style="margin-left:auto">Generate brief</button></div>
+      <div class="bd"><div id="wwBrief"><div class="meta">One tap turns the boards below into a plan — the two or three adds worth your FAAB, who to drop for them, cover for any injured starter, and your best streamer. Grounded in your league's real numbers, under your scoring.</div></div></div>
+    </div>
     <div id="wwUrgent"></div>
     <div class="grid-draft" style="grid-template-columns:1.15fr .85fr">
       <div class="panel"><div class="hd"><h2>Best pickups for your team</h2>
@@ -2203,6 +2208,43 @@ async function aiWhyRun(id,out,btn){
     out.innerHTML=aiFmt(ans);
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="🤖 Ask again"; }
+}
+/* ---- Proactive surface #2: the weekly waiver brief ----
+   The Waiver Wire tab already computes everything a good pickup decision needs — marginal-value adds with
+   FAAB, the least-costly drop, injury fills, a streaming plan, what's trending. This turns all of it into a
+   one-tap plan in plain English. Same rule: it reasons only over these numbers, never invents a player. */
+function aiWaiverContext(week){
+  const s=state.settings, wk=week||state.ui.seasonWeek||1, to=(state.ui.wWindow==="po")?17:18;
+  const myR=((leagueSynced()?myLiveRoster():teamRoster(myIdx()))||[]).filter(p=>p&&!p.isPick);
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
+  const L=[];
+  L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. ${leagueSynced()?`Synced live${TRADE.leagueName?` "${TRADE.leagueName}"`:""}.`:"NOT synced — tell the user to connect Sleeper for a real wire."} Week ${wk}${state.ui.wWindow==="po"?", valuing playoff weeks 15-17":", rest of season"}.`);
+  if(myR.length) L.push(`Your roster: ${myR.map(aiPlLine).join("; ")}.`);
+  try{ const wb=waiverBoard(myR,wk,to,8);
+    if(wb&&wb.rows&&wb.rows.length) L.push(`Top free-agent pickups (ranked by points added to your STARTING lineup, with suggested FAAB out of $${wb.remaining} left): ${wb.rows.map(r=>`${r.p.name} (${r.p.pos}${r.p.team?" "+r.p.team:""}) +${fmt(r.gain)} pts → bid $${r.bid} (${r.bidPct}%)${r.p.inj?" ["+r.p.inj+"]":""}${r.noise?" [edge within noise]":""}`).join("; ")}.`);
+    if(wb&&wb.drop) L.push(`Least costly drop on your bench: ${wb.drop.name} (${wb.drop.pos}) — pair a claim with this.`);
+  }catch(e){}
+  try{ const ir=injuryReplacements(myR,wk,to).filter(x=>x.fill);
+    if(ir.length) L.push(`Injured starters needing cover → best available fill: ${ir.map(x=>`${x.starter.name} ${x.starter.inj} → ${x.fill.name} (${x.fill.pos})`).join("; ")}.`);
+  }catch(e){}
+  try{ const sp=streamPlan("DST",myR,wk,to,{}); const p0=sp&&sp.plan&&sp.plan[0];
+    const nm=p0&&(p0.p?p0.p.name:(p0.pl?p0.pl.name:p0.name)); if(nm) L.push(`Best defense to stream this week: ${nm}.`);
+  }catch(e){}
+  try{ if(window.WW_TREND&&WW_TREND.length){ const rostered=rosteredIds();
+    const t=WW_TREND.filter(x=>x.pl&&!rostered.has(x.pl.id)).slice(0,5);
+    if(t.length) L.push(`Trending adds across Sleeper (popularity, NOT value — weigh against the numbers above): ${t.map(x=>x.pl.name).join("; ")}.`);
+  } }catch(e){}
+  return L.join("\n");
+}
+async function aiWaiverBrief(){
+  const out=$("#wwBrief"), btn=$("#wwBriefBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">reading your wire…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiWaiverContext(),
+      `Give me this week's waiver plan as 3-4 tight bullets: the best 1-2 adds and exactly how much FAAB to bid, who to drop to make room, cover for any injured starter, and the best streamer. Use the numbers; call out when a top add's edge is within noise. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
 }
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
@@ -4202,6 +4244,10 @@ function selfTest(){
       const whyGrounded=!!(somePl&&wc.indexOf(somePl.name)>=0&&/pass on|fallback/i.test(wc)&&wc.indexOf(state.settings.teams+" teams")>=0);
       add(`"Why this pick?" appears only with a key and is grounded in the board`,noBtn&&yesBtn&&whyGrounded,
           whyGrounded?`no key → no button; with key → grounded card for ${somePl?lastName(somePl.name):"?"}`:"button/context guard failed");
+      const wbg=aiWaiverContext(1);
+      add("Weekly waiver brief is grounded in the league's numbers",
+          wbg.indexOf(state.settings.teams+" teams")>=0&&/Week 1/.test(wbg),
+          "brief context carries the league, roster and week — no network, no invented players");
       AI.key=savedKey; aiRefreshFab();
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
@@ -6414,6 +6460,7 @@ function renderWaivers(){
 
   // sync bar (same connect flow as the trade finder; connecting once serves the whole app)
   wwSyncBar();
+  if($("#wwBriefPanel"))$("#wwBriefPanel").classList.toggle("hide",!aiConfigured());
 
   const roster=myLiveRoster();
   const boxes=["wwUrgent","wwAdds","wwDropped","wwTrending","wwDrops","wwStream","wwMoves"];
@@ -8871,6 +8918,7 @@ function init(){
   if($("#recList"))$("#recList").addEventListener("click",e=>{ const b=e.target.closest("[data-aiwhy]"); if(!b)return;
     e.preventDefault(); const card=b.closest(".rec"), out=card&&card.querySelector(".aiwhyout"); if(!out)return;
     b.disabled=true; b.textContent="🤖 …"; aiWhyRun(+b.dataset.aiwhy,out,b); });
+  if($("#wwBriefBtn"))$("#wwBriefBtn").onclick=aiWaiverBrief;
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
