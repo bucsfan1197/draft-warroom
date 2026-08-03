@@ -2038,19 +2038,34 @@ async function askAI(context, question){
   const prov=AI.provider, model=aiModel();
   const user=`CONTEXT (the app's computed numbers — reason only from this):\n${context}\n\nQUESTION: ${question}`;
   if(prov==="gemini"){
-    // Free-tier quota varies by model and can be 0 on one while fine on another, so try a few in order.
-    const cands=[aiModel(),"gemini-2.5-flash","gemini-2.0-flash-lite","gemini-1.5-flash"].filter((m,i,a)=>m&&a.indexOf(m)===i);
+    // Model names and free-tier quotas shift and vary by account, so ask THIS key which models it can
+    // actually call (ListModels), try the cheap "flash" ones first, and skip past any that are quota-0 or
+    // retired for new users. A static list is the fallback if discovery fails.
     const bodyObj={system_instruction:{parts:[{text:AI_SYSTEM}]},contents:[{role:"user",parts:[{text:user}]}],
       generationConfig:{temperature:0.4,maxOutputTokens:900}};
-    let lastErr="Gemini request failed";
-    for(const m of cands){
+    let avail=[];
+    try{
+      const lr=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(AI.key)}&pageSize=200`);
+      const ld=await lr.json();
+      if(lr.ok&&ld.models) avail=ld.models.filter(m=>(m.supportedGenerationMethods||m.supported_generation_methods||[]).some(x=>/generateContent/i.test(x)))
+        .map(m=>String(m.name||"").replace(/^models\//,"")).filter(Boolean);
+    }catch(e){}
+    // rank: user's pick first, then flash (lite last within flash), skip preview/exp/vision/thinking oddballs
+    const rank=m=>/flash/i.test(m)?(/lite/i.test(m)?1:0):/pro/i.test(m)?3:2;
+    let cands=(avail.length?avail:["gemini-2.0-flash","gemini-flash-latest","gemini-2.0-flash-001","gemini-1.5-flash"])
+      .filter(m=>!/embedding|aqa|vision|imagen|veo|tts|audio/i.test(m));
+    cands.sort((a,b)=>rank(a)-rank(b));
+    if(aiModel()&&cands.includes(aiModel())) cands=[aiModel(),...cands.filter(m=>m!==aiModel())];
+    let lastErr="No usable Gemini model was found for this key.";
+    for(const m of cands.slice(0,8)){
       let r,d;
       try{ r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(AI.key)}`,
              {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(bodyObj)}); d=await r.json(); }
       catch(e){ lastErr=String((e&&e.message)||e); continue; }
-      if(r.ok){ const t=(((d.candidates||[])[0]||{}).content||{}).parts; return (t&&t[0]&&t[0].text)||"(no answer returned)"; }
+      if(r.ok){ const t=(((d.candidates||[])[0]||{}).content||{}).parts;
+        if(t&&t[0]&&t[0].text){ AI.model=m; aiSave(); return t[0].text; } lastErr="Empty answer from "+m; continue; }
       lastErr=(d.error&&d.error.message)||("HTTP "+r.status);
-      if(!/quota|limit|not.?found|not supported|unsupported|404|429/i.test(lastErr)) break; // auth/other error → stop, don't spam
+      if(!/quota|limit|not.?found|not.?supported|unsupported|not available|no longer|permission|404|429/i.test(lastErr)) break; // real auth error → stop
     }
     throw new Error(lastErr);
   }
