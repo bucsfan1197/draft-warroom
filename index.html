@@ -132,6 +132,8 @@
   .ghost.sm{padding:2px 8px;font-size:11px;margin-left:6px}
   .warn-note{border-color:color-mix(in srgb,var(--warn) 40%,transparent);
              background:color-mix(in srgb,var(--warn) 9%,transparent)}
+  .crit-note{border-color:color-mix(in srgb,var(--crit) 45%,transparent);
+             background:color-mix(in srgb,var(--crit) 9%,transparent);border-radius:9px;padding:10px 12px}
   /* ---- Matchups ----------------------------------------------------------------
      The head-to-head is the one thing you open this tab for, so it gets the space: two score
      bands either side of the only number that matters. The win probability is the hero, not the
@@ -925,6 +927,9 @@
   </section>
 
   <section id="tab-season" class="hide">
+    <div class="panel" style="margin-bottom:14px" id="seasonSyncPanel">
+      <div class="bd" style="padding:12px 16px"><div id="seasonSync" class="syncrow" style="align-items:center"></div></div>
+    </div>
     <div class="panel">
       <div class="hd"><h2>Start / Sit</h2><span id="seasonCtx" class="pickcounter" style="margin-left:auto"></span></div>
       <div class="bd">
@@ -1788,6 +1793,27 @@ function myNextPick(after){
 }
 function draftedIds(){return new Set(state.picks.map(p=>p.playerId));}
 function teamRoster(idx){return state.picks.filter(p=>p.teamIdx===idx).map(p=>state.players[p.playerId]).filter(Boolean);}
+
+/* ---- LIVE LEAGUE BRIDGE ----
+   Once you sync a Sleeper league, the in-season tools should read the LEAGUE, not the mock draft:
+   your real roster, everyone else's real roster, and — the piece that makes a waiver tool actually
+   work — the real free agents, meaning every player nobody in your league has rostered. All of
+   this already arrives in TRADE.teams when you connect; these helpers just let the waiver, drop and
+   start/sit engines fall through to it automatically, and back to the draft board when you haven't
+   synced. Scoring is the league's own (applied on sync), so every point below is computed under
+   YOUR league's rules, not a generic PPR default. */
+function leagueSynced(){ return !!(TRADE.teams&&TRADE.teams.length&&TRADE.teams.some(t=>t.players&&t.players.length)); }
+function liveRosters(){
+  if(leagueSynced())return TRADE.teams.map(t=>(t.players||[]).filter(p=>p&&!p.isPick));
+  const T=state.settings.teams; return [...Array(T).keys()].map(teamRoster);
+}
+function myTeamIdx(){ return leagueSynced()?TRADE.me:myIdx(); }
+function myLiveRoster(){ return liveRosters()[myTeamIdx()]||[]; }
+function rosteredIds(){
+  if(leagueSynced()){ const s=new Set(); TRADE.teams.forEach(t=>(t.players||[]).forEach(p=>{if(p)s.add(p.id);})); return s; }
+  return draftedIds();
+}
+function liveFreeAgents(){ const r=rosteredIds(); return state.players.filter(p=>p&&!r.has(p.id)&&inLeague(p)); }
 
 /* ---- roster slotting: fills starting lineup optimally ---- */
 function fillLineup(roster){
@@ -3523,6 +3549,26 @@ function selfTest(){
     });
     add("Every live injury status actually moves the projection",injActs,
         `${injCodes.length} ESPN statuses map to codes the model discounts`);
+    /* The live-league bridge must be a clean no-op when you HAVEN'T synced — otherwise the whole
+       draft and mock experience would quietly start reading an empty league. And when synced, a
+       free agent is precisely a player nobody in the league rosters. Both checked on a synthetic
+       league so no network is needed. */
+    (()=>{
+      const savedTeams=TRADE.teams;
+      TRADE.teams=[];   // unsynced
+      const noopOk=!leagueSynced() && rosteredIds().size===draftedIds().size
+                   && liveRosters().length===state.settings.teams;
+      add("Unsynced, the league bridge falls back to the draft cleanly",noopOk,
+          `not synced → rosteredIds matches draftedIds (${rosteredIds().size})`);
+      // synthetic 2-team synced league
+      const a=state.players.filter(inLeague).slice(0,3), b=state.players.filter(inLeague).slice(3,6);
+      TRADE.teams=[{players:a,name:"A"},{players:b,name:"B"}]; TRADE.me=0;
+      const faOk=leagueSynced() && !liveFreeAgents().some(p=>a.includes(p)||b.includes(p))
+                 && myLiveRoster().length===a.length;
+      add("Synced, a free agent is nobody's rostered player",faOk,
+          `${a.length+b.length} rostered excluded from ${liveFreeAgents().length} free agents`);
+      TRADE.teams=savedTeams;
+    })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
                         :`${strip?strip.children.length:0} tabs, no strays`);
@@ -3944,28 +3990,40 @@ function selfTest(){
   return R;
 }
 
+/* Fill the app's scoring, roster shape and team count from a Sleeper league object. This is the
+   "fill in the league's rules" step: PPR vs half vs standard, TE-premium, per-stat weights, the
+   exact starting slots and the number of teams all come straight from the league so every point
+   the tools compute is under YOUR league's rules, not a generic default. Returns how many scoring
+   rules it recognised. Shared by the manual import button and the live sync, so connecting your
+   league for trades or waivers applies its scoring automatically. */
+function applyLeagueSettings(lg){
+  if(!lg)return 0;
+  const sc=lg.scoring_settings||{};
+  const map={passYd:"pass_yd",passTd:"pass_td",int:"pass_int",rushYd:"rush_yd",rushTd:"rush_td",
+             rec:"rec",recYd:"rec_yd",recTd:"rec_td",fl:"fum_lost"};
+  let applied=0;
+  Object.entries(map).forEach(([ours,theirs])=>{
+    if(sc[theirs]!=null){state.settings.scoring[ours]=+sc[theirs];applied++;}
+  });
+  if(lg.roster_positions){
+    const slots=parseSlots(lg.roster_positions), R=state.settings.roster, c={};
+    slots.forEach(x=>c[x]=(c[x]||0)+1);
+    ["QB","RB","WR","TE","K","DST","FLEX","SUPERFLEX"].forEach(k=>{if(c[k]!=null)R[k]=c[k];});
+    R.BENCH=(lg.roster_positions.filter(x=>x==="BN")||[]).length||R.BENCH;
+  }
+  if(lg.total_rosters)state.settings.teams=lg.total_rosters;
+  SIMCACHE={key:null}; SEASONSIM={key:null};
+  return applied;
+}
 /* ---- import your league's real scoring + roster from Sleeper ---- */
 async function importLeagueScoring(){
   const id=$("#leagueSelect").value||TRADE.leagueId;
   if(!id){leagueStatus("Pick a league first (Find my leagues).","var(--warn)");return;}
   try{
     const lg=await SJ(`https://api.sleeper.app/v1/league/${id}`);
-    const sc=lg.scoring_settings||{};
-    const map={passYd:"pass_yd",passTd:"pass_td",int:"pass_int",rushYd:"rush_yd",rushTd:"rush_td",
-               rec:"rec",recYd:"rec_yd",recTd:"rec_td",fl:"fum_lost"};
-    let applied=0;
-    Object.entries(map).forEach(([ours,theirs])=>{
-      if(sc[theirs]!=null){state.settings.scoring[ours]=+sc[theirs];applied++;}
-    });
     applySleeperRoster(lg.settings);
-    if(lg.roster_positions){
-      const slots=parseSlots(lg.roster_positions), R=state.settings.roster, c={};
-      slots.forEach(x=>c[x]=(c[x]||0)+1);
-      ["QB","RB","WR","TE","K","DST","FLEX","SUPERFLEX"].forEach(k=>{if(c[k]!=null)R[k]=c[k];});
-      R.BENCH=(lg.roster_positions.filter(x=>x==="BN")||[]).length||R.BENCH;
-    }
-    if(lg.total_rosters)state.settings.teams=lg.total_rosters;
-    SIMCACHE={key:null}; loadSetupInputs(); renderAll(); save();
+    const applied=applyLeagueSettings(lg);
+    loadSetupInputs(); renderAll(); save();
     leagueStatus(`⚙ Imported <b>${lg.name}</b>: ${applied} scoring rules, ${state.settings.teams} teams, roster ${Object.entries(state.settings.roster).filter(([k,v])=>v).map(([k,v])=>k+":"+v).join(" ")}.`,"var(--good)");
   }catch(e){leagueStatus("Couldn't import league settings.","var(--crit)");}
 }
@@ -4172,12 +4230,15 @@ async function tradeLoadRosters(leagueId){
       SJ(`https://api.sleeper.app/v1/league/${leagueId}`)]);
     const nameOf={};(users||[]).forEach(u=>nameOf[u.user_id]=u.display_name||u.username||"Manager");
     const bySid={};state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
-    TRADE.leagueId=leagueId; TRADE.users=nameOf;
+    TRADE.leagueId=leagueId; TRADE.users=nameOf; TRADE.leagueName=lg.name;
     TRADE.slots=parseSlots(lg.roster_positions);
     TRADE.teams=(rosters||[]).map(r=>({
       rosterId:r.roster_id, owner:r.owner_id, name:nameOf[r.owner_id]||("Team "+r.roster_id),
       players:(r.players||[]).map(sid=>bySid[String(sid)]).filter(Boolean),
       unmatched:(r.players||[]).filter(sid=>!bySid[String(sid)]).length}));
+    // Apply the league's own scoring, roster shape and size the moment you connect — so the waiver
+    // board, start/sit and everything else compute under THIS league's rules automatically.
+    TRADE.scoringApplied=applyLeagueSettings(lg);
     await tradeLoadPicks(leagueId,lg,rosters);
     await tradeLoadSchedule(leagueId,lg);
     const sel=$("#tradeMe");
@@ -5642,6 +5703,34 @@ function weeklyLineup(roster,w){
   [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
   return {slots,bench:roster.filter(x=>!used.has(x.id)).sort((a,b)=>score(b)-score(a))};
 }
+/* The connect banner at the top of the in-season tab: sync your league here and the whole tab —
+   start/sit, waivers, the season odds — runs live on it, under its scoring. Reuses the same Sleeper
+   sync as the trade finder, so connecting once serves both. */
+function renderSeasonSync(){
+  const box=$("#seasonSync"); if(!box)return;
+  if(leagueSynced()){
+    const nm=TRADE.teams[TRADE.me]?TRADE.teams[TRADE.me].name:"your team";
+    const lgName=TRADE.leagueName||"your league";
+    box.innerHTML=`<span class="chip good">● Live</span>
+      <span style="flex:1"><b>${lgName}</b> — you're <b>${nm}</b>, ${TRADE.teams.length} teams${TRADE.scoringApplied?`, ${TRADE.scoringApplied} scoring rules applied`:""}.
+        Waivers, start/sit and your season odds all run on this roster.</span>
+      <button class="ghost sm" id="seasonResync">↻ Refresh rosters</button>`;
+    if($("#seasonResync"))$("#seasonResync").onclick=()=>{ if(TRADE.leagueId)tradeLoadRosters(TRADE.leagueId).then(()=>renderInSeason()); };
+  } else {
+    box.innerHTML=`<input type="text" id="seasonUser" class="search" placeholder="Your Sleeper username" style="min-width:170px">
+      <button class="draftbtn alt" id="seasonConnect">Connect my league</button>
+      <span class="meta" style="flex:1">Sync your Sleeper league to make this a live waiver wire — real rosters, real free agents, your league's scoring.</span>`;
+    const known=localStorage.getItem("ffwr_syncuser")||"";
+    if(known&&$("#seasonUser"))$("#seasonUser").value=known;
+    const go=()=>{ const u=($("#seasonUser").value||"").trim(); if(!u)return;
+      try{localStorage.setItem("ffwr_syncuser",u);}catch(e){}
+      if($("#tradeUser"))$("#tradeUser").value=u;
+      $("#seasonSync").innerHTML=`<span class="meta">Connecting…</span>`;
+      tradeLoadLeagues().then(()=>renderInSeason()); };
+    if($("#seasonConnect"))$("#seasonConnect").onclick=go;
+    if($("#seasonUser"))$("#seasonUser").onkeydown=e=>{if(e.key==="Enter")go();};
+  }
+}
 function renderInSeason(){
   const sel=$("#seasonWeek"); if(!sel)return;
   if(!sel.options.length){
@@ -5649,9 +5738,12 @@ function renderInSeason(){
     sel.value=String(state.ui.seasonWeek||1);
     sel.onchange=()=>{state.ui.seasonWeek=+sel.value;renderInSeason();save();};
   }
+  renderSeasonSync();
   const w=+sel.value||1;
-  const roster=teamRoster(myIdx());
-  const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=`week ${w} · adjusted for who they play`;
+  const roster=myLiveRoster();
+  const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=leagueSynced()
+    ? `week ${w} · live from your league · ${TRADE.teams[TRADE.me]?TRADE.teams[TRADE.me].name:"your team"}`
+    : `week ${w} · adjusted for who they play`;
   const ss=$("#startSit");
   if(!roster.length){ ss.innerHTML=`<div class="emptystate">Draft or sync a roster first — then this becomes your weekly start/sit sheet.</div>`;
     $("#waiverBox").innerHTML="";$("#tradeBox").innerHTML="";return; }
@@ -5683,10 +5775,11 @@ function renderInSeason(){
   let advice=[];
   if(byes)advice.push(`<b>${byes}</b> starter${byes>1?"s are":" is"} on bye — fill from your bench or waivers.`);
   const SCw=seasonSchedule(), wkObj=SCw.weeks.find(x=>x.week===w);
-  const myPair=wkObj&&wkObj.pairs.find(p=>p.includes(myIdx()));
-  const oppIdx=myPair?(myPair[0]===myIdx()?myPair[1]:myPair[0]):null;
+  const meT=myTeamIdx();
+  const myPair=wkObj&&wkObj.pairs.find(p=>p.includes(meT));
+  const oppIdx=myPair?(myPair[0]===meT?myPair[1]:myPair[0]):null;
   const A=weekUnits(roster,w);
-  const B=oppIdx!=null?weekUnits(teamRoster(oppIdx),w).starters:null;
+  const B=oppIdx!=null?weekUnits(liveRosters()[oppIdx]||[],w).starters:null;
   if(A.starters.length&&A.bench.length&&B&&B.length){
     const res=startSitAdvice(A,B,900);
     const best=res.moves.filter(m=>m.gain>2*m.se)[0];
@@ -5721,7 +5814,15 @@ function renderInSeason(){
   const holes=L.slots.filter(s=>!s.pl||s.pl.bye===w);
   const holeNote=holes.length
     ? `<div class="note warn-note" style="margin-bottom:10px"><b>${holes.length}</b> starting spot${holes.length>1?"s":""} ${holes.length>1?"are":"is"} empty or on bye this week — the board already values that.</div>` : "";
-  $("#waiverBox").innerHTML=holeNote+(wb.rows.length?wb.rows.map(r=>`
+  // Injuries drive waivers: if the live feed says one of your starters is down, the first thing you
+  // want is the best replacement you can actually claim, not to hunt for it in the list yourself.
+  const hurt=injuryReplacements(roster,wbFrom,wbTo);
+  const hurtNote=hurt.length?hurt.map(x=>`<div class="note crit-note" style="margin-bottom:8px">
+      🚑 <b>${x.starter.name}</b> is <b>${x.starter.inj}</b>${x.starter.injPart?` (${x.starter.injPart})`:""}${x.starter.injNote?` — <span class="meta">${x.starter.injNote}</span>`:""}
+      ${x.fill?`<div style="margin-top:4px">Best ${x.slot.replace("SUPERFLEX","SFLX")} you can claim: <b>${x.fill.name}</b>
+        <span class="meta">${x.fill.team||""} · ${fmt(rosPts(x.fill,wbFrom))} pts rest of season${x.fill.inj?` · ⚠️ ${x.fill.inj}`:""}</span></div>`
+       :`<span class="meta">No free agent meaningfully replaces him — hold and stream.</span>`}</div>`).join(""):"";
+  $("#waiverBox").innerHTML=hurtNote+holeNote+(wb.rows.length?wb.rows.map(r=>`
     <div class="kv${r.noise?" faded":""}">
       <span><span class="pos ${r.p.pos}">${r.p.pos}</span> ${r.p.name}${injChip(r.p)}
         <span class="meta">${r.p.team}</span>
@@ -5745,12 +5846,12 @@ function renderInSeason(){
      the only way to tell a bad team from a bad draw. */
   (()=>{
     const box=$("#pushBox"); if(!box)return;
-    const SCp=seasonSchedule(), T=state.settings.teams;
-    const allR=[...Array(T).keys()].map(teamRoster);
+    const SCp=seasonSchedule();
+    const allR=liveRosters(), T=allR.length, meT=myTeamIdx();
     if(!roster.length){box.innerHTML=`<div class="emptystate">Sync or draft a roster and this fills in.</div>`;return;}
-    const S=simSeason(400), mine=S[myIdx()];
-    const ap=allPlayRecord(SCp,allR,myIdx());
-    const wn=winsNeeded(SCp,myIdx(),300);
+    const S=simSeason(400), mine=S[meT];
+    const ap=allPlayRecord(SCp,allR,meT);
+    const wn=winsNeeded(SCp,meT,300);
     const need=(()=>{
       for(let k=0;k<wn.rate.length;k++) if(wn.rate[k]!=null&&wn.rate[k]>=0.5)
         return {k,p:wn.rate[k]};
@@ -5758,7 +5859,7 @@ function renderInSeason(){
     })();
     const odds=Math.round(mine.playoff*100);
     $("#pushCtx").textContent=`${SCp.playoffTeams} of ${T} make it`;
-    const apPct=Math.round(ap.pct*100), seed=[...Array(T).keys()].sort((a,b)=>S[b].playoff-S[a].playoff).indexOf(myIdx())+1;
+    const apPct=Math.round(ap.pct*100), seed=[...Array(T).keys()].sort((a,b)=>S[b].playoff-S[a].playoff).indexOf(meT)+1;
     box.innerHTML=`
       <div class="levrow" style="margin-bottom:12px">
         <div class="levbox ${odds>=60?"win":odds<=25?"lose":""}"><div class="eyebrow">Playoff odds</div>
@@ -5825,12 +5926,12 @@ function renderInSeason(){
   })();
 
   // ---- trade value board ----
-  const drafted=draftedIds();
+  const rostered=rosteredIds();
   const dyn=state.settings.format==="dynasty";
   const val=p=>dyn?dynValue(p):pts(p);
   const mine=roster.slice().sort((a,b)=>val(b)-val(a));
-  const avail=state.players.filter(p=>!drafted.has(p.id)&&inLeague(p)).sort((a,b)=>val(b)-val(a)).slice(0,6);
-  renderROS(w,roster,drafted);
+  const avail=state.players.filter(p=>!rostered.has(p.id)&&inLeague(p)).sort((a,b)=>val(b)-val(a)).slice(0,6);
+  renderROS(w,roster,rostered);
   renderBuzz(roster);
   $("#tradeBox").innerHTML=`<h3 class="eyebrow" style="margin-bottom:6px">Your roster${dyn?" (dynasty value)":""}</h3>`
     +mine.slice(0,10).map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
@@ -5888,12 +5989,12 @@ const BUZZ={cache:null};
 /* ---- Team report card: where you actually stand, and what to fix ---- */
 function renderTeamReport(){
   const el=$("#teamReport"); if(!el)return;
-  const mine=teamRoster(myIdx());
+  const mine=myLiveRoster();
   if(!mine.length){el.innerHTML=`<div class="emptystate">Draft a few players and your report card appears here.</div>`;return;}
-  const T=state.settings.teams;
+  const allR=liveRosters(), T=allR.length, meT=myTeamIdx();
   const lineupPts=r=>{const L=fillLineup(r);return L.slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0);};
   const myPts=lineupPts(mine);
-  const others=[];for(let i=0;i<T;i++){if(i!==myIdx()){const r=teamRoster(i);if(r.length)others.push(lineupPts(r));}}
+  const others=[];for(let i=0;i<T;i++){if(i!==meT){const r=allR[i];if(r.length)others.push(lineupPts(r));}}
   const avg=others.length?others.reduce((a,b)=>a+b,0)/others.length:myPts;
   const better=others.filter(x=>x<myPts).length;
   const rank=others.length?others.length+1-better:1;
@@ -6188,12 +6289,14 @@ function seasonSchedule(){
    projection. Weeks already played are fact and are carried through unchanged. */
 let SEASONSIM={key:null,val:null};
 function simSeason(iters,override){
-  const T=state.settings.teams, SC=seasonSchedule(), N=iters||400;
-  const key=JSON.stringify([T,state.picks.length,state.settings.format,state.settings.bestball,
-    SC.real,state.ui.seasonWeek,Object.values(state.settings.roster)]);
+  const SC=seasonSchedule(), N=iters||400;
+  // Live league when synced, mock draft otherwise — same engine either way.
+  const baseRosters=liveRosters();
+  const T=baseRosters.length;
+  const rosters=baseRosters.map((r,i)=>(override&&override.teamIdx===i)?override.roster:r);
+  const key=JSON.stringify([T,leagueSynced()?TRADE.leagueId:0,rosters.map(r=>r.length),
+    state.settings.format,state.settings.bestball,SC.real,state.ui.seasonWeek,Object.values(state.settings.roster)]);
   if(!override&&SEASONSIM.key===key)return SEASONSIM.val;   // a hypothetical must never be cached
-  const rosters=[...Array(T).keys()].map(i=>
-    (override&&override.teamIdx===i)?override.roster:teamRoster(i));
   const U={};
   SC.weeks.forEach(w=>{ U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters); });
   const made=new Array(T).fill(0), wins=new Array(T).fill(0), pfs=new Array(T).fill(0);
@@ -6317,8 +6420,8 @@ function weekLeverage(me,week,iters){
   const S=simSeason(iters||300);
   const cur=S[me]?S[me].playoff:0;
   const forced=res=>{
-    const T=state.settings.teams, SC=seasonSchedule(), N=iters||300;
-    const rosters=[...Array(T).keys()].map(teamRoster);
+    const SC=seasonSchedule(), N=iters||300;
+    const rosters=liveRosters(), T=rosters.length;
     const U={}; SC.weeks.forEach(w=>{U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters);});
     const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
     let made=0;
@@ -6488,12 +6591,12 @@ function oddsWord(p){
 const MOVE_SEED=20260722;
 function oddsWith(roster,iters){
   seedRng(MOVE_SEED);
-  const r=simSeason(iters||250,{teamIdx:myIdx(),roster})[myIdx()];
+  const r=simSeason(iters||250,{teamIdx:myTeamIdx(),roster})[myTeamIdx()];
   unseedRng();
   return r?r.playoff:0;
 }
 function moveOdds(add,drop,iters){
-  const me=myIdx(), base=teamRoster(me);
+  const me=myTeamIdx(), base=myLiveRoster();
   let alt=base.slice();
   if(drop)alt=alt.filter(p=>p.id!==drop.id);
   if(add&&!alt.some(p=>p.id===add.id))alt=alt.concat([add]);
@@ -6544,12 +6647,31 @@ function dropCandidate(roster,fromWeek,toWeek){
   return bench.map(p=>({p,cost:marginalROS(p,roster.filter(x=>x.id!==p.id),fromWeek,to)}))
               .sort((a,b)=>a.cost-b.cost)[0].p;
 }
+/* When the live injury feed marks one of your STARTERS down, find the best free agent who can
+   legally fill that slot and can actually be claimed in your league. This is the join the user
+   asked for — the injury feed and the free-agent pool meeting so a "Drake Maye is Out" becomes
+   "here's who to grab" without you doing the lookup. */
+function injuryReplacements(roster,from,to){
+  const OUT=new Set(["Out","Doubtful","IR","PUP","Sus","NA","DNR"]);
+  const {slots}=fillLineup(roster);
+  const hurt=slots.filter(s=>s.pl&&OUT.has(s.pl.inj));
+  if(!hurt.length)return [];
+  const rostered=rosteredIds();
+  const fas=state.players.filter(p=>p&&!rostered.has(p.id)&&inLeague(p));
+  return hurt.map(s=>{
+    const fill=fas.filter(p=>canFill(p.pos,s.slot))
+      .sort((a,b)=>rosPts(b,from)-rosPts(a,from))[0]||null;
+    return {starter:s.pl,slot:s.slot,fill};
+  });
+}
 function waiverBoard(roster,from,to,limit){
-  const drafted=draftedIds();
   const size=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
   const drop=roster.length>=size?dropCandidate(roster,from,to):null;
   const base=drop?roster.filter(p=>p.id!==drop.id):roster;   // the claim costs him, so price it that way
-  const fa=state.players.filter(p=>!drafted.has(p.id)&&inLeague(p));
+  // Real free agents when synced — the players nobody in YOUR league rosters — not just anyone
+  // undrafted in a mock. This is what turns it from a projections list into a live waiver wire.
+  const rostered=rosteredIds();
+  const fa=state.players.filter(p=>p&&!rostered.has(p.id)&&inLeague(p));
   // Only bother scoring plausible pieces; the tail can't reach a starting slot.
   const short=fa.sort((a,b)=>rosPts(b,from)-rosPts(a,from)).slice(0,90);
   const rows=short.map(p=>({p,gain:marginalROS(p,base,from,to)}))
@@ -6592,8 +6714,8 @@ function allPlayRecord(SC,rosters,me){
    simulators give you a percentage with no narrative. Both come out of the same run here —
    count how many of your remaining games you won in the seasons where you made it. */
 function winsNeeded(SC,me,iters){
-  const T=state.settings.teams, N=iters||300;
-  const rosters=[...Array(T).keys()].map(teamRoster);
+  const N=iters||300;
+  const rosters=liveRosters(), T=rosters.length;
   const U={}; SC.weeks.forEach(w=>{U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters);});
   const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
   const from=state.ui.seasonWeek||1;
