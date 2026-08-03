@@ -191,6 +191,16 @@
   .injnote{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin:6px 0 4px}
   .injmeta{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink-2);align-items:center}
   .injmeta a{color:var(--accent)}
+  /* ---- waiver wire ---- */
+  .ww-add{display:flex;align-items:center;gap:9px;padding:8px 4px;border-bottom:1px solid var(--line)}
+  .ww-add:last-of-type{border-bottom:none}
+  .ww-add.faded{opacity:.5}
+  .ww-name{flex:1;min-width:0;font-size:13.5px;line-height:1.3}
+  .ww-name .meta{margin-left:5px}
+  .ww-name .needline{display:block;font-size:11px;color:var(--ink-2);line-height:1.3;margin-left:0}
+  .ww-bid{text-align:right;white-space:nowrap}
+  .ww-bid b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+  .ww-bid .meta{font-size:10px}
   /* ---- league moves feed ---- */
   .mv-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 7px;border-radius:7px;font-size:12.5px}
   .mv-row:hover{background:var(--panel-2)}
@@ -642,6 +652,7 @@
       <button class="tab hide" data-tab="keepers" id="keeperTabBtn">Keepers</button>
       <button class="tab hide" data-tab="cap" id="capTabBtn">Contracts</button>
       <button class="tab" data-tab="season">In-Season</button>
+      <button class="tab" data-tab="waivers">Waiver Wire</button>
       <button class="tab" data-tab="injuries">Injuries</button>
       <button class="tab" data-tab="trade">Trades</button>
       <button class="tab" data-tab="players">Projections</button>
@@ -934,6 +945,49 @@
     </div>
   </section>
 
+  <section id="tab-waivers" class="hide">
+    <div class="panel" style="margin-bottom:14px">
+      <div class="bd" style="padding:12px 16px"><div id="wwSync" class="syncrow" style="align-items:center"></div></div>
+    </div>
+    <div class="panel" style="margin-bottom:14px">
+      <div class="bd" style="padding:12px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <label class="meta" style="display:flex;align-items:center;gap:6px">Week <select id="wwWeek" class="search" style="width:auto;padding:4px 8px"></select></label>
+        <label class="meta" style="display:flex;align-items:center;gap:6px">Value over
+          <div class="seg" id="ww_window" title="Rest-of-season, or only the fantasy playoff weeks 15–17 — the ones that decide a title.">
+            <button data-v="ros" class="on">Rest of season</button><button data-v="po">Playoffs 15–17</button></div></label>
+        <div id="wwPos" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        <button class="ghost sm" id="wwRefresh" style="margin-left:auto">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="wwUrgent"></div>
+    <div class="grid-draft" style="grid-template-columns:1.15fr .85fr">
+      <div class="panel"><div class="hd"><h2>Best pickups for your team</h2>
+        <span class="pickcounter" style="margin-left:auto">by points added to YOUR lineup</span></div>
+        <div class="bd" id="wwAdds"></div></div>
+      <div>
+        <div class="panel" style="margin-bottom:14px"><div class="hd"><h2>Just dropped</h2>
+          <span class="pickcounter" style="margin-left:auto">fresh off waivers</span></div>
+          <div class="bd" id="wwDropped"></div></div>
+        <div class="panel"><div class="hd"><h2>Trending across Sleeper</h2>
+          <span class="pickcounter" style="margin-left:auto">what everyone's grabbing</span></div>
+          <div class="bd" id="wwTrending"></div></div>
+      </div>
+    </div>
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:14px">
+      <div class="panel"><div class="hd"><h2>Drop or hold</h2>
+        <span class="pickcounter" style="margin-left:auto">who you can spare, who's protected</span></div>
+        <div class="bd" id="wwDrops"></div></div>
+      <div class="panel"><div class="hd"><h2>Streaming plan</h2>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <div class="seg" id="ww_streampos"><button data-v="DST" class="on">DST</button><button data-v="K">K</button><button data-v="QB">QB</button><button data-v="TE">TE</button></div></span></div>
+        <div class="bd" id="wwStream"></div></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <div class="hd"><h2>League moves</h2><span id="wwMovesCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd" id="wwMoves"></div>
+    </div>
+  </section>
+
   <section id="tab-season" class="hide">
     <div class="panel" style="margin-bottom:14px" id="seasonSyncPanel">
       <div class="bd" style="padding:12px 16px"><div id="seasonSync" class="syncrow" style="align-items:center"></div></div>
@@ -957,26 +1011,10 @@
       </div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
-      <div class="panel"><div class="hd"><h2>Waiver targets</h2>
-        <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
-          <span class="meta">value over</span>
-          <div class="seg" id="s_window2" title="Which weeks a player has to help you in. Every rival assumes rest-of-season; if you're chasing a title the only weeks that count are the playoffs.">
-            <button data-v="ros" class="on">Rest of season</button><button data-v="po">Playoffs 15–17</button></div></span></div>
-        <div class="bd" id="waiverBox"></div></div>
       <div class="panel"><div class="hd"><h2>Trade value board</h2></div><div class="bd" id="tradeBox"></div></div>
-    </div>
-    <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:16px">
-      <div class="panel"><div class="hd"><h2>Streaming plan</h2>
-        <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
-          <div class="seg" id="s_streampos"><button data-v="DST" class="on">DST</button><button data-v="K">K</button><button data-v="QB">QB</button><button data-v="TE">TE</button></div></span></div>
-        <div class="bd" id="streamBox"></div></div>
-      <div class="panel"><div class="hd"><h2>If someone goes down</h2>
-        <span class="pickcounter" style="margin-left:auto">What your bench is really covering</span></div>
-        <div class="bd" id="contBox"></div></div>
-    </div>
-    <div class="panel" style="margin-top:16px">
-      <div class="hd"><h2>League moves</h2><span id="movesCtx" class="pickcounter" style="margin-left:auto"></span></div>
-      <div class="bd" id="movesBox"></div>
+      <div class="panel"><div class="hd"><h2>Manage the wire</h2></div>
+        <div class="bd"><div class="emptystate" style="padding:22px">Pickups, drops, streaming and league moves now live on the <b>Waiver Wire</b> tab — the dedicated waiver hub.
+          <div style="margin-top:10px"><button class="ghost" id="toWaivers">Open Waiver Wire →</button></div></div></div></div>
     </div>
   </section>
 
@@ -1469,7 +1507,7 @@ function freshState(){
     settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:20},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
-    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null,injScope:"mine"}
+    ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null,injScope:"mine",wwPos:"ALL"}
   };
 }
 
@@ -2703,6 +2741,7 @@ const TAB_RENDER={
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
   season:  ()=>renderInSeason(),
+  waivers: ()=>renderWaivers(),
   injuries:()=>renderInjuries(),
   dynasty: ()=>renderDynasty(),
   keepers: ()=>renderKeepers(),
@@ -5769,10 +5808,168 @@ function weeklyLineup(roster,w){
   [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
   return {slots,bench:roster.filter(x=>!used.has(x.id)).sort((a,b)=>score(b)-score(a))};
 }
+/* ============================ WAIVER WIRE TAB ============================
+   A dedicated home for the whole waiver operation, built to be the best on the market: it reads
+   your LIVE league — your real roster, everyone else's, the true free agents — under YOUR scoring,
+   and turns it into a prioritised set of decisions. Best pickups are ranked by points added to
+   YOUR starting lineup (not raw value), priced in real FAAB, paired with the exact drop each costs.
+   Injuries drive the top of the board, recently-dropped players are surfaced the moment they hit
+   waivers, streaming is planned over the horizon, and the league's own transaction feed calibrates
+   what a claim actually costs. Everything composes the engines already proven elsewhere. */
+let WW_TREND=null, WW_TREND_TS=0;
+async function wwTrending(){
+  // What the wider Sleeper world is adding in the last day — a real demand signal, and a cheap way
+  // to catch a breakout before your leaguemates do. Cached briefly so tab-flipping doesn't re-hit.
+  if(WW_TREND && Date.now()-WW_TREND_TS<300000){ return WW_TREND; }
+  try{
+    const d=await SJ("https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=24&limit=25");
+    const bySid={}; state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
+    WW_TREND=(d||[]).map(x=>({pl:bySid[String(x.player_id)],n:x.count})).filter(x=>x.pl);
+    WW_TREND_TS=Date.now();
+  }catch(e){ WW_TREND=WW_TREND||[]; }
+  return WW_TREND;
+}
+function renderWaivers(){
+  const wsel=$("#wwWeek");
+  if(wsel&&!wsel.options.length){
+    wsel.innerHTML=Array.from({length:18},(_,i)=>`<option value="${i+1}">Week ${i+1}</option>`).join("");
+    wsel.value=String(state.ui.seasonWeek||1);
+    wsel.onchange=()=>{state.ui.seasonWeek=+wsel.value;renderWaivers();save();};
+  } else if(wsel){ wsel.value=String(state.ui.seasonWeek||1); }
+
+  // sync bar (same connect flow as the trade finder; connecting once serves the whole app)
+  wwSyncBar();
+
+  const roster=myLiveRoster();
+  const boxes=["wwUrgent","wwAdds","wwDropped","wwTrending","wwDrops","wwStream","wwMoves"];
+  if(!roster.length){
+    const msg=`<div class="emptystate">Connect your Sleeper league above (or run a mock draft) and this becomes a live waiver wire — real free agents, ranked by what they add to your lineup, under your league's scoring.</div>`;
+    if($("#wwAdds"))$("#wwAdds").innerHTML=msg;
+    ["wwUrgent","wwDropped","wwTrending","wwDrops","wwStream","wwMoves"].forEach(id=>{if($("#"+id))$("#"+id).innerHTML="";});
+    return;
+  }
+  const w=state.ui.seasonWeek||1;
+  const poW=(TRADE.schedule&&TRADE.schedule.playoffStart)||15;
+  const poMode=state.ui.wWindow==="po";
+  const from=poMode?Math.max(w,poW):w, to=poMode?poW+2:18;
+  const posF=state.ui.wwPos||"ALL";
+  buildWwPosFilter();
+
+  // 1. ACT NOW — hurt starters + bye holes, the things that can lose you the week
+  const L=fillLineup(roster);
+  const hurt=injuryReplacements(roster,from,to);
+  const byeHoles=L.slots.filter(s=>!s.pl||(s.pl&&s.pl.bye===w));
+  let urgent="";
+  hurt.forEach(x=>{ urgent+=`<div class="note crit-note" style="margin-bottom:8px">
+    🚑 <b>${x.starter.name}</b> is <b>${x.starter.inj}</b>${x.starter.injPart?` (${x.starter.injPart})`:""}${x.starter.injNote?` — <span class="meta">${x.starter.injNote}</span>`:""}
+    ${x.fill?`<div style="margin-top:4px">Best ${x.slot.replace("SUPERFLEX","SFLX")} you can claim now: <b>${x.fill.name}</b>
+      <span class="meta">${x.fill.team||""} · ${fmt(rosPts(x.fill,from))} pts rest of season</span></div>`
+     :`<span class="meta">No free agent meaningfully replaces him — hold and stream.</span>`}</div>`; });
+  if(byeHoles.length)urgent+=`<div class="note warn-note" style="margin-bottom:8px"><b>${byeHoles.length}</b> starting spot${byeHoles.length>1?"s":""} empty or on bye in week ${w} — the board below already values filling ${byeHoles.length>1?"them":"it"}.</div>`;
+  if($("#wwUrgent"))$("#wwUrgent").innerHTML=urgent;
+
+  // 2. BEST PICKUPS — the hero, marginal value to your lineup, FAAB-priced
+  const wb=waiverBoard(roster,from,to,14);
+  let rows=wb.rows;
+  if(posF!=="ALL")rows=rows.filter(r=>posF==="FLEX"?FLEX_POS.includes(r.p.pos):r.p.pos===posF);
+  $("#wwAdds").innerHTML=(rows.length?rows.map(r=>`
+    <div class="ww-add${r.noise?" faded":""}">
+      <span class="pos ${r.p.pos}">${r.p.pos}</span>
+      <div class="ww-name"><b>${r.p.name}</b> ${injChip(r.p)}<span class="meta">${r.p.team||""}</span>
+        <span class="needline">+${r.gain.toFixed(1)} pts to your starting lineup${r.drop?` · costs you ${lastName(r.drop.name)}`:""}${r.noise?" · too close to call":""}</span></div>
+      <span class="ww-bid"><b>$${r.bid}</b><span class="meta">${r.bidPct}% of budget</span></span>
+    </div>`).join("")
+    :`<div class="emptystate">Nothing on the wire would crack your starting lineup right now.</div>`)
+    +(rows.length?`<div class="note" style="margin-top:10px"><b>Ranked by points added to your lineup, not player value.</b> A star at a position you're already deep at is worth little; a fill for a hole is worth a lot. Bids are a share of your <b>remaining</b> $${wb.remaining}, priced off the next-best option — if the name below does nearly the same job, don't overpay.${TRADE.transactions&&TRADE.transactions.some(t=>t.bid>0)?` Your league's recent winning bids: ${TRADE.transactions.filter(t=>t.bid>0).slice(0,5).map(t=>"$"+t.bid).join(", ")}.`:""}</div>`:"");
+
+  // 3. JUST DROPPED — freshest opportunities
+  const gems=droppedGems(from,to).filter(g=>posF==="ALL"||g.p.pos===posF||(posF==="FLEX"&&FLEX_POS.includes(g.p.pos)));
+  $("#wwDropped").innerHTML=leagueSynced()
+    ? (gems.length?gems.map(g=>`<div class="kv"><span><span class="pos ${g.p.pos}">${g.p.pos}</span> ${g.p.name} ${injChip(g.p)}
+        <span class="needline">+${g.gain.toFixed(1)} to your lineup · cut ${moveAgo(g.when)}</span></span>
+        <span class="ir-ic">🎯</span></div>`).join("")
+       :`<div class="meta">Nobody worth grabbing has been dropped lately — the wire's picked over.</div>`)
+    : `<div class="meta">Sync your league to see who your leaguemates just cut.</div>`;
+
+  // 4. TRENDING across Sleeper
+  wwTrending().then(tr=>{
+    const box=$("#wwTrending"); if(!box)return;
+    const rostered=rosteredIds();
+    const list=tr.filter(x=>!rostered.has(x.pl.id)).filter(x=>posF==="ALL"||x.pl.pos===posF||(posF==="FLEX"&&FLEX_POS.includes(x.pl.pos))).slice(0,8);
+    box.innerHTML=list.length?list.map(x=>`<div class="kv"><span><span class="pos ${x.pl.pos}">${x.pl.pos}</span> ${x.pl.name} ${injChip(x.pl)}</span>
+        <span class="meta">${(x.n/1000).toFixed(0)}k adds</span></div>`).join("")
+      +`<div class="note" style="margin-top:8px">Most-added across all of Sleeper in the last 24h${leagueSynced()?", filtered to who's free in your league":""}. A breakout usually trends here before your leaguemates notice.</div>`
+      :`<div class="meta">Nothing trending is available in your league.</div>`;
+  });
+
+  // 5. DROP OR HOLD — who you can spare, who's protecting a starter
+  const size=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+  const starting=new Set(L.slots.filter(s=>s.pl).map(s=>s.pl.id));
+  const bench=roster.filter(p=>!starting.has(p.id));
+  const droppable=bench.map(p=>({p,cost:marginalROS(p,roster.filter(x=>x.id!==p.id),from,to)}))
+    .sort((a,b)=>a.cost-b.cost).slice(0,5);
+  const cover=contingentValue(roster,from,to).slice(0,3);
+  $("#wwDrops").innerHTML=(bench.length
+    ? `<div class="eyebrow" style="margin-bottom:6px">Most droppable — losing them costs least</div>`
+      +droppable.map(d=>`<div class="kv"><span><span class="pos ${d.p.pos}">${d.p.pos}</span> ${d.p.name} ${injChip(d.p)}</span>
+          <span class="meta">${d.cost<=0.3?"costs you nothing":`worth ${d.cost.toFixed(1)} pts`}</span></div>`).join("")
+    : `<div class="meta">Your bench is empty — nothing to drop.</div>`)
+    +(cover.length?`<div class="eyebrow" style="margin:12px 0 6px">Don't drop — they're covering a starter</div>`
+      +cover.map(c=>`<div class="kv"><span><span class="pos ${c.back.pos}">${c.back.pos}</span> ${c.back.name}</span>
+          <span class="meta">insures ${lastName(c.star.name)}${c.ev!=null?` · +${c.ev.toFixed(1)} expected`:""}</span></div>`).join(""):"");
+
+  // 6. STREAMING plan over the horizon
+  (()=>{
+    const box=$("#wwStream"); if(!box)return;
+    const pos=state.ui.streamPos||"DST";
+    const sp=streamPlan(pos,roster,w,to,{});
+    if(!sp){box.innerHTML=`<div class="emptystate">Nothing to plan at ${pos} yet.</div>`;return;}
+    const gain=sp.holdTotal!=null?sp.planTotal-sp.holdTotal:null;
+    box.innerHTML=`<p class="meta" style="margin:0 0 8px">The best <b>sequence</b> of ${pos}s from week ${w} to ${to} — not just this week. Switching costs a roster move, so it only changes when the gain is worth it.</p>`
+     +sp.plan.slice(0,8).map(x=>`<div class="kv${x.changed?"":" faded"}">
+        <span><b class="num" style="width:38px;display:inline-block">Wk ${x.week}</b>
+          ${x.changed?'<span class="chip warn">switch</span>':'<span class="meta">hold</span>'} ${x.pl.name} <span class="meta">${x.pl.team}</span></span>
+        <span class="num">${x.pts.toFixed(1)}</span></div>`).join("")
+     +`<div class="note" style="margin-top:8px">${sp.moves} change${sp.moves===1?"":"s"} across ${to-w+1} weeks.${gain!=null?(gain>1?` Beats holding ${lastName(sp.hold.name)} by ${gain.toFixed(1)} pts.`:` Holding ${sp.hold?lastName(sp.hold.name):"one"} all the way is within ${Math.abs(gain).toFixed(1)} pts — not worth the churn.`):""}</div>`;
+  })();
+
+  // 7. LEAGUE MOVES feed
+  renderLeagueMoves(from,to,"wwMoves","wwMovesCtx");
+}
+function wwSyncBar(){
+  const box=$("#wwSync"); if(!box)return;
+  if(leagueSynced()){
+    const nm=TRADE.teams[TRADE.me]?TRADE.teams[TRADE.me].name:"your team";
+    box.innerHTML=`<span class="chip good">● Live</span>
+      <span style="flex:1"><b>${TRADE.leagueName||"your league"}</b> — you're <b>${nm}</b>, ${TRADE.teams.length} teams${TRADE.scoringApplied?`, ${TRADE.scoringApplied} scoring rules applied`:""}. Real free agents, your scoring.</span>
+      <button class="ghost sm" id="wwResync">↻ Refresh rosters</button>`;
+    if($("#wwResync"))$("#wwResync").onclick=()=>{ if(TRADE.leagueId)tradeLoadRosters(TRADE.leagueId).then(()=>renderWaivers()); };
+  } else {
+    box.innerHTML=`<input type="text" id="wwUser" class="search" placeholder="Your Sleeper username" style="min-width:170px">
+      <button class="draftbtn alt" id="wwConnect">Connect my league</button>
+      <span class="meta" style="flex:1">Sync your Sleeper league — real rosters, real free agents, your league's scoring and FAAB.</span>`;
+    const known=localStorage.getItem("ffwr_syncuser")||"";
+    if(known&&$("#wwUser"))$("#wwUser").value=known;
+    const go=()=>{ const u=($("#wwUser").value||"").trim(); if(!u)return;
+      try{localStorage.setItem("ffwr_syncuser",u);}catch(e){}
+      if($("#tradeUser"))$("#tradeUser").value=u;
+      box.innerHTML=`<span class="meta">Connecting…</span>`;
+      tradeLoadLeagues().then(()=>renderWaivers()); };
+    if($("#wwConnect"))$("#wwConnect").onclick=go;
+    if($("#wwUser"))$("#wwUser").onkeydown=e=>{if(e.key==="Enter")go();};
+  }
+}
+function buildWwPosFilter(){
+  const box=$("#wwPos"); if(!box||box.dataset.built)return;
+  box.dataset.built="1";
+  const opts=["ALL","QB","RB","WR","TE","FLEX","K","DST"];
+  box.innerHTML=`<div class="seg" id="ww_pos">${opts.map(p=>`<button data-v="${p}"${(state.ui.wwPos||"ALL")===p?' class="on"':""}>${p==="ALL"?"All":p}</button>`).join("")}</div>`;
+  $$("#ww_pos button").forEach(b=>b.onclick=()=>{$$("#ww_pos button").forEach(x=>x.classList.toggle("on",x===b));state.ui.wwPos=b.dataset.v;renderWaivers();});
+}
 function moveAgo(ms){ return ms?agoText(ms):""; }
-function renderLeagueMoves(from,to){
-  const box=$("#movesBox"); if(!box)return;
-  const ctx=$("#movesCtx");
+function renderLeagueMoves(from,to,boxId,ctxId){
+  const box=$("#"+(boxId||"movesBox")); if(!box)return;
+  const ctx=$("#"+(ctxId||"movesCtx"));
   if(!leagueSynced()){
     box.innerHTML=`<div class="emptystate">Connect your league above and this shows every add, drop, waiver claim and trade as it happens — and flags anyone just cut who's still worth grabbing.</div>`;
     if(ctx)ctx.textContent=""; return;
@@ -5855,7 +6052,7 @@ function renderInSeason(){
     : `week ${w} · adjusted for who they play`;
   const ss=$("#startSit");
   if(!roster.length){ ss.innerHTML=`<div class="emptystate">Draft or sync a roster first — then this becomes your weekly start/sit sheet.</div>`;
-    $("#waiverBox").innerHTML="";$("#tradeBox").innerHTML="";return; }
+    if($("#tradeBox"))$("#tradeBox").innerHTML="";return; }
   const L=weeklyLineup(roster,w);
   const total=L.slots.reduce((a,s)=>a+(s.pl?wkPts(s.pl,w):0),0);
   const band=bandOf(L.slots.filter(s=>s.pl&&s.pl.bye!==w).map(s=>wkRange(s.pl,w)),total);
@@ -5931,7 +6128,7 @@ function renderInSeason(){
       ${x.fill?`<div style="margin-top:4px">Best ${x.slot.replace("SUPERFLEX","SFLX")} you can claim: <b>${x.fill.name}</b>
         <span class="meta">${x.fill.team||""} · ${fmt(rosPts(x.fill,wbFrom))} pts rest of season${x.fill.inj?` · ⚠️ ${x.fill.inj}`:""}</span></div>`
        :`<span class="meta">No free agent meaningfully replaces him — hold and stream.</span>`}</div>`).join(""):"";
-  $("#waiverBox").innerHTML=hurtNote+holeNote+(wb.rows.length?wb.rows.map(r=>`
+  if($("#waiverBox"))$("#waiverBox").innerHTML=hurtNote+holeNote+(wb.rows.length?wb.rows.map(r=>`
     <div class="kv${r.noise?" faded":""}">
       <span><span class="pos ${r.p.pos}">${r.p.pos}</span> ${r.p.name}${injChip(r.p)}
         <span class="meta">${r.p.team}</span>
@@ -7974,6 +8171,10 @@ function init(){
     if(ws[j]!=null){state.ui.mWeek=ws[j];renderMatchups();}};
   segWire("#s_window2",v=>{state.ui.wWindow=v;renderInSeason();save();});
   segWire("#s_streampos",v=>{state.ui.streamPos=v;renderInSeason();save();});
+  segWire("#ww_window",v=>{state.ui.wWindow=v;renderWaivers();save();});
+  segWire("#ww_streampos",v=>{state.ui.streamPos=v;renderWaivers();save();});
+  if($("#wwRefresh"))$("#wwRefresh").onclick=()=>{ WW_TREND=null; if(leagueSynced()&&TRADE.leagueId)tradeLoadRosters(TRADE.leagueId).then(()=>renderWaivers()); else renderWaivers(); };
+  if($("#toWaivers"))$("#toWaivers").onclick=()=>showTab("waivers");
   $("#mPrev").onclick=()=>stepWeek(-1);
   $("#mNext").onclick=()=>stepWeek(1);
   $("#presetall").onclick=()=>{
