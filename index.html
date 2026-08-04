@@ -2640,7 +2640,14 @@ function predictNextPicks(){
     for(const p of pool){
       if(gone.has(p.id))continue;
       let s=valueOf(p)*w[p.pos];
-      if(bias&&bias[p.pos])s*=(1+bias[p.pos]);          // learned lean for this manager, this round
+      // Learned lean, this manager, this round. `bias` is an ADP multiplier: <1 means he drafts this
+      // position EARLIER than the league (a lover), >1 later (a fader) — exactly how cpuPickFor uses it
+      // (adp*bias, pick the min). Here the score is a VALUE where higher = more likely taken, so the
+      // correct transform is the reciprocal: divide by bias, so a lover (0.7) is boosted (÷0.7 = ×1.43)
+      // and a fader (1.4) is suppressed (×0.71). Multiplying by (1+bias) inverted this — a fader looked
+      // like the keenest buyer of the very position he avoids, poisoning every opponent read.
+      if(bias&&bias[p.pos]>0)s/=bias[p.pos];
+
       if(s>bestScore){bestScore=s;best=p;}
     }
     if(best){ gone.set(best.id,{byTeam:t,pos:best.pos});
@@ -2657,11 +2664,15 @@ function draftPulse(){
   const runCount={}; runWindow.forEach(p=>runCount[p.pos]=(runCount[p.pos]||0)+1);
   const runs=Object.entries(runCount).filter(([p,n])=>n>=3&&FLEX_POS.concat("QB").includes(p))
     .map(([p,n])=>({pos:p,n})).sort((a,b)=>b.n-a.n);
-  // reaches and steals in the recent window, measured against ADP
+  // reaches and steals in the recent window, measured against ADP. delta = actual pick − ADP, so a
+  // POSITIVE delta means he lasted longer than expected (slid = a steal), NEGATIVE means he went
+  // earlier (a reach). This is the sign every consumer already assumes ("slid {delta} past ADP",
+  // "reached {-delta} early", coach "Sliding past ADP (+delta)"); the definition had it backwards
+  // (adp−at), which put reached-for players in the "sliding" bucket and vice-versa.
   const moves=recent.map((pk,i)=>{const pl=state.players[pk.playerId]; if(!pl)return null;
     const adp=adpOf(pl), at=state.picks.length-recent.length+i+1;
     if(adp==null||adp>=900)return null;
-    return {pl,delta:Math.round(adp-at)};}).filter(Boolean);
+    return {pl,delta:Math.round(at-adp)};}).filter(Boolean);
   const steals=moves.filter(m=>m.delta>=10).sort((a,b)=>b.delta-a.delta).slice(0,2);
   const reaches=moves.filter(m=>m.delta<=-10).sort((a,b)=>a.delta-b.delta).slice(0,2);
   return {runs,steals,reaches};
@@ -3774,13 +3785,18 @@ function aiDraftContext(){
   L.push(`Draft: ${T}-team ${s.format} ${ppr}${isSF()?" superflex":""}${s.bestball?" best-ball":""}. Your slot ${s.slot}. It's pick ${cur+1} overall (round ${round}). ${onClock?"YOU ARE ON THE CLOCK NOW.":`Your next pick is #${mineNext+1} — ${away} picks away.`}`);
   const mine=teamRoster(myIdx());
   const posCount=["QB","RB","WR","TE","K","DST"].map(P=>`${P} ${mine.filter(p=>p.pos===P).length}`).join(", ");
-  const {need}=positionalNeed(mine);
+  const {need,flexNeed,superNeed}=positionalNeed(mine);
   L.push(`Your roster (${mine.length}): ${mine.length?mine.map(p=>`${lastName(p.name)}(${p.pos})`).join(", "):"empty"}. Counts: ${posCount}. Starter needs: ${Object.keys(need).filter(k=>need[k]>0).join(", ")||"none — building depth/flex"}.`);
   const drafted=draftedIds();
   let levels={}; try{ levels=replacementLevels().levels; }catch(e){}
-  const avail=state.players.filter(p=>inLeague(p)&&!drafted.has(p.id))
+  /* Park K/DST out of the "best available" board while any skill-position starter (or flex/superflex)
+     slot is still open — exactly as the recommendation engine does. Cross-positional VORP inflates
+     kickers and defenses (compressed, streamable distributions), which would otherwise float a defense
+     above real skill options and tempt the coach into recommending one in the middle rounds. */
+  const coreNeed=(need.QB||0)+(need.RB||0)+(need.WR||0)+(need.TE||0)+flexNeed+superNeed;
+  const avail=state.players.filter(p=>inLeague(p)&&!drafted.has(p.id)&&(coreNeed<=0||(p.pos!=="K"&&p.pos!=="DST")))
     .sort((a,b)=>vorp(b,levels)-vorp(a,levels)).slice(0,14);
-  L.push(`Best available now (ranked by value over replacement, so it's positionally fair — a streamable QB sits below a scarcer RB/WR of equal points): ${avail.map(p=>`${lastName(p.name)} ${p.pos} ${Math.round(pts(p))}pt (+${Math.round(vorp(p,levels))} VORP) adp${Math.round(adpOf(p))}`).join("; ")}.`);
+  L.push(`Best available now (ranked by value over replacement, so it's positionally fair — a streamable QB sits below a scarcer RB/WR of equal points${coreNeed>0?"; K/DST parked until your starters are set":""}): ${avail.map(p=>`${lastName(p.name)} ${p.pos} ${Math.round(pts(p))}pt (+${Math.round(vorp(p,levels))} VORP) adp${Math.round(adpOf(p))}`).join("; ")}.`);
   const cliffs=["QB","RB","WR","TE"].map(pos=>{const ts=tierState(pos); if(!ts.best)return null;
     return `${pos} ${ts.left} left${ts.cliffAfter<=3&&ts.drop>6?` (CLIFF after ${ts.cliffAfter}, −${Math.round(ts.drop)} pts to next)`:""}`;}).filter(Boolean);
   if(cliffs.length)L.push(`Tier state: ${cliffs.join(" · ")}.`);
@@ -4440,6 +4456,44 @@ function selfTest(){
       const grabsIDontNeed=sa.filter(s=>s.verdict.kind==="grab"&&s.myNeed<0.5).length;
       add("Only flags a grab at a position you need",grabsIDontNeed===0,
           `${sa.filter(s=>s.verdict.kind==="grab").length} grabs, ${grabsIDontNeed} at a set position`);
+      /* DIRECTION guard — opponent prediction must follow the learned lean the RIGHT way: a manager who
+         drafts a position MORE than the league (bias<1) is predicted to TAKE it; a fader (bias>1) is not.
+         `s *= (1+bias)` inverted this, making the fader look like the keenest buyer of what he avoids. */
+      (()=>{
+        const svL=state.league; state.picks=[];
+        const mk=rb=>({early:{QB:1,RB:rb,WR:1,TE:1,K:1,DST:1},mid:{},late:{}});
+        state.league={bias:{LOVER:mk(0.7),FADER:mk(1.4)},names:{LOVER:"L",FADER:"F"},
+          slotToUser:{"1":"LOVER","2":"FADER"},tally:{},sources:[],leagueId:"t"};
+        const pn2=predictNextPicks(), a=pn2.preds.find(p=>p.team===0), b=pn2.preds.find(p=>p.team===1);
+        const ok=a&&b&&a.pl.pos==="RB"&&b.pl.pos!=="RB";
+        add("Opponent prediction follows the learned lean the right way",!!ok,
+            ok?`RB-lover → ${a.pl.pos}, RB-fader → ${b.pl.pos}`:"learned-tendency direction is inverted");
+        state.league=svL;
+      })();
+      /* SIGN guard — a player taken LATER than his ADP slid (a steal, +delta); one taken EARLIER reached
+         (−delta). The definition once had it backwards (adp−at), mislabeling reaches as "sliding past ADP". */
+      (()=>{
+        const byAdp=state.players.filter(inLeague).sort((x,y)=>adpOf(x)-adpOf(y));
+        const elite=byAdp[0], late=byAdp[120], fill=byAdp.slice(40,52);
+        state.picks=fill.map((p,i)=>({playerId:p.id,teamIdx:i%12}));
+        state.picks.push({playerId:late.id,teamIdx:0});    // high ADP taken early  → reach (−)
+        state.picks.push({playerId:elite.id,teamIdx:1});   // low ADP taken late    → slide/steal (+)
+        const pl2=draftPulse();
+        const eliteSteal=pl2.steals.some(m=>m.pl.id===elite.id&&m.delta>0);
+        const lateReach=pl2.reaches.some(m=>m.pl.id===late.id&&m.delta<0);
+        add("Draft pulse labels a slide a steal and a reach a reach",eliteSteal&&lateReach,
+            eliteSteal&&lateReach?`${lastName(elite.name)} slid (+), ${lastName(late.name)} reached (−)`:"pulse steal/reach sign inverted");
+      })();
+      /* K/DST parking — with skill starters still open, cross-positional VORP inflates kickers and
+         defenses; the coach's "best available" must not float one above real skill players. */
+      (()=>{
+        state.picks=[];   // empty roster => every skill starter open => coreNeed>0
+        const ctx=aiDraftContext();
+        const bestLine=(ctx.split("\n").find(l=>l.startsWith("Best available"))||"");
+        const noKDST=!/ DST | K /.test(bestLine.split("):")[1]||bestLine);
+        add("Coach's best-available parks K/DST while starters are open",noKDST,
+            noKDST?"no kicker or defense floated above skill players":"a K/DST leaked into the mid-draft board");
+      })();
       state.settings.teams=sv.teams;state.settings.slot=sv.slot;state.settings.snake=sv.snake;state.picks=sv.picks;
     })();
     /* The live injury overlay only helps if its statuses are ones the rest of the app understands
