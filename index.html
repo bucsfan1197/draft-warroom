@@ -817,6 +817,16 @@
 
       <!-- RIGHT: your roster + queue -->
       <div class="sticky-col">
+        <div class="panel" style="margin-bottom:14px" id="coachPanel">
+          <div class="hd"><h2>🎧 Draft Coach<span id="coachDot" class="livedot hide"></span></h2>
+            <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+              <span class="pickcounter" id="coachCtx"></span>
+              <button class="ghost sm" id="coachBtn" title="Coach me now">↻</button></span></div>
+          <div class="bd">
+            <div id="coachOut"></div>
+            <div class="airow" style="padding:8px 0 0"><input type="text" id="coachInput" placeholder="Ask: take X or Y? does he come back?" autocomplete="off"><button class="draftbtn" id="coachAsk" style="width:auto;padding:8px 12px">Ask</button></div>
+          </div>
+        </div>
         <div class="panel" style="margin-bottom:14px" id="intelPanel">
           <div class="hd"><h2>Live draft intel</h2><span id="intelCtx" class="pickcounter" style="margin-left:auto"></span></div>
           <div class="bd" id="draftIntel"></div>
@@ -2149,15 +2159,15 @@ Hard rules:
 - If the answer isn't in the context, say so plainly and name the tab that would show it. Do not guess.
 - Be concise and decisive: give a clear recommendation and the reason, citing the app's own numbers (win %, VORP/value, projected points, equity swing, FAAB).
 - You are explaining THIS tool's output to its user. Talk like a sharp fantasy GM. No preamble, no hedging, no disclaimers.`;
-async function askAI(context, question){
+async function askAI(context, question, sysOverride){
   if(!aiConfigured()) throw new Error("Add a free API key in League Setup first.");
-  const prov=AI.provider, model=aiModel();
+  const prov=AI.provider, model=aiModel(), SYS=sysOverride||AI_SYSTEM;
   const user=`CONTEXT (the app's computed numbers — reason only from this):\n${context}\n\nQUESTION: ${question}`;
   if(prov==="gemini"){
     // Model names and free-tier quotas shift and vary by account, so ask THIS key which models it can
     // actually call (ListModels), try the cheap "flash" ones first, and skip past any that are quota-0 or
     // retired for new users. A static list is the fallback if discovery fails.
-    const bodyObj={system_instruction:{parts:[{text:AI_SYSTEM}]},contents:[{role:"user",parts:[{text:user}]}],
+    const bodyObj={system_instruction:{parts:[{text:SYS}]},contents:[{role:"user",parts:[{text:user}]}],
       generationConfig:{temperature:0.4,maxOutputTokens:900}};
     let avail=[];
     try{
@@ -2188,13 +2198,13 @@ async function askAI(context, question){
   if(prov==="anthropic"){
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"content-type":"application/json","x-api-key":AI.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model,max_tokens:900,system:AI_SYSTEM,messages:[{role:"user",content:user}]})});
+      body:JSON.stringify({model,max_tokens:900,system:SYS,messages:[{role:"user",content:user}]})});
     const d=await r.json(); if(!r.ok) throw new Error((d.error&&d.error.message)||("HTTP "+r.status));
     return (d.content&&d.content[0]&&d.content[0].text)||"(no answer returned)";
   }
   const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",
     headers:{"content-type":"application/json","authorization":"Bearer "+AI.key},
-    body:JSON.stringify({model,temperature:0.4,max_tokens:900,messages:[{role:"system",content:AI_SYSTEM},{role:"user",content:user}]})});
+    body:JSON.stringify({model,temperature:0.4,max_tokens:900,messages:[{role:"system",content:SYS},{role:"user",content:user}]})});
   const d=await r.json(); if(!r.ok) throw new Error((d.error&&d.error.message)||("HTTP "+r.status));
   return (d.choices&&d.choices[0]&&d.choices[0].message.content)||"(no answer returned)";
 }
@@ -3728,7 +3738,81 @@ function injImpactText(p){
 /* The live intelligence panel: the running read on the room. It leads with the one decision that
    matters at your pick — grab or wait — then the pulse of what's happening, who picks before you
    come back around and what they'll likely take, and where every team is thin. */
+/* ================= AI DRAFT COACH =================
+   The live-draft coach. It reads the same real-time picture the intel board computes — the board, tier
+   cliffs, grab-or-wait odds, the run, and crucially the OPPONENT inferences (each team ahead of you, its
+   roster holes, and the app's prediction of what it takes) — and coaches you through the pick like a sharp
+   GM under the clock. Auto-fires the moment you're on the clock; also answers "take X or Y?" on demand. It
+   reasons only over the computed context, so it can weigh who else wants a position and whether a target
+   comes back — it never invents a player or a pick. */
+const AI_DRAFT_SYSTEM=`You are the live draft coach inside "Draft War Room". Each turn you receive a CONTEXT snapshot the app computed in real time: the pick number and whether the user is ON THE CLOCK, their roster and positional needs, the best players available, tier cliffs, grab-or-wait signals with survival odds, the recent picks and any positional run, and — most importantly — who picks before the user's next turn, each of those teams' roster holes, the app's prediction of what each will take, and which of the user's targets are predicted GONE before they pick again.
+Coach like a sharp GM under the clock:
+- Reason ONLY from the CONTEXT. Never invent a player, ADP, projection, team, or pick that isn't in it.
+- ON THE CLOCK: give ONE decisive pick and the real reason — tier cliff, positional run, roster need, and the OPPONENT read (who else wants this position, whether a target returns). Name a fallback in one clause.
+- NOT on the clock: a short read — what's happening, which targets are at risk before the user's next pick, and whether to hope a player falls or plan to pivot.
+- Use the opponent inferences explicitly, e.g. "both teams before you need RB, so the last elite back won't return — take him" or "nobody ahead needs WR, so he'll be back — wait and grab RB now."
+- Decisive and concrete. 2-5 sentences. Talk like a coach. No preamble, no hedging, no disclaimers.`;
+function aiDraftContext(){
+  const s=state.settings, T=s.teams;
+  const cur=currentPick(), onClock=teamForPick(cur)===myIdx();
+  const round=Math.floor(cur/T)+1, mineNext=myNextPick(onClock?cur+1:cur), away=Math.max(0,mineNext-cur);
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
+  const L=[];
+  L.push(`Draft: ${T}-team ${s.format} ${ppr}${isSF()?" superflex":""}${s.bestball?" best-ball":""}. Your slot ${s.slot}. It's pick ${cur+1} overall (round ${round}). ${onClock?"YOU ARE ON THE CLOCK NOW.":`Your next pick is #${mineNext+1} — ${away} picks away.`}`);
+  const mine=teamRoster(myIdx());
+  const posCount=["QB","RB","WR","TE","K","DST"].map(P=>`${P} ${mine.filter(p=>p.pos===P).length}`).join(", ");
+  const {need}=positionalNeed(mine);
+  L.push(`Your roster (${mine.length}): ${mine.length?mine.map(p=>`${lastName(p.name)}(${p.pos})`).join(", "):"empty"}. Counts: ${posCount}. Starter needs: ${Object.keys(need).filter(k=>need[k]>0).join(", ")||"none — building depth/flex"}.`);
+  const drafted=draftedIds();
+  let levels={}; try{ levels=replacementLevels().levels; }catch(e){}
+  const avail=state.players.filter(p=>inLeague(p)&&!drafted.has(p.id))
+    .sort((a,b)=>vorp(b,levels)-vorp(a,levels)).slice(0,14);
+  L.push(`Best available now (ranked by value over replacement, so it's positionally fair — a streamable QB sits below a scarcer RB/WR of equal points): ${avail.map(p=>`${lastName(p.name)} ${p.pos} ${Math.round(pts(p))}pt (+${Math.round(vorp(p,levels))} VORP) adp${Math.round(adpOf(p))}`).join("; ")}.`);
+  const cliffs=["QB","RB","WR","TE"].map(pos=>{const ts=tierState(pos); if(!ts.best)return null;
+    return `${pos} ${ts.left} left${ts.cliffAfter<=3&&ts.drop>6?` (CLIFF after ${ts.cliffAfter}, −${Math.round(ts.drop)} pts to next)`:""}`;}).filter(Boolean);
+  if(cliffs.length)L.push(`Tier state: ${cliffs.join(" · ")}.`);
+  try{ const sa=stealAlerts().filter(x=>x.verdict.kind!=="set").slice(0,5);
+    if(sa.length)L.push(`Grab-or-wait: ${sa.map(x=>`${lastName(x.best.name)}(${x.pos}) ${x.verdict.kind.toUpperCase()} — ${x.verdict.why}${x.survive>0?`, ${Math.round(x.survive*100)}% to survive to your next pick`:""}`).join("; ")}.`); }catch(e){}
+  const recent=state.picks.slice(-8).map(pk=>{const p=state.players[pk.playerId]; return p?`${lastName(p.name)}(${p.pos})`:"";}).filter(Boolean);
+  if(recent.length)L.push(`Recent picks (oldest→newest): ${recent.join(", ")}.`);
+  try{ const pulse=draftPulse();
+    if(pulse.runs.length)L.push(`RUN happening: ${pulse.runs.map(r=>`${r.pos} (${r.n} of last 6)`).join(", ")}.`);
+    if(pulse.steals.length)L.push(`Sliding past ADP: ${pulse.steals.map(m=>`${lastName(m.pl.name)} (+${m.delta})`).join(", ")}.`); }catch(e){}
+  try{ const pn=predictNextPicks();
+    if(pn.preds.length)L.push(`Who picks before your next turn — their roster hole → their likely pick: ${pn.preds.slice(0,8).map(p=>{
+      const {need:n2}=positionalNeed(teamRoster(p.team)); const holes=["QB","RB","WR","TE"].filter(k=>n2[k]>0).join("/")||"depth";
+      return `${teamLabel(p.team)} (needs ${holes}) → ${lastName(p.pl.name)}(${p.pl.pos})`;}).join("; ")}.`);
+    const goneNames=[...pn.gone.keys()].map(id=>state.players[id]).filter(Boolean).map(p=>lastName(p.name));
+    if(goneNames.length)L.push(`Predicted GONE before your next pick: ${goneNames.slice(0,10).join(", ")}.`);
+  }catch(e){}
+  return L.join("\n");
+}
+let AI_COACH={lastPick:-1,busy:false};
+async function aiDraftCoach(question){
+  const out=$("#coachOut"); if(!out)return;
+  if(!aiConfigured()){ out.innerHTML=`<div class="meta">Add a free key in <b>League Setup → 🤖 AI GM copilot</b> and the coach reads your draft live — the run, who's about to be gone, who competes for your pick, and the move to make. The intel board below works without it.</div>`; return; }
+  if(AI_COACH.busy)return; AI_COACH.busy=true;
+  const onClock=teamForPick(currentPick())===myIdx();
+  out.innerHTML=`<span class="aithinking">reading the board…</span>`;
+  try{
+    const q=question||(onClock?"I'm on the clock — what's the pick, and why (weigh the tier cliff, the run, and who else wants it)?"
+                              :"Quick read: what's happening, which of my targets are at risk before my next pick, and do I wait or plan to pivot?");
+    const ans=await askAI(aiDraftContext(), q, AI_DRAFT_SYSTEM);
+    out.innerHTML=aiFmt(ans); AI_COACH.lastPick=currentPick();
+  }catch(e){ out.innerHTML=`<span class="meta">Coach: ${aiFmt(e.message||String(e))}</span>`; }
+  AI_COACH.busy=false;
+}
+// auto-coach the moment you land on the clock (once per pick); keep the ctx line + dot fresh every render
+function aiCoachTick(){
+  const dot=$("#coachDot"), ctx=$("#coachCtx"), out=$("#coachOut"); if(!out)return;
+  const onClock=teamForPick(currentPick())===myIdx(), away=Math.max(0,myNextPick()-currentPick());
+  if(ctx)ctx.textContent=onClock?"on the clock":`pick in ${away}`;
+  if(dot)dot.classList.toggle("hide",!onClock);
+  if(!aiConfigured()){ if(!out.innerHTML.trim())aiDraftCoach(); return; }
+  if(onClock && AI_COACH.lastPick!==currentPick() && !AI_COACH.busy) aiDraftCoach();
+}
 function renderDraftIntel(){
+  try{ aiCoachTick(); }catch(e){}
   const box=$("#draftIntel"); if(!box)return;
   if(!state.picks.length&&currentPick()===0){
     box.innerHTML=`<div class="emptystate">Sync a live Sleeper draft (League Setup tab) or start a mock, and this reads the room in real time — what's running, who's about to be gone, and whether to grab or wait.</div>`;
@@ -4526,6 +4610,16 @@ function selfTest(){
       if(!m){ add("In-season accuracy monitor",true,"dormant until Week 1 — the tool's own receipts fill in as the season runs"); return; }
       add("In-season accuracy monitor is sane",m.mae>0&&m.mae<15&&m.n>50&&(m.corr==null||(m.corr>=-1&&m.corr<=1)),
           `consensus MAE ${m.mae} over ${m.n} player-weeks through wk ${m.weeks}`);
+    })();
+    /* AI Draft Coach: its context must be grounded in the live draft picture (board + roster), and the coach
+       persona must be bound to that context — no inventing picks. */
+    (()=>{
+      let c=""; try{ c=aiDraftContext(); }catch(e){}
+      const grounded=/Draft: \d+-team/.test(c)&&/Best available/.test(c)&&/Your roster/.test(c);
+      add("AI Draft Coach reads the live draft picture",grounded&&!!$("#coachPanel"),
+          grounded?`context leads with "${c.slice(0,46)}…"`:"draft coach context missing the board/roster");
+      add("Draft Coach is told never to invent picks",/never invent/i.test(AI_DRAFT_SYSTEM)&&/ONLY from the CONTEXT/i.test(AI_DRAFT_SYSTEM),
+          "coach persona is bound to the computed draft context");
     })();
     /* Playoff push (weeks 15-17): the value and schedule must be sane — roughly three weeks of a player's
        weekly rate, and an SOS in a believable band. */
@@ -9674,6 +9768,10 @@ function init(){
   // AI scouting take on the Player Grades detail card (delegated — the card re-renders on every selection)
   if($("#gDetail"))$("#gDetail").addEventListener("click",e=>{ const b=e.target.closest("[data-aiscout]"); if(!b)return;
     e.preventDefault(); aiScoutRun(+b.dataset.aiscout); });
+  // AI Draft Coach controls
+  if($("#coachBtn"))$("#coachBtn").onclick=()=>aiDraftCoach();
+  if($("#coachAsk"))$("#coachAsk").onclick=()=>{ const v=$("#coachInput").value.trim(); if(v){aiDraftCoach(v);$("#coachInput").value="";} };
+  if($("#coachInput"))$("#coachInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault(); const v=$("#coachInput").value.trim(); if(v){aiDraftCoach(v);$("#coachInput").value="";}} });
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
