@@ -113,17 +113,15 @@ def pull_sleeper_weekly():
     Shrinking projections toward the positional mean was tested at the same time and made things
     WORSE out of sample (+0.57%), so it is deliberately not applied. Weekly consensus turns out
     not to be over-dispersed, which is the opposite of the textbook expectation and the reason
-    this is applied rather than assumed."""
-    PF=(BASE.get("PROJFIX") or {}).get("bias") or {}
-    for (pos,key),e in out.items():
-        b=PF.get(pos)
-        # Only inside the range it was fitted on. The offset was measured on projections of 3+
-        # points, so applying it to a backup projected for 2 is extrapolation — and with the QB
-        # offset near -4 it drove them to zero, which dropped ten players out of the pool
-        # entirely. Faded in across the boundary so there's no cliff at exactly 3.
-        if b: e["wk"]=[round(v+b*min(1.0,max(0.0,(v-3.0)/3.0)),2) if v>3 else v for v in e["wk"]]
+    this is applied rather than assumed.
+
+    NOTE: the correction is now applied to the BLENDED consensus in cons() (build_data), not here.
+    Correcting only Sleeper let roughly half of it wash out in the 50/50 ESPN average, so the shipped
+    projection carried the validated offset at half strength. QB over-projection is a cross-provider
+    phenomenon (two independent measurements agree on sign), so it belongs on the blend. Sleeper stays
+    RAW at this stage so the blend is corrected exactly once."""
     for e in out.values(): e["season"]=round(sum(e["wk"][1:19]),1); e["wk"]=e["wk"][1:19]
-    log(f"  Sleeper weekly: {len(out)}" + (f" (bias-corrected: {PF})" if PF else ""))
+    log(f"  Sleeper weekly: {len(out)}")
     return out
 
 def _espn_call(filt):
@@ -664,6 +662,7 @@ def build_data():
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
+    PF_BIAS=(BASE.get("PROJFIX") or {}).get("bias") or {}
     def cons(pos,key):
         e=espn_proj.get((pos,key)); s=slw.get((pos,key))
         seas=[v["season"] for v in (e,s) if v and v.get("season")]
@@ -672,7 +671,17 @@ def build_data():
         for i in range(18):
             vs=[v["wk"][i] for v in (e,s) if v and v.get("wk") and v["wk"][i]>0]
             wk.append(round(sum(vs)/len(vs),2) if vs else 0.0)
-        return {"s":round(sum(seas)/len(seas),1),"e":(e["season"] if e else None),"k":(s["season"] if s else None),"wk":wk}
+        base_s=sum(seas)/len(seas)
+        # Apply the measured, cross-validated bias correction to the SHIPPED consensus blend at FULL
+        # strength (see pull_sleeper_weekly for the rationale). Faded in above 3 pts so a backup
+        # projection is never driven to zero. The season total is shifted by exactly the sum of the
+        # weekly corrections, so `s` and `wk` stay consistent and an uncorrected position (b falsy) is
+        # left byte-for-byte unchanged.
+        b=PF_BIAS.get(pos)
+        if b:
+            adj=[round(v+b*min(1.0,max(0.0,(v-3.0)/3.0)),2) if v>3 else v for v in wk]
+            base_s+=sum(adj)-sum(wk); wk=adj
+        return {"s":round(base_s,1),"e":(e["season"] if e else None),"k":(s["season"] if s else None),"wk":wk}
 
     # positional ranks by FFC ppr adp
     bypos={}
