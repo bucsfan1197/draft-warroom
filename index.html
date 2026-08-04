@@ -4467,6 +4467,24 @@ function selfTest(){
             "a DNP report resolves and shows a red practice chip everywhere the player appears");
         D.INJ_REPORTS=keepIR; }
     })();
+    /* Availability must fold into the simulated score. Before this, an Out or IR starter contributed his
+       full projection to the win-probability sim, inflating in-season matchup odds. A healthy roster must
+       be unchanged (byte-for-byte), an Out player must be benched from THIS week, a Questionable one
+       discounted but still in. Synthetic, so it needs no roster and runs in the pre-season. */
+    (()=>{
+      const wr=P.find(p=>p.pos==="WR"&&pts(p)>100); if(!wr)return;
+      const savedInj=wr.inj, curWk=state.ui.seasonWeek||1;
+      wr.inj=null;         const healthy=weekUnits([wr],curWk);
+      wr.inj="Out";        const outU=weekUnits([wr],curWk);
+      wr.inj="Questionable";const qU=weekUnits([wr],curWk);
+      wr.inj=savedInj;
+      const hb=healthy.starters.length?healthy.starters[0].base:0;
+      const qb=qU.starters.length?qU.starters[0].base:0;
+      const unchanged=Math.abs(hb-pts(wr)/17)<1e-9, outBenched=outU.starters.length===0, qDisc=qb>0&&qb<hb-1e-9;
+      add("Injured starters are discounted in the win-probability sim",unchanged&&outBenched&&qDisc,
+          unchanged&&outBenched&&qDisc?`healthy=full, Out benched, Q at ${(qb/hb).toFixed(2)}× — no over-crediting an injured player`
+            :`unchanged ${unchanged} · outBenched ${outBenched} · qDisc ${qDisc}`);
+    })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
                         :`${strip?strip.children.length:0} tabs, no strays`);
@@ -6518,7 +6536,8 @@ function simOdds(rosters,slots,iters){
     // swing, and his real week-by-week schedule (0 on a bye) precomputed once
     const mm=new Array(lastW+2).fill(1);
     for(let w=1;w<=lastW;w++) mm[w]=w<=18?weeklyMultOf(p,w):1;
-    return {base:pts(p)/17, sd:d?(d.c-d.f)/2.08:0.18, cv:weekCvOf(p.pos), mm};}));
+    // availability, same model as weekUnits: this week's status this week, only lasting statuses after
+    return {base:pts(p)/17, sd:d?(d.c-d.f)/2.08:0.18, cv:weekCvOf(p.pos), mm, av0:availWeek(p), avR:availROS(p)};}));
   // Weeks already played are FACT, not simulation: carry the real record and points forward.
   const rec0=new Array(T).fill(0), pf0=new Array(T).fill(0);
   if(S){
@@ -6540,7 +6559,7 @@ function simOdds(rosters,slots,iters){
         let sc=0;
         for(let i=0;i<L.length;i++){
           const x=L[i], m=x.mm[Math.min(w,18)];
-          if(m>0) sc+=x.base*sf[i]*m*weekFactor(x.cv);   // bye weeks score nothing
+          if(m>0) sc+=x.base*sf[i]*m*(w===from?x.av0:x.avR)*weekFactor(x.cv);   // bye weeks score nothing; availability folded in
         }
         a[w]=sc;
       }
@@ -7281,10 +7300,18 @@ function weeklyScore(roster,week){
        wrong about a player is a standing condition rather than a fresh coin flip each Sunday, and
      * a lognormal WEEKLY swing on top, which is what actually makes a 20-point favourite lose.
    A matchup therefore returns a probability and a spread, never a verdict. */
+/* Availability folds into the simulated score, which it previously didn't: an Out or IR starter used to
+   contribute his full projection to the win-probability sim, inflating in-season matchup odds. The status
+   is week-scoped — a Questionable tag this week says nothing about week 10 — so the CURRENT week uses the
+   this-week availability (Out→0, Questionable→~0.6), while future weeks use only the lasting statuses
+   (IR/PUP discount the rest of the season; a transient Out/Q does not). A player who can't go this week is
+   dropped from the lineup so the healthy alternative starts in his place. Zero effect out of the injury
+   report — a healthy roster is byte-for-byte what it was. */
+function unitAvail(p,week){ return (week===(state.ui.seasonWeek||1)) ? availWeek(p) : availROS(p); }
 function weekUnits(roster,week){
-  const active=(roster||[]).filter(p=>p&&!p.isPick&&p.bye!==week);
+  const active=(roster||[]).filter(p=>p&&!p.isPick&&p.bye!==week&&unitAvail(p,week)>0.02);
   const {slots,bench}=fillLineup(active);
-  const unit=p=>{const d=p.dist;return {pl:p,base:pts(p)/17,sd:d?(d.c-d.f)/2.08:0.18,
+  const unit=p=>{const d=p.dist;return {pl:p,base:pts(p)/17*unitAvail(p,week),sd:d?(d.c-d.f)/2.08:0.18,
     cv:weekCvOf(p.pos),mult:weeklyMultOf(p,week)};};
   return {starters:slots.filter(s=>s.pl).map(s=>Object.assign(unit(s.pl),{slot:s.slot})),
           empty:slots.filter(s=>!s.pl).map(s=>s.slot), bench:(bench||[]).map(unit)};
