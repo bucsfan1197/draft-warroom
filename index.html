@@ -5658,21 +5658,26 @@ function evalTrade(){
   const theirAfter=theirAll.filter(p=>!get.includes(p)).concat(give);
   const myGain=sideValue(mineAfter,slots,V)-sideValue(mineAll,slots,V);
   const theirGain=sideValue(theirAfter,slots,V)-sideValue(theirAll,slots,V);
-  const base=simTitle(TRADE.teams.map(t=>t.players),slots,400);
-  const after=simTitle(TRADE.teams.map((t,i)=>i===TRADE.me?mineAfter:(i===oi?theirAfter:t.players)),slots,400);
-  const dOdds=after-base, dyn=state.settings.format==="dynasty";
-  // How much of that swing is real? Two independent 400-run sims carry their own error bars.
-  const noise=oddsNoise(base,400,after,400);
+  // Common random numbers: base and after run on the SAME simulated seasons (oddsForRosters seeds the
+  // RNG), so the title-odds delta is the trade itself, not the gap between two independent noisy sims.
+  // The finder already does this; the manual evaluator used raw simTitle, which made the delta jitter
+  // run-to-run and buried small real edges under a wide independent-sim error band.
+  const ITERS=550;
+  const baseO=oddsForRosters(TRADE.teams.map(t=>t.players),slots,ITERS);
+  const afterO=oddsForRosters(TRADE.teams.map((t,i)=>i===TRADE.me?mineAfter:(i===oi?theirAfter:t.players)),slots,ITERS);
+  const base=baseO.title, after=afterO.title;
+  const dTitleRaw=afterO.titleRaw-baseO.titleRaw, dOdds=after-base, dyn=state.settings.format==="dynasty";
+  const EPS=0.004;   // 0.4pp — the finder's CRN significance floor
   /* What counts as "better" depends on the format, and the two signals disagree constantly.
      In REDRAFT the whole point is winning this season, so a title-odds move that clears the
      simulation's own margin of error settles it. In DYNASTY a deal reshapes three years while
      barely touching this season's odds, so value decides — and judged relative to what the
      roster is worth, because dynasty value and season points aren't the same scale. */
   const rel=myGain/Math.max(1,Math.abs(sideValue(mineAll,slots,V)));
-  const big=Math.abs(rel)>=0.02, realMove=Math.abs(dOdds)>=noise;
+  const big=Math.abs(rel)>=0.02, realMove=Math.abs(dTitleRaw)>=EPS;
   const verdict=(!dyn&&realMove)
-    ? (dOdds>0?["ACCEPT","good","Your title odds go up by more than the simulation's margin of error."]
-             :["DECLINE","crit","Your title odds drop by more than the simulation's margin of error."])
+    ? (dTitleRaw>0?["ACCEPT","good","Your title odds rise by more than the simulation's own noise."]
+             :["DECLINE","crit","Your title odds fall by more than the simulation's own noise."])
     : (big&&rel>0)?["ACCEPT","good","This clearly improves your team."]
     : myGain>0?["LEAN ACCEPT","good","Small but real gain."]
     : (big&&rel<0)?["DECLINE","crit","This makes your team worse."]
@@ -5684,9 +5689,9 @@ function evalTrade(){
       <span class="chip ${verdict[1]}" style="margin-left:8px">${verdict[2]}</span></div>
     <div class="cardmeta">You give <b>${give.map(p=>p.name).join(" + ")}</b> · you get <b>${get.map(p=>p.name).join(" + ")}</b></div>
     <div class="why">Your starting lineup <b style="color:${myGain>=0?'var(--good)':'var(--crit)'}">${myGain>=0?"+":""}${Math.round(myGain)}</b> ${dyn?"dynasty value":"pts"} ·
-      title odds <b>${base}% → <span style="color:${dOdds>=0?'var(--good)':'var(--crit)'}">${after}%</span></b>
-      <span class="meta" title="95% range from 400 simulated seasons">±${noise}</span>
-      ${Math.abs(dOdds)<noise?'<span class="meta">(inside the simulation\'s margin of error — treat as unchanged)</span>':''}<br>${willThey}</div>
+      title odds <b>${base}% → <span style="color:${dTitleRaw>=0?'var(--good)':'var(--crit)'}">${after}%</span></b>
+      <span class="meta" title="same simulated seasons before & after (common random numbers)">${dTitleRaw>=0?"+":""}${(dTitleRaw*100).toFixed(1)}pp</span>
+      ${!realMove?'<span class="meta">(within the simulation\'s noise — treat as unchanged)</span>':''}<br>${willThey}</div>
     ${(()=>{const gp=give.filter(p=>!p.isPick).length, tp=get.filter(p=>!p.isPick).length;   // picks take no roster spot
       return `<div class="note" style="margin-top:8px">Roster spots: you ${gp>tp?`free up ${gp-tp}`:tp>gp?`use ${tp-gp} more`:"stay even"}.
       ${gp>tp?"Consolidating talent into fewer, better starters is usually good — just make sure your bench can cover byes.":""}</div>`;})()}</div>`;
@@ -6104,10 +6109,11 @@ function lab3Compute(){
   let odds="";
   if(!problems.length&&anyAssets){
     const rosters=TRADE.teams.map((t,i)=>{const k=idxs.indexOf(i);return k>=0?after[k].filter(a=>!a.isPick):t.players;});
-    const b4=simTitle(TRADE.teams.map(t=>t.players),slots,400), af=simTitle(rosters,slots,400);
-    const nz=oddsNoise(b4,400,af,400);
+    // common random numbers: same simulated seasons before & after, so the delta is the trade, not noise
+    const b4o=oddsForRosters(TRADE.teams.map(t=>t.players),slots,550), afo=oddsForRosters(rosters,slots,550);
+    const b4=b4o.title, af=afo.title, dRaw=afo.titleRaw-b4o.titleRaw;
     odds=`<div class="kv"><span>Your title odds <span class="meta">(all three rosters change, so a deal that arms a rival can cost you even when your own side gains)</span></span>
-      <span class="num">${b4}% → <b style="color:${af>=b4?'var(--good)':'var(--crit)'}">${af}%</b> <span class="meta">±${nz}</span></span></div>`;
+      <span class="num">${b4}% → <b style="color:${dRaw>=0?'var(--good)':'var(--crit)'}">${af}%</b> <span class="meta">${dRaw>=0?"+":""}${(dRaw*100).toFixed(1)}pp</span></span></div>`;
   }
   out.innerHTML=`
     <div class="rec top">
@@ -6259,18 +6265,18 @@ function labTeamImpact(give,get){
   const aft=lineupOnSlots(after.filter(a=>!a.isPick),slots,V);
   const d=aft.total-before.total;
   const rosters=TRADE.teams.map((t,i)=>i===TRADE.me?after.filter(a=>!a.isPick):t.players);
-  const b4=simTitle(TRADE.teams.map(t=>t.players),slots,400);
-  const af=simTitle(rosters,slots,400);
-  const nz=oddsNoise(b4,400,af,400), dd=af-b4;
+  // common random numbers: same simulated seasons before & after, so the delta is the trade, not noise
+  const b4o=oddsForRosters(TRADE.teams.map(t=>t.players),slots,550), afo=oddsForRosters(rosters,slots,550);
+  const b4=b4o.title, af=afo.title, dRaw=afo.titleRaw-b4o.titleRaw, dd=af-b4;
   const inOut=(arr,other)=>arr.filter(p=>!other.some(q=>q.id===p.id)).map(p=>p.name.split(" ").slice(-1)[0]);
   box.insertAdjacentHTML("beforeend",`<div class="panel" style="margin-top:12px"><div class="bd">
     <h3 class="eyebrow" style="margin-bottom:6px">What it does to your actual team</h3>
     <div class="kv"><span>Starting lineup</span><span class="num" style="color:${d>=0?'var(--good)':'var(--crit)'}">${d>=0?"+":""}${Math.round(d)} ${isDyno()?"dynasty value":"pts"}</span></div>
-    <div class="kv"><span>Title odds <span class="meta">(400 simulated seasons on your real schedule)</span></span>
-      <span class="num">${b4}% → <b style="color:${dd>=0?'var(--good)':'var(--crit)'}">${af}%</b> <span class="meta">±${nz}</span></span></div>
-    <div class="note" style="margin-top:8px">${Math.abs(dd)<nz
-      ? "That swing is inside the simulation's margin of error — this trade doesn't move your season either way."
-      : (dd>0?"A real improvement to your championship odds, not just to the value chart."
+    <div class="kv"><span>Title odds <span class="meta">(550 simulated seasons, same draws before &amp; after)</span></span>
+      <span class="num">${b4}% → <b style="color:${dRaw>=0?'var(--good)':'var(--crit)'}">${af}%</b> <span class="meta">${dRaw>=0?"+":""}${(dRaw*100).toFixed(1)}pp</span></span></div>
+    <div class="note" style="margin-top:8px">${Math.abs(dRaw)<0.004
+      ? "That swing is inside the simulation's noise — this trade doesn't move your season either way."
+      : (dRaw>0?"A real improvement to your championship odds, not just to the value chart."
             :"Your value may balance, but this makes your team worse where it counts.")}
       ${giving.length&&!getting.length?" Note: only the players you're giving are on your roster, so the incoming side isn't scored here.":""}</div>
   </div></div>`);
@@ -6840,15 +6846,6 @@ function renderTrades(list,base,slots,V,baseline){
       That is the number every other tool leaves out: a deal can add value and move your season nothing, if it upgrades a spot you were already winning.
       Both sides are valued on your actual starting slots (${slots.join("/")}) and only deals the other manager plausibly accepts are shown.${TRADE.lastSearch?`
       <span class="meta">Searched ${TRADE.lastSearch.considered.toLocaleString()} viable packages, simulated the top ${TRADE.lastSearch.simmed||0}, in ${TRADE.lastSearch.ms}ms.</span>`:""}</div>`;
-}
-/* Simulation error bar. A title percentage from N random seasons is a sample proportion, so it
-   carries a standard error of sqrt(p(1-p)/N); comparing two of them compounds it. Anything
-   smaller than this band is noise, not a finding — so the UI says so instead of implying
-   spurious precision. Returns a 95% half-width in percentage points. */
-function oddsNoise(p1,n1,p2,n2){
-  const v=x=>{const q=Math.min(Math.max(x/100,0.005),0.995);return q*(1-q);};
-  const se=Math.sqrt(v(p1)/(n1||400)+(p2==null?0:v(p2)/(n2||400)));
-  return Math.max(1,Math.round(1.96*se*100));
 }
 // Standard fantasy seeding: pad to a power of two, top seeds get the byes, re-seed each round.
 function playBracket(seeds,wk,startW){
