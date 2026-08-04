@@ -1687,7 +1687,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:20},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,usageBlend:true,_projv:21},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null,injScope:"mine",wwPos:"ALL"}
@@ -1729,7 +1729,7 @@ function migrate(st){
        player. Position is stable in a way that team isn't. */
     const pkey=p=>p.pos==="DST"?"DST:"+(p.team||nrm(p.name)):p.pos+":"+nrm(p.name);
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
-  if(D&&D.PLAYERS&&st.settings._projv!==20){
+  if(D&&D.PLAYERS&&st.settings._projv!==21){
     const byName={};D.PLAYERS.forEach(e=>byName[pkey(e)]=e);
     const have=new Set(st.players.map(pkey));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
@@ -1742,7 +1742,7 @@ function migrate(st){
     D.PLAYERS.forEach(e=>{if(!have.has(pkey(e)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
-    st.settings._projv=20;
+    st.settings._projv=21;
   }
   /* Deduping runs on EVERY load, not inside the version gate above. It was originally in there,
      which meant it never executed for anyone whose pool was already current — exactly the people
@@ -1886,8 +1886,8 @@ function envWord(tot){ return tot>=48?{t:"shootout",c:"good"}:tot<=41.5?{t:"low-
 function gameEnvChip(pl,w){
   const v=vegasFor(pl,w); if(!v)return "";
   const fav=v.line<0, spread=Math.abs(v.line);
-  const tip=`Vegas game script: team implied ${v.itt} pts · ${fav?`${spread}-pt favorite`:spread===0?"pick'em":`${spread}-pt underdog`} vs ${v.opp} · game total ${v.tot}`.replace(/"/g,"'");
-  return `<span class="chip ${envWord(v.tot).c}" title="${tip}">${v.itt} impl</span>`;
+  const tip=`Vegas game script: team implied ${v.itt} pts · ${fav?`${spread}-pt favorite`:spread===0?"pick'em":`${spread}-pt underdog`} vs ${v.opp} · game total ${v.tot}${v.dome?" · dome (no weather)":""}${v.wind?` · ${v.wind}mph wind`:""}`.replace(/"/g,"'");
+  return `<span class="chip ${envWord(v.tot).c}" title="${tip}">${v.itt} impl${v.wind&&v.wind>=15?" 💨":""}</span>`;
 }
 /* ---- In-season usage / opportunity (context only) ----
    Opportunity is the stickiest thing in fantasy: targets and carries carry week to week far better than the
@@ -4428,6 +4428,22 @@ function selfTest(){
       const before=state.ui.gPos; state.ui.gPos="RB"; const rbOnly=gradesList(); state.ui.gPos=before;
       add("The grade board filters by position",rbOnly.length>0&&rbOnly.every(p=>p.pos==="RB"),
           `RB filter → ${rbOnly.length} running backs, nothing else`);
+    })();
+    /* Data quality — the foundation. The matchup engine is only as good as its defense-vs-position table,
+       which must be the live, computed one (real spread across the league), not the old static snapshot that
+       was compressed to ~0.90-1.05. And measured opportunity (target/air-yards share, WOPR, snap %) must be
+       loaded and in range. Absent DVP_LIVE the data predates this work and the guard notes it. */
+    (()=>{
+      const wrVals=Object.values(D.DVP||{}).map(v=>v&&v.WR).filter(x=>x!=null);
+      const spread=wrVals.length?Math.max(...wrVals)-Math.min(...wrVals):0;
+      if(D.DVP_LIVE===undefined){ add("Defense-vs-position table present",Object.keys(D.DVP||{}).length>=28,"static table — live computed DvP arrives on next refresh"); }
+      else add("Defense-vs-position is computed from real results, not a static snapshot",
+          D.DVP_LIVE===true&&spread>=0.15, D.DVP_LIVE?`live DvP — WR spread ${spread.toFixed(2)} across the league`:"reverted to static");
+      const adv=D.ADV_META, withAdv=P.filter(p=>p.adv).length;
+      if(!adv){ add("Measured opportunity is loaded",true,"not in this data yet — fills in on next refresh"); }
+      else { const bad=P.filter(p=>p.adv&&!(p.adv.ts>=0&&p.adv.ts<=1&&p.adv.tgt>=0)).length;
+        add("Measured opportunity (target share, snap %, WOPR) is loaded and sane",withAdv>150&&bad===0,
+            `${withAdv} players carry real usage from ${adv.year}, all shares in range`); }
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -8436,6 +8452,37 @@ function gradeChip(pl){
 // just the overall letter, for tight inline spots like the trade cards
 function gradeMini(pl){ if(!pl||pl.isPick||pts(pl)<=0)return ""; const g=playerGrades(pl).overall;
   return ` <span class="tier ${g.cls}" style="font-size:10px" title="overall grade ${g.letter}">${g.letter}</span>`; }
+/* ---- Real measured opportunity (nflverse: target/air-yards share, WOPR, snap %) ----
+   Populated by refresh.py from actual results — the current season in-season, last season as a pre-season
+   role prior. This is the truest read on a player's role, and it's surfaced wherever you evaluate a player. */
+function advOf(pl){ return pl&&pl.adv?pl.adv:null; }
+function roleChip(pl){
+  const a=advOf(pl); if(!a)return "";
+  let tag="",cls="";
+  if(pl.pos==="WR"||pl.pos==="TE"){
+    if(a.ts>=0.27){tag="alpha";cls="good";} else if(a.ts>=0.20){tag="starter";}
+    else if(a.snap!=null&&a.snap<0.55){tag="rotational";cls="warn";}
+  } else if(pl.pos==="RB"){
+    if(a.snap!=null&&a.snap>=0.70){tag="workhorse";cls="good";} else if(a.snap!=null&&a.snap<0.50){tag="committee";cls="warn";}
+    else if(a.car>=12){tag="lead back";}
+  }
+  if(!tag)return "";
+  const tip=`measured usage: ${a.ts?Math.round(a.ts*100)+"% target share":""}${a.ts&&a.snap!=null?", ":""}${a.snap!=null?Math.round(a.snap*100)+"% snaps":""}${a.wopr?", WOPR "+a.wopr:""}`;
+  return `<span class="chip ${cls}" style="font-size:10px" title="${tip}">${tag}</span>`;
+}
+function advUsageRows(pl){
+  const a=advOf(pl); if(!a)return ""; const meta=(window.__FFDATA__&&__FFDATA__.ADV_META)||{};
+  if(!["WR","TE","RB"].includes(pl.pos))return "";
+  const lab=meta.current?"This season's usage":`Last season's usage${meta.year?" ("+meta.year+")":""}`;
+  const rows=[];
+  if(a.ts)rows.push(["Target share",Math.round(a.ts*100)+"%"]);
+  if(a.snap!=null)rows.push(["Snap share",Math.round(a.snap*100)+"%"]);
+  rows.push(["Targets / game",a.tgt]);
+  if(pl.pos==="RB")rows.push(["Carries / game",a.car]);
+  if(a.wopr)rows.push(["WOPR (weighted opportunity)",a.wopr]);
+  if(a.aypg)rows.push(["Air yards / game",a.aypg]);
+  return `<div class="eyebrow" style="margin:12px 0 6px">${lab}</div>`+rows.map(([k,v])=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("");
+}
 let WKRANK={key:null};
 function weeklyRankTable(){
   const key=[state.players.length,state.settings.format].join("|");
@@ -8496,6 +8543,8 @@ function aiScoutContext(pl){
   L.push(`Grades, each a percentile vs his position: overall ${g.overall.letter}, opportunity/volume ${g.opportunity?g.opportunity.letter:"n/a"}, schedule ${g.schedule?g.schedule.letter:"n/a"}, floor ${g.floor?g.floor.letter:"n/a"}, ceiling ${g.ceiling?g.ceiling.letter:"n/a"}, health ${g.health.letter}.`);
   L.push(`Draft value: ADP ${g.adp.adp}, our value rank #${g.adp.rank} → ${g.adp.label}.`);
   L.push(`Schedule strength: season ${sosOf(pl,1,14).toFixed(2)}, fantasy playoffs wk15-17 ${sosOf(pl,15,17).toFixed(2)} (1.0=average, higher=easier).`);
+  const a=advOf(pl); if(a&&["WR","TE","RB"].includes(pl.pos)){ const meta=(window.__FFDATA__&&__FFDATA__.ADV_META)||{};
+    L.push(`Measured usage (${meta.current?"this season":"last season"}): ${a.ts?Math.round(a.ts*100)+"% target share, ":""}${a.snap!=null?Math.round(a.snap*100)+"% snap share, ":""}${a.tgt} targets/game${pl.pos==="RB"?`, ${a.car} carries/game`:""}${a.wopr?`, WOPR ${a.wopr}`:""}.`); }
   const tv=gTradeValue(pl); if(tv)L.push(`Trade read: ${tv.read.t}.`);
   return L.join("\n");
 }
@@ -8516,7 +8565,7 @@ function gradeDetail(pl){
   return `<div class="panel"><div class="bd">
     <div class="gd-head">
       <div style="min-width:0">
-        <div class="gd-name"><span class="pos ${pl.pos}">${pl.pos}${posRank}</span> ${pl.name} ${injChip(pl)} ${gameEnvChip(pl,state.ui.seasonWeek||1)}</div>
+        <div class="gd-name"><span class="pos ${pl.pos}">${pl.pos}${posRank}</span> ${pl.name} ${injChip(pl)} ${roleChip(pl)} ${gameEnvChip(pl,state.ui.seasonWeek||1)}</div>
         <div class="meta">${pl.team||"FA"} · age ${pl.age||"—"} · bye ${pl.bye||"—"}${pl.depth>1?` · depth #${pl.depth}`:""}</div>
       </div>
       <div class="gd-grade"><div class="tier ${g.overall.cls}" style="font-size:34px;font-weight:800;line-height:1">${g.overall.letter}</div><div class="meta">overall · ${pl.pos}${posRank}</div></div>
@@ -8533,6 +8582,7 @@ function gradeDetail(pl){
         ${tv?`<div class="eyebrow" style="margin:14px 0 6px">Trade value</div>
           <div class="kv"><span>Market value</span><b>${tv.v.toLocaleString()}</b></div>
           <div class="kv"><span>Read</span><b class="chip ${tv.read.c}">${tv.read.t}</b></div>`:""}
+        ${advUsageRows(pl)}
       </div>
       <div style="min-width:0">
         <div class="eyebrow" style="margin-bottom:6px">Projected line · ${fmt(pts(pl))} pts (${fmt(pts(pl)/17)}/gm)</div>
@@ -8662,7 +8712,7 @@ function gradesRefresh(){
     body.innerHTML=list.slice(0,220).map((p,i)=>{ const g=playerGrades(p);
       return `<tr data-gpid="${p.id}" class="grow${state.ui.gPlayer===p.id?" on":""}">
         <td class="meta">${i+1}</td>
-        <td><span class="pos ${p.pos}">${p.pos}</span> ${p.name} ${injChip(p)}${wk>0?" "+weeklyMatchupChip(p,wk):""}</td>
+        <td><span class="pos ${p.pos}">${p.pos}</span> ${p.name} ${injChip(p)} ${roleChip(p)}${wk>0?" "+weeklyMatchupChip(p,wk):""}</td>
         <td class="r"><b class="tier ${g.overall.cls}">${g.overall.letter}</b></td>
         <td class="r"><span class="chip ${g.adp.cls}" style="font-size:11px">${g.adp.label}</span></td>
         <td class="r">${mini(g.opportunity)}</td><td class="r">${mini(g.schedule)}</td>
@@ -8844,6 +8894,7 @@ function detailRow(pl,span){
         return `<div class="kv"><span>This week's game (Vegas)</span><b title="game total ${v.tot} — context only, not in the projection">${v.itt} implied · ${fav?sp+"-pt fav":sp===0?"pick'em":sp+"-pt dog"} vs ${v.opp}</b></div>`;})()}
       ${(()=>{const u=usageWkFor(pl);if(!u)return "";const tr=usageTrend(u);
         return `<div class="kv"><span>This season's usage</span><b title="over ${u.g} game${u.g===1?"":"s"} · ${u.ppg} ppg, last 3 ${u.r3} — context only">${u.tgt} tgt + ${u.car} car/g${tr&&tr.t!=="steady"?" · "+tr.t:""}</b></div>`;})()}
+      ${advUsageRows(pl)}
       ${wk?`<div class="eyebrow" style="margin-top:12px">Week by week</div>
         <div class="spark">${wk.map((v,i)=>`<span class="sb${v<=0?" bye":""}" style="height:${mx?Math.max(3,v/mx*100):3}%" title="Week ${i+1}: ${v>0?fmt(v)+" pts":"bye"}"></span>`).join("")}</div>
         <div class="meta" style="display:flex;justify-content:space-between"><span>Wk 1</span><span>Wk ${wk.length}</span></div>`:""}

@@ -356,12 +356,23 @@ def pull_kickoffs():
             # favored. Stored as raw market context for the UI — validated (tools_vegas.py) NOT to beat the
             # consensus projection out of sample, because consensus already prices the line, so it is shown
             # as game script, never folded into a player's points.
+            # weather / dome, also straight from games.csv. roof is known when the schedule drops; wind and
+            # temp are filled closer to kickoff. Dome/closed roof = no weather risk (a passing/kicking tailwind);
+            # high wind suppresses the deep ball and field goals. Shown as context alongside the line.
+            roof=(r.get("roof") or "").strip().lower()
+            dome=1 if roof in ("dome","closed") else 0
+            try: wind=int(float(r.get("wind"))) if (r.get("wind") or "").strip() not in ("","NA") else None
+            except (TypeError,ValueError): wind=None
+            wx={}
+            if dome: wx["dome"]=1
+            if wind is not None and wind>=1: wx["wind"]=wind
             try:
                 tot=float(r["total_line"]); spr=float(r["spread_line"])
-                if home:
-                    VEGAS.setdefault(home,[None]*18)[wk-1]={"itt":round(tot/2+spr/2,1),"tot":tot,"line":round(-spr,1),"opp":away,"home":1}
-                if away:
-                    VEGAS.setdefault(away,[None]*18)[wk-1]={"itt":round(tot/2-spr/2,1),"tot":tot,"line":round(spr,1),"opp":home,"home":0}
+                he={"itt":round(tot/2+spr/2,1),"tot":tot,"line":round(-spr,1),"opp":away,"home":1}
+                ae={"itt":round(tot/2-spr/2,1),"tot":tot,"line":round(spr,1),"opp":home,"home":0}
+                he.update(wx); ae.update(wx)
+                if home: VEGAS.setdefault(home,[None]*18)[wk-1]=he
+                if away: VEGAS.setdefault(away,[None]*18)[wk-1]=ae
                 vhit+=1
             except Exception: pass
         filled=sum(1 for arr in KICK.values() for v in arr if v)
@@ -416,6 +427,108 @@ def pull_usage_week():
     log(f"  usage: {len(out)} players through week {weeks} of {SEASON}")
     return out
 
+def _stats_week_url(yr): return f"https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{yr}.csv"
+def _ff(v):
+    try: return float(v or 0)
+    except (TypeError,ValueError): return 0.0
+
+def pull_dvp():
+    """Defense-vs-position, computed from real results instead of a static snapshot.
+
+    DvP is the single most important matchup input in the app — it drives the win-probability sim, the
+    schedule grade, the weekly matchup grid and strength-of-schedule everywhere. It was a fixed table baked
+    into base.json (compressed to ~0.90-1.05, no provenance), which meant every matchup number was only as
+    good as one old snapshot. This recomputes it every cycle from nflverse: for each defense and position,
+    the fantasy points it actually allowed per game versus the league average. Recency-weighted across the
+    current season (weighted up as it accrues) and the two prior years, then regressed 30% toward league
+    average because a single season of DvP is noisy. Standard-industry DvP, kept live.
+    """
+    import io as _io
+    from collections import defaultdict
+    POS=("QB","RB","WR","TE")
+    def year_dvp(yr):
+        try: raw=get(_stats_week_url(yr), timeout=120).decode("utf-8","replace")
+        except Exception: return None,0
+        sumTP=defaultdict(float); gamesTeam=defaultdict(set); n=0
+        for r in csv.DictReader(_io.StringIO(raw)):
+            if (r.get("season_type") or "REG")!="REG": continue
+            if r.get("position") not in POS: continue
+            opp=std(r.get("opponent_team")); gid=r.get("game_id")
+            if not opp or not gid: continue
+            sumTP[(opp,r["position"])]+=_ff(r.get("fantasy_points_ppr")); gamesTeam[opp].add(gid); n+=1
+        if n<200: return None,0
+        posV=defaultdict(list); perGame={}
+        for (team,pos),tot in sumTP.items():
+            g=len(gamesTeam[team]) or 1; pg=tot/g; perGame[(team,pos)]=pg; posV[pos].append(pg)
+        la={pos:(sum(v)/len(v) if v else 1) for pos,v in posV.items()}
+        weeks=max((len(s) for s in gamesTeam.values()),default=0)
+        return {tp:pg/(la[tp[1]] or 1) for tp,pg in perGame.items()}, weeks
+    cy=int(SEASON)
+    plan=[(str(cy),1.5),(str(cy-1),0.9),(str(cy-2),0.45)]
+    blend=defaultdict(float); wsum=defaultdict(float); used=[]
+    for yr,w in plan:
+        d,weeks=year_dvp(yr)
+        if not d: continue
+        ww=w*(min(weeks,17)/17.0) if yr==str(cy) else w   # current season counts more as it plays out
+        if ww<=0: continue
+        used.append(f"{yr}×{round(ww,2)}")
+        for tp,v in d.items(): blend[tp]+=ww*v; wsum[tp]+=ww
+    teams=set(t for t,_ in blend);
+    if len(teams)<28:
+        log("  dvp: not enough nflverse data — keeping static DVP from base.json"); return None
+    SHRINK=0.70
+    DVP=defaultdict(dict)
+    for tp,v in blend.items():
+        raw=v/(wsum[tp] or 1); DVP[tp[0]][tp[1]]=round(1+(raw-1)*SHRINK,3)
+    wr=sorted((v.get("WR",1),t) for t,v in DVP.items())
+    log(f"  dvp: computed from {', '.join(used)} — {len(DVP)} defenses "
+        f"(toughest WR {wr[0][1]} {wr[0][0]}, softest {wr[-1][1]} {wr[-1][0]})")
+    return dict(DVP)
+
+def pull_advanced():
+    """Real opportunity per player — the stuff that actually predicts fantasy scoring: target share, air-yards
+    share, WOPR, snap share, and targets/carries per game. The Grades 'Opportunity' axis was a crude proxy
+    (projected yards ÷ a yards-per-touch constant); this replaces it with measured usage. In-season it reads
+    the current year; in the pre-season it falls back to the last complete season as a role prior — a receiver
+    who ran a 27% target share last year is a known high-volume asset before a single 2026 snap is played.
+    """
+    import io as _io
+    from collections import defaultdict
+    POS=("QB","RB","WR","TE")
+    def load_stats(yr):
+        try: return list(csv.DictReader(_io.StringIO(get(_stats_week_url(yr),timeout=120).decode("utf-8","replace"))))
+        except Exception: return []
+    def load_snaps(yr):
+        snaps=defaultdict(lambda:[0.0,0])
+        try:
+            for r in csv.DictReader(_io.StringIO(get(f"https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_{yr}.csv",timeout=120).decode("utf-8","replace"))):
+                if (r.get("game_type") or "REG")!="REG": continue
+                if r.get("position") not in POS: continue
+                s=snaps[norm(r.get("player") or "")]; s[0]+=_ff(r.get("offense_pct")); s[1]+=1
+        except Exception: pass
+        return snaps
+    cy=int(SEASON); cur=load_stats(str(cy))
+    curReg=[r for r in cur if (r.get("season_type") or "REG")=="REG"]
+    use=str(cy) if len(curReg)>=150 else str(cy-1)
+    rows=curReg if use==str(cy) else load_stats(use)
+    snaps=load_snaps(use)
+    agg=defaultdict(lambda:{"g":0,"tgt":0.0,"car":0.0,"ts":0.0,"ays":0.0,"wopr":0.0,"ay":0.0})
+    for r in rows:
+        if (r.get("season_type") or "REG")!="REG": continue
+        if r.get("position") not in POS: continue
+        a=agg[norm(r.get("player_display_name") or "")]; a["g"]+=1
+        a["tgt"]+=_ff(r.get("targets")); a["car"]+=_ff(r.get("carries")); a["ts"]+=_ff(r.get("target_share"))
+        a["ays"]+=_ff(r.get("air_yards_share")); a["wopr"]+=_ff(r.get("wopr")); a["ay"]+=_ff(r.get("receiving_air_yards"))
+    out={}
+    for k,a in agg.items():
+        if a["g"]<1: continue
+        g=a["g"]; s=snaps.get(k)
+        out[k]={"g":a["g"],"tgt":round(a["tgt"]/g,1),"car":round(a["car"]/g,1),"ts":round(a["ts"]/g,3),
+                "ays":round(a["ays"]/g,3),"wopr":round(a["wopr"]/g,3),"aypg":round(a["ay"]/g,1),
+                "snap":(round(s[0]/s[1],3) if s and s[1] else None)}
+    log(f"  advanced: {len(out)} players' real usage from {use} ({'current season' if use==str(cy) else 'last season as pre-season prior'})")
+    return {"year":use,"current":use==str(cy),"players":out}
+
 def archive_projections(players):
     """Snapshot what we projected, before the games are played.
 
@@ -453,6 +566,8 @@ def build_data():
     espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp(); fpe=pull_fantasypros_ecr()
     kick,vegas=pull_kickoffs()
     usage_wk=pull_usage_week()
+    dvp=pull_dvp()
+    adv=pull_advanced()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -644,10 +759,19 @@ def build_data():
     for p in players:
         if p["pos"]=="DST" and p.get("team"): p["name"]=f'{p["team"]} Defense'
 
+    # attach measured opportunity (target/air-yards share, WOPR, snap %) to every player by name
+    if adv and adv.get("players"):
+        amap=adv["players"]; hit=0
+        for p in players:
+            a=amap.get(norm(p["name"]))
+            if a: p["adv"]=a; hit+=1
+        log(f"  advanced usage matched to pool: {hit}/{len(players)}")
+
     archive_projections(players)
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
-         "DVP":base["DVP"],"SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,
+         "DVP":(dvp or base["DVP"]),"DVP_LIVE":bool(dvp),"ADV_META":({"year":adv["year"],"current":adv["current"]} if adv else None),
+         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,
          "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,
