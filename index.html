@@ -2241,9 +2241,12 @@ function aiContext(){
       L.push(`Best available now (ranked by this app's value): ${avail.map(p=>`${aiPlLine(p)} adp${Math.round(adpOf(p))}`).join("; ")}`);
       label="Draft"; quick=["Who should I take and why?","Where am I weakest?","Best value left on the board?"];
     } else if(tab==="waivers"||tab==="season"){
-      const wk=state.ui.seasonWeek||1;
-      const wb=waiverBoard(myR,wk,10,6)||[];
-      if(wb.length) L.push(`Top waiver pickups (week ${wk}, by starting-lineup value): ${wb.slice(0,10).map(w=>{const p=w.p||w.pl||w;return `${p.name} (${p.pos})${w.gain!=null?" +"+fmt(w.gain):w.val!=null?" +"+fmt(w.val):""}${w.faab!=null?" $"+w.faab:""}`;}).join("; ")}`);
+      const wk=state.ui.seasonWeek||1, to=(state.ui.wWindow==="po")?17:18;
+      // waiverBoard returns {rows,drop,remaining} over weeks [from..to] — read rows, and run the horizon
+      // to season's end (was passing to=10 and treating the object as an array, so this line was silently
+      // never added and the copilot had no waiver data to reason from).
+      const wb=waiverBoard(myR,wk,to,10);
+      if(wb&&wb.rows&&wb.rows.length) L.push(`Top waiver pickups (week ${wk}, by starting-lineup value, FAAB out of $${wb.remaining}): ${wb.rows.map(r=>`${r.p.name} (${r.p.pos})${r.gain!=null?" +"+fmt(r.gain)+" pts":""}${r.bid!=null?" $"+r.bid:""}`).join("; ")}`);
       label="Waivers"; quick=["Who should I add this week?","Any drops I should make?","Best streaming play?"];
     } else if(tab==="matchups"){
       const anyLive=(typeof liveActive==="function"&&liveActive());
@@ -4687,6 +4690,19 @@ function selfTest(){
       add("Weekly waiver brief is grounded in the league's numbers",
           wbg.indexOf(state.settings.teams+" teams")>=0&&/Week 1/.test(wbg),
           "brief context carries the league, roster and week — no network, no invented players");
+      /* The GENERAL copilot's waiver branch must actually surface pickups: it read waiverBoard's
+         {rows,drop,remaining} OBJECT as an array and passed to=10 as the horizon, so on the Waivers
+         tab the line was silently dropped and the AI had no waiver data to reason from. */
+      (()=>{
+        const svP=state.picks.slice(), svTab=window.aiActiveTab, svWk=state.ui.seasonWeek;
+        const skill=P.filter(p=>["QB","RB","WR","TE"].includes(p.pos)&&pts(p)>0).sort((a,b)=>pts(b)-pts(a));
+        state.picks=skill.slice(30,42).map(p=>({playerId:p.id,teamIdx:myIdx()}));   // mid roster → top FAs still crack it
+        state.ui.seasonWeek=8; window.aiActiveTab=()=>"waivers";
+        let line=""; try{ line=(aiContext().text.split("\n").find(l=>/waiver pickups/i.test(l)))||""; }catch(e){}
+        add("Copilot surfaces real waiver pickups on the Waivers tab",/waiver pickups/i.test(line)&&/\+[\d.]+ pts/.test(line),
+            line?`"${line.slice(0,58)}…"`:"waiver line missing from the copilot's grounding");
+        state.picks=svP; window.aiActiveTab=svTab; state.ui.seasonWeek=svWk;
+      })();
       const rrg=aiRosterContext();
       add("State-of-roster report is grounded in the roster grade",
           rrg.indexOf(state.settings.teams+" teams")>=0&&/lineup|empty|Roster/i.test(rrg),
