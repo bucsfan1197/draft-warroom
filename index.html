@@ -231,6 +231,20 @@
   #gTable td{padding:7px 10px;font-size:12.5px;border-bottom:1px solid var(--line)}
   #gTable .grow{cursor:pointer} #gTable .grow:hover{background:var(--panel-2)}
   #gTable .grow.on{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  /* grade badge on the draft recommendation cards */
+  .gradechip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;
+             padding:2px 4px 2px 7px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);margin-left:2px}
+  .gradechip .gc-v{font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:5px;background:var(--panel);letter-spacing:.01em}
+  .gradechip .gc-v.good{color:var(--good-ink)} .gradechip .gc-v.warn{color:var(--warn-ink)} .gradechip .gc-v.crit{color:var(--crit-ink)}
+  /* head-to-head compare table */
+  .cmp-tbl{width:100%;border-collapse:collapse}
+  .cmp-tbl th,.cmp-tbl td{padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px;text-align:left}
+  .cmp-tbl thead th{vertical-align:bottom;width:38%}
+  .cmp-tbl thead th:first-child{width:24%}
+  .cmp-tbl td.r{text-align:right;font-variant-numeric:tabular-nums}
+  .cmp-h{display:flex;flex-direction:column;gap:2px}
+  .cmp-win{color:var(--good-ink);font-size:11px}
+  .cmp-hi{font-weight:800;color:var(--good-ink)}
   @media(max-width:700px){.aipanel{right:8px;bottom:8px;left:8px;width:auto;max-height:78vh}.aifab{right:14px;bottom:14px}}
   /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
   .lcmp{width:100%}
@@ -1217,6 +1231,9 @@
             <option value="ceiling">Highest upside</option>
             <option value="floor">Safest floor</option>
           </select></label>
+        <label class="meta" style="display:flex;align-items:center;gap:6px">Compare
+          <input id="gCompare" class="search" list="gCompareList" placeholder="vs another player…" autocomplete="off" style="width:auto;min-width:150px;padding:4px 8px">
+          <datalist id="gCompareList"></datalist></label>
       </div>
     </div>
     <div id="gDetail" style="margin-bottom:14px"></div>
@@ -3462,7 +3479,7 @@ function renderSimRecs(){
         :(within?`Statistically level with the top pick — take whichever you prefer.`
                 :`Clearly behind the top pick on title odds.`);
       return `<div class="rec ${pl.pos}${i===0?' top':''}"><div class="rank-badge">#${i+1}</div>
-        <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span>${injChip(pl)}</div>
+        <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span>${injChip(pl)}${gradeChip(pl)}</div>
         <div class="cardmeta">${pl.team} · bye ${pl.bye||"—"} · <b>${Math.round(pts(pl))}</b> proj pts · <b>${(r.title*100).toFixed(0)}%</b> <span class="meta">±${(simSE(r.title)*196).toFixed(1)}</span> to win title · ${Math.round(r.playoff*100)}% make playoffs</div>
         <div class="why">${line}</div>
         <button class="draftbtn" data-draft="${r.id}">Draft to my team</button>${aiWhyBtn(r.id)}</div>`;
@@ -3531,7 +3548,7 @@ function renderHeurRecs(){
     const metaExtra=auct?` · <b>$${actx.val(r.pl)}</b> value`:"";
     return `<div class="rec ${pos}${i===0?" top":""}">
       <div class="rank-badge">#${i+1}</div>
-      <div class="r1"><span class="pos ${pos}">${pos}</span><span class="nm">${r.pl.name}</span>${injChip(r.pl)}</div>
+      <div class="r1"><span class="pos ${pos}">${pos}</span><span class="nm">${r.pl.name}</span>${injChip(r.pl)}${gradeChip(r.pl)}</div>
       <div class="cardmeta">${r.pl.team} · bye ${r.pl.bye||"—"} · <b>${Math.round(pts(r.pl))}</b> proj pts${metaExtra} · <span class="tier ${tier.cls}">${tier.label}</span></div>
       <div class="why">${line}</div>
       ${warn.length?`<div class="r2" style="margin-top:7px">${warn.join("")}</div>`:""}
@@ -4379,6 +4396,12 @@ function selfTest(){
         add("The weekly matchup grid covers all 18 weeks",cells===18,`${cells} week cells with opponent + projected rank`);
         const wk=weeklyPosRank(wrs[0],1);
         add("Weekly positional rank is computed from the schedule",wk!=null&&wk>=1,`the top WR projects as WR${wk} in week 1`);
+        const gc=gradeChip(wrs[0]);
+        add("Draft-board grade chip carries the overall grade",gc.indexOf(playerGrades(wrs[0]).overall.letter)>=0&&/gradechip/.test(gc),
+            "recommendation cards now show each player's grade + ADP value");
+        const cmp=gradeCompare(wrs[0],wrs[Math.min(12,wrs.length-1)]);
+        add("Head-to-head compares two players axis by axis",cmp.indexOf(wrs[0].name)>=0&&cmp.indexOf("cmp-tbl")>=0&&/▲|cmp-hi/.test(cmp),
+            "two grade cards side by side, the better axis flagged");
       }
       const before=state.ui.gPos; state.ui.gPos="RB"; const rbOnly=gradesList(); state.ui.gPos=before;
       add("The grade board filters by position",rbOnly.length>0&&rbOnly.every(p=>p.pos==="RB"),
@@ -8380,6 +8403,12 @@ function playerGrades(pl){
   g.adp=Object.assign({rank:vr,adp:Math.round(adp),gap},adpVerdict(gap));
   return g;
 }
+// compact grade badge for the draft board — overall letter + the ADP-value read, linking the two tabs
+function gradeChip(pl){
+  if(!pl||pts(pl)<=0) return "";
+  const g=playerGrades(pl);
+  return `<span class="gradechip tier ${g.overall.cls}" title="Player Grades: overall ${g.overall.letter} · ${g.adp.label} at ADP ${g.adp.adp} — open the Grades tab for the full breakdown">${g.overall.letter}<span class="gc-v ${g.adp.cls}">${g.adp.label}</span></span>`;
+}
 let WKRANK={key:null};
 function weeklyRankTable(){
   const key=[state.players.length,state.settings.format].join("|");
@@ -8489,6 +8518,40 @@ function gradeDetail(pl){
     </div>
   </div></div>`;
 }
+/* Head-to-head. Same percentile grades, two players side by side, with a ▲ on whoever wins each axis —
+   the draft-room argument ("Chase or Jefferson?", "who do I trade for?") settled on one screen. */
+function gradeCompare(a,b){
+  const ga=playerGrades(a), gb=playerGrades(b);
+  const rank=p=>state.players.filter(x=>x.pos===p.pos&&inLeague(x)&&pts(x)>pts(p)).length+1;
+  const gcell=(g,o)=>g?`<td class="r"><b class="tier ${g.cls}">${g.letter}</b>${o&&g.pct>o.pct+.02?' <span class="cmp-win">▲</span>':''}</td>`:`<td class="r"><span class="meta">—</span></td>`;
+  const grow=(lab,x,y)=>`<tr><td>${lab}</td>${gcell(x,y)}${gcell(y,x)}</tr>`;
+  const nrow=(lab,va,vb,hiA,hiB)=>`<tr><td>${lab}</td><td class="r num${hiA?" cmp-hi":""}">${va}</td><td class="r num${hiB?" cmp-hi":""}">${vb}</td></tr>`;
+  const sa=sosOf(a,1,14),sb=sosOf(b,1,14),pa=sosOf(a,15,17),pb=sosOf(b,15,17), ta=gTradeValue(a),tb=gTradeValue(b);
+  const head=p=>{const g=playerGrades(p);return `<div class="cmp-h"><div class="tier ${g.overall.cls}" style="font-size:24px;font-weight:800;line-height:1">${g.overall.letter}</div>
+    <div class="gd-name" style="font-size:15px"><span class="pos ${p.pos}">${p.pos}${rank(p)}</span> ${p.name} ${injChip(p)}</div>
+    <div class="meta">${p.team||"FA"} · age ${p.age||"—"} · bye ${p.bye||"—"} · ${fmt(pts(p))} pts</div></div>`;};
+  return `<div class="panel"><div class="hd"><h2>Head to head</h2>
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="pickcounter">▲ = better on that axis</span>
+      <button class="ghost sm" id="gCmpClear">✕ Clear</button></span></div>
+    <div class="bd"><div class="tblwrap"><table class="cmp-tbl">
+      <thead><tr><th></th><th>${head(a)}</th><th>${head(b)}</th></tr></thead>
+      <tbody>
+        ${grow("Opportunity",ga.opportunity,gb.opportunity)}
+        ${grow("Schedule",ga.schedule,gb.schedule)}
+        ${grow("Floor",ga.floor,gb.floor)}
+        ${grow("Upside",ga.ceiling,gb.ceiling)}
+        ${grow("Health",ga.health,gb.health)}
+        ${nrow("Projected pts",fmt(pts(a)),fmt(pts(b)),pts(a)>=pts(b),pts(b)>pts(a))}
+        ${nrow("ADP",ga.adp.adp,gb.adp.adp,false,false)}
+        ${nrow("Value vs ADP",ga.adp.label,gb.adp.label,ga.adp.gap>=gb.adp.gap,gb.adp.gap>ga.adp.gap)}
+        ${nrow("Season schedule",sa.toFixed(2),sb.toFixed(2),sa>=sb,sb>sa)}
+        ${nrow("Playoff schedule",pa.toFixed(2),pb.toFixed(2),pa>=pb,pb>pa)}
+        ${ta&&tb?nrow("Market value",ta.v.toLocaleString(),tb.v.toLocaleString(),ta.v>=tb.v,tb.v>ta.v):""}
+      </tbody>
+    </table></div>
+    <div class="meta" style="margin-top:8px">Grades are percentiles within each player's own position (so cross-position rows compare profile, not raw points). Higher season/playoff-schedule number = easier slate.</div>
+    </div></div>`;
+}
 function gradesList(){
   const pos=state.ui.gPos||"ALL", q=nrm(state.ui.gSearch||"");
   let list=state.players.filter(p=>inLeague(p)&&pts(p)>0&&(pos==="ALL"||p.pos===pos));
@@ -8517,7 +8580,17 @@ function gradesRefresh(){
   body.querySelectorAll("[data-gpid]").forEach(tr=>tr.onclick=()=>{ state.ui.gPlayer=+tr.dataset.gpid; gradesRefresh(); });
   let sel=state.ui.gPlayer?state.players[state.ui.gPlayer]:null;
   if(!sel||!list.includes(sel)) sel=list[0]||null;
-  const det=$("#gDetail"); if(det)det.innerHTML=gradeDetail(sel);
+  // compare mode: if the compare box resolves to another player, show head-to-head instead of the single card
+  const cmpVal=(($("#gCompare")&&$("#gCompare").value)||"").trim();
+  let cmp=null;
+  if(cmpVal){ const q=nrm(cmpVal);
+    cmp=state.players.find(p=>inLeague(p)&&pts(p)>0&&nrm(p.name)===q)
+      ||state.players.find(p=>inLeague(p)&&pts(p)>0&&nrm(p.name).indexOf(q)>=0); }
+  const det=$("#gDetail"); if(!det)return;
+  if(cmp&&sel&&cmp.id!==sel.id){
+    det.innerHTML=gradeCompare(sel,cmp);
+    const cb=$("#gCmpClear"); if(cb)cb.onclick=()=>{ const g=$("#gCompare"); if(g)g.value=""; gradesRefresh(); };
+  } else det.innerHTML=gradeDetail(sel);
 }
 function renderGrades(){
   const posBox=$("#gPos");
@@ -8528,6 +8601,10 @@ function renderGrades(){
   }
   const ss=$("#gSort"); if(ss){ ss.value=state.ui.gSort||"overall"; ss.onchange=()=>{ state.ui.gSort=ss.value; gradesRefresh(); }; }
   const se=$("#gSearch"); if(se&&!se.dataset.wired){ se.dataset.wired="1"; se.value=state.ui.gSearch||""; se.oninput=()=>{ state.ui.gSearch=se.value; gradesRefresh(); }; }
+  const dl=$("#gCompareList");
+  if(dl&&!dl.dataset.built){ dl.innerHTML=state.players.filter(p=>inLeague(p)&&pts(p)>0).sort((a,b)=>pts(b)-pts(a))
+      .map(p=>`<option value="${p.name.replace(/"/g,"")}">${p.pos} ${p.team||""}</option>`).join(""); dl.dataset.built="1"; }
+  const gc=$("#gCompare"); if(gc&&!gc.dataset.wired){ gc.dataset.wired="1"; gc.oninput=()=>gradesRefresh(); }
   gradesRefresh();
 }
 function renderPlayersTab(){
