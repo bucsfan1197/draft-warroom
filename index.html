@@ -201,6 +201,36 @@
   .aiwhy:hover{color:var(--ink);border-color:var(--accent)} .aiwhy:disabled{opacity:.6;cursor:default}
   .aiwhyout:not(:empty){margin-top:8px;padding:9px 11px;background:var(--panel-2);border-radius:8px;
          font-size:12.5px;line-height:1.5;border-left:2px solid var(--accent)}
+  /* Player Grades */
+  .chipbtn{font-size:12px;font-weight:650;padding:5px 11px;border-radius:16px;border:1px solid var(--line-2);
+           background:var(--panel-2);color:var(--ink-2);cursor:pointer}
+  .chipbtn:hover{color:var(--ink)} .chipbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .gd-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .gd-name{font-size:19px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .gd-grade{text-align:center;flex:none}
+  .gd-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:22px}
+  @media(max-width:760px){.gd-cols{grid-template-columns:minmax(0,1fr)}}
+  .gsub{display:grid;grid-template-columns:82px 1fr 34px;align-items:center;gap:8px;margin:5px 0}
+  .gsub-l{font-size:12px;color:var(--ink-2)}
+  .gsub-bar{height:8px;background:var(--panel-2);border-radius:5px;overflow:hidden}
+  .gsub-bar span{display:block;height:100%;border-radius:5px}
+  .gsub-bar .good{background:var(--good-ink)} .gsub-bar .warn{background:var(--warn-ink)} .gsub-bar .crit{background:var(--crit-ink)}
+  .gsub b{text-align:right;font-size:13px}
+  .gstats{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+  .gs{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--line)}
+  .gs b{font-variant-numeric:tabular-nums}
+  .mgrid{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}
+  @media(max-width:760px){.mgrid{grid-template-columns:repeat(6,1fr)}}
+  .mgcell{border-radius:6px;padding:4px 2px;text-align:center;border:1px solid var(--line);background:var(--panel-2);min-width:0}
+  .mgcell .mgwk{font-size:9px;color:var(--ink-2);letter-spacing:.02em}
+  .mgcell .mgopp{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mgcell .mgrk{font-size:10px;font-variant-numeric:tabular-nums}
+  .mgcell.mg-good{background:color-mix(in srgb,var(--good-ink) 18%,transparent);border-color:color-mix(in srgb,var(--good-ink) 40%,transparent)}
+  .mgcell.mg-bad{background:color-mix(in srgb,var(--crit-ink) 16%,transparent);border-color:color-mix(in srgb,var(--crit-ink) 38%,transparent)}
+  .mgcell.bye{opacity:.5} .mgcell.mg-po{outline:2px solid var(--accent);outline-offset:-1px}
+  #gTable td{padding:7px 10px;font-size:12.5px;border-bottom:1px solid var(--line)}
+  #gTable .grow{cursor:pointer} #gTable .grow:hover{background:var(--panel-2)}
+  #gTable .grow.on{background:color-mix(in srgb,var(--accent) 12%,transparent)}
   @media(max-width:700px){.aipanel{right:8px;bottom:8px;left:8px;width:auto;max-height:78vh}.aifab{right:14px;bottom:14px}}
   /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
   .lcmp{width:100%}
@@ -704,6 +734,7 @@
       <button class="tab" data-tab="injuries">Injuries</button>
       <button class="tab" data-tab="trade">Trades</button>
       <button class="tab" data-tab="players">Projections</button>
+      <button class="tab" data-tab="grades">Grades</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
     <div class="spacer"></div>
@@ -1168,6 +1199,33 @@
           <table id="ptable"><thead><tr id="phead"></tr></thead><tbody id="playersBody"></tbody></table>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- PLAYER GRADES TAB -->
+  <section id="tab-grades" class="hide">
+    <div class="panel" style="margin-bottom:14px">
+      <div class="bd" style="padding:12px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="gSearch" class="search" placeholder="Search any player…" style="flex:1;min-width:200px">
+        <div id="gPos" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        <label class="meta" style="display:flex;align-items:center;gap:6px">Sort
+          <select id="gSort" class="search" style="width:auto;padding:4px 8px">
+            <option value="overall">Overall grade</option>
+            <option value="value">Draft value (vs ADP)</option>
+            <option value="schedule">Easiest schedule</option>
+            <option value="playoff">Best playoff schedule</option>
+            <option value="ceiling">Highest upside</option>
+            <option value="floor">Safest floor</option>
+          </select></label>
+      </div>
+    </div>
+    <div id="gDetail" style="margin-bottom:14px"></div>
+    <div class="panel">
+      <div class="hd"><h2>Grade board</h2><span class="pickcounter" style="margin-left:auto" id="gBoardCtx"></span></div>
+      <div class="bd" style="padding:0"><div class="tblwrap"><table id="gTable"><thead><tr>
+        <th>#</th><th>Player</th><th class="r">Overall</th><th class="r">Value vs ADP</th>
+        <th class="r">Opp</th><th class="r">Sched</th><th class="r">Floor</th><th class="r">Upside</th><th class="r">Proj</th>
+      </tr></thead><tbody id="gBody"></tbody></table></div></div>
     </div>
   </section>
 
@@ -3301,6 +3359,7 @@ const TAB_RENDER={
   keepers: ()=>renderKeepers(),
   cap:     ()=>renderCapSheet(),
   players: ()=>renderPlayersTab(),
+  grades:  ()=>renderGrades(),
   setup:   ()=>renderReplBox(),
   trade:   ()=>labCompute()             // the finder/evaluator below it build on demand
 };
@@ -4303,6 +4362,27 @@ function selfTest(){
           rrg.indexOf(state.settings.teams+" teams")>=0&&/lineup|empty|Roster/i.test(rrg),
           "report context carries league, projected lineup and depth — no network");
       AI.key=savedKey; aiRefreshFab();
+    })();
+    /* Player Grades: grades must be calibrated (the best projected player at a position lands near the top,
+       the worst near the bottom), every axis must be produced, the weekly grid must cover the whole season,
+       and the board must filter by position. All computed, no network. */
+    (()=>{
+      const wrs=P.filter(p=>p.pos==="WR"&&inLeague(p)&&pts(p)>0).sort((a,b)=>pts(b)-pts(a));
+      if(wrs.length>20){
+        const topG=playerGrades(wrs[0]).overall, botG=playerGrades(wrs[wrs.length-1]).overall;
+        add("Player grades are calibrated to the position",topG.pct>=0.9&&botG.pct<=0.2,
+            `best WR ${topG.letter} (${Math.round(topG.pct*100)}th pct), worst ${botG.letter} (${Math.round(botG.pct*100)}th)`);
+        const g=playerGrades(wrs[0]);
+        add("Every grade axis is produced",!!(g.overall&&g.opportunity&&g.schedule&&g.floor&&g.ceiling&&g.health&&g.adp),
+            `overall ${g.overall.letter} · opp ${g.opportunity.letter} · sched ${g.schedule.letter} · value ${g.adp.label}`);
+        const cells=(matchupGrid(wrs[0]).match(/mgcell/g)||[]).length;
+        add("The weekly matchup grid covers all 18 weeks",cells===18,`${cells} week cells with opponent + projected rank`);
+        const wk=weeklyPosRank(wrs[0],1);
+        add("Weekly positional rank is computed from the schedule",wk!=null&&wk>=1,`the top WR projects as WR${wk} in week 1`);
+      }
+      const before=state.ui.gPos; state.ui.gPos="RB"; const rbOnly=gradesList(); state.ui.gPos=before;
+      add("The grade board filters by position",rbOnly.length>0&&rbOnly.every(p=>p.pos==="RB"),
+          `RB filter → ${rbOnly.length} running backs, nothing else`);
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -8236,6 +8316,220 @@ function tierBreaks(vals){
   gaps.forEach((g,i)=>{ if(g>thr&&g>0)out.add(i+1); });
   return out;
 }
+/* ================= PLAYER GRADES =================
+   A grade only means something if it means the same thing for everyone, so every grade here is a PERCENTILE
+   within the player's own position on one measurable axis — an "A" receiver is genuinely a top-tier receiver
+   on that axis, whatever your scoring or league size. Overall = production percentile. Sub-grades break down
+   WHY: opportunity (projected volume, which is stickier than the points it yields), schedule (the real
+   defense-vs-position slate), floor and ceiling (from his outcome distribution), and health. The draft-value
+   grade sets his ADP against where our value actually ranks him. The weekly grid is the centrepiece: his
+   projected positional rank each week, coloured by how the defense he faces treats his position. */
+function gVolume(pl){
+  const t=line(pl);
+  if(pl.pos==="QB")  return (t.py||0)/7.2 + (t.ry||0)/4.5;            // pass + rush attempts (proxy)
+  if(pl.pos==="RB")  return (t.ry||0)/4.3 + (t.rec||0)/0.72;          // carries + targets
+  if(pl.pos==="WR"||pl.pos==="TE") return (t.rec||0)/0.64;            // targets
+  return 0;
+}
+let GRADEPOOL={key:null};
+function gradePools(){
+  const s=state.settings;
+  const key=[s.format,isSF(),s.bestball,JSON.stringify(s.scoring),state.players.length,dataAgeHours()].join("|");
+  if(GRADEPOOL.key===key) return GRADEPOOL.v;
+  const asc=a=>a.slice().sort((x,y)=>x-y);
+  const pos={};
+  ["QB","RB","WR","TE","K","DST"].forEach(P=>{
+    const ps=state.players.filter(p=>p.pos===P&&inLeague(p)&&pts(p)>0);
+    pos[P]={ prod:asc(ps.map(pts)), vol:asc(ps.map(gVolume)),
+      floor:asc(ps.map(p=>p.dist?p.dist.f:0.7)), ceil:asc(ps.map(p=>p.dist?p.dist.c:1.3)),
+      sched:asc(ps.map(p=>sosOf(p,1,14))), n:ps.length };
+  });
+  const valArr=state.players.filter(p=>inLeague(p)&&valueOf(p)>0).sort((a,b)=>valueOf(b)-valueOf(a));
+  const valRank={}; valArr.forEach((p,i)=>valRank[p.id]=i+1);
+  GRADEPOOL={key,v:{pos,valRank,valN:valArr.length||1}}; return GRADEPOOL.v;
+}
+function pctileSorted(v,arr){ if(!arr||!arr.length)return .5; let n=0; for(const x of arr){ if(x<v)n++; else break; } return n/arr.length; }
+function gradeFromPct(p){ return p>=.97?"A+":p>=.90?"A":p>=.82?"A−":p>=.72?"B+":p>=.60?"B":p>=.48?"B−":p>=.36?"C+":p>=.24?"C":p>=.15?"C−":p>=.08?"D":"F"; }
+function gradeCls(p){ return p>=.72?"good":p>=.42?"warn":"crit"; }
+function mkGrade(p){ return {pct:p,letter:gradeFromPct(p),cls:gradeCls(p)}; }
+function healthGrade(pl){
+  const m={Out:.12,IR:.05,PUP:.1,Sus:.1,DNR:.05,Doubtful:.32,Questionable:.68,COV:.6};
+  let sc=(pl.inj&&m[pl.inj]!=null)?m[pl.inj]:0.94;
+  if(pl.pos==="RB"&&pl.age>=29)sc*=0.85;
+  if((pl.pos==="RB"||pl.pos==="WR")&&pl.depth>1)sc*=0.9;
+  return mkGrade(Math.max(0.02,Math.min(1,sc)));
+}
+function adpVerdict(gap){
+  if(gap>=15)return{label:"Great value",cls:"good"};
+  if(gap>=6) return{label:"Value",cls:"good"};
+  if(gap>=-6)return{label:"Fair price",cls:"warn"};
+  if(gap>=-16)return{label:"Slight reach",cls:"warn"};
+  return{label:"Reach",cls:"crit"};
+}
+function playerGrades(pl){
+  const G=gradePools(), pool=G.pos[pl.pos]||{}, skill=["QB","RB","WR","TE"].includes(pl.pos);
+  const g={
+    overall: mkGrade(pctileSorted(pts(pl),pool.prod)),
+    opportunity: skill?mkGrade(pctileSorted(gVolume(pl),pool.vol)):null,
+    schedule: skill?mkGrade(pctileSorted(sosOf(pl,1,14),pool.sched)):null,
+    floor: pl.dist?mkGrade(pctileSorted(pl.dist.f,pool.floor)):null,
+    ceiling: pl.dist?mkGrade(pctileSorted(pl.dist.c,pool.ceil)):null,
+    health: healthGrade(pl)
+  };
+  const vr=G.valRank[pl.id]||G.valN, adp=adpOf(pl), gap=Math.round(adp-vr);
+  g.adp=Object.assign({rank:vr,adp:Math.round(adp),gap},adpVerdict(gap));
+  return g;
+}
+let WKRANK={key:null};
+function weeklyRankTable(){
+  const key=[state.players.length,state.settings.format].join("|");
+  if(WKRANK.key===key)return WKRANK.v;
+  const t={};
+  ["QB","RB","WR","TE","K","DST"].forEach(P=>{
+    const ps=state.players.filter(p=>p.pos===P&&p.wk&&p.wk.length), weeks=[];
+    for(let w=0;w<18;w++){ const rk={};
+      ps.map(p=>({id:p.id,v:p.wk[w]||0})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).forEach((x,i)=>rk[x.id]=i+1);
+      weeks[w]=rk; }
+    t[P]=weeks;
+  });
+  WKRANK={key,v:t}; return t;
+}
+function weeklyPosRank(pl,w){ const t=weeklyRankTable()[pl.pos]; return t?((t[w-1]||{})[pl.id]||null):null; }
+function matchupGrid(pl){
+  const D=window.__FFDATA__, sched=D&&D.SCHED&&D.SCHED[pl.team];
+  if(!sched||!["QB","RB","WR","TE"].includes(pl.pos)) return `<div class="meta">The weekly matchup grid is available for QB/RB/WR/TE with a real schedule.</div>`;
+  const cells=[];
+  for(let w=1;w<=18;w++){
+    const opp=sched[w-1], bye=!opp, mult=bye?0:matchupMultWeek(pl,w), rank=bye?null:weeklyPosRank(pl,w), v=vegasFor(pl,w), po=w>=15&&w<=17;
+    const cls=bye?"bye":mult>=1.06?"mg-good":mult<=0.94?"mg-bad":"mg-mid";
+    const q=mult>=1.06?"favorable":mult<=0.94?"tough":"neutral";
+    const tip=(bye?`Week ${w}: BYE`:`Week ${w} vs ${opp} — ${q} matchup (${mult.toFixed(2)})${rank?`, projected ${pl.pos}${rank}`:""}${v?`, team implied ${v.itt}`:""}`).replace(/"/g,"'");
+    cells.push(`<div class="mgcell ${cls}${po?" mg-po":""}" title="${tip}"><div class="mgwk">W${w}</div><div class="mgopp">${bye?"BYE":opp}</div><div class="mgrk">${bye?"—":(rank?pl.pos+rank:"·")}</div></div>`);
+  }
+  return `<div class="mgrid">${cells.join("")}</div>`;
+}
+function gStatLine(pl){
+  const t=line(pl), pg=v=>fmt((v||0)/17), row=(lab,se,pe)=>`<div class="gs"><span class="meta">${lab}</span><b>${se}</b><span class="meta">${pe}/gm</span></div>`, out=[];
+  if(pl.pos==="QB"){ out.push(row("Pass yds",Math.round(t.py||0),pg(t.py)),row("Pass TD",fmt(t.ptd||0),pg(t.ptd)),row("INT",fmt(t.int||0),pg(t.int)),row("Rush yds",Math.round(t.ry||0),pg(t.ry)),row("Rush TD",fmt(t.rtd||0),pg(t.rtd))); }
+  else if(["RB","WR","TE"].includes(pl.pos)){ out.push(row("Receptions",fmt(t.rec||0),pg(t.rec)),row("Rec yds",Math.round(t.recy||0),pg(t.recy)),row("Rec TD",fmt(t.rectd||0),pg(t.rectd)));
+    if((t.ry||0)>5)out.push(row("Rush yds",Math.round(t.ry||0),pg(t.ry)),row("Rush TD",fmt(t.rtd||0),pg(t.rtd))); }
+  else return `<div class="meta">${pl.pos} is projected as a flat point total.</div>`;
+  return `<div class="gstats">${out.join("")}</div>`;
+}
+function gMarketSeries(){
+  const dyn=state.settings.format==="dynasty", sf=isSF(), std=(+(state.settings.scoring.rec||0))<0.25;
+  return dyn?(sf?"dyn_sf":(std?"dyn_1qb_std":"dyn_1qb")):(sf?"red_sf":(std?"red_1qb_std":"red_1qb"));
+}
+function gTradeValue(pl){
+  if(!pl.mkt) return null;
+  const k=gMarketSeries(), v=pl.mkt[k]!=null?pl.mkt[k]:(pl.mkt.red_1qb!=null?pl.mkt.red_1qb:pl.mkt.dyn_1qb);
+  if(v==null) return null;
+  const all=state.players.filter(p=>p.mkt&&(p.mkt[k]!=null||p.mkt.red_1qb!=null)).map(p=>({id:p.id,v:p.mkt[k]!=null?p.mkt[k]:p.mkt.red_1qb})).sort((a,b)=>b.v-a.v);
+  const mrank=all.findIndex(x=>x.id===pl.id)+1;
+  const ourRank=gradePools().valRank[pl.id]||gradePools().valN, gap=mrank-ourRank;
+  const read=gap>=12?{t:"Buy-low — the market ranks him below our projection",c:"good"}
+    :gap<=-12?{t:"Sell-high — the market ranks him above our projection",c:"crit"}
+    :{t:"Fairly valued versus the market",c:"warn"};
+  return {v:Math.round(v),mrank,ourRank,read};
+}
+function aiScoutBtn(id){ return aiConfigured()?`<button class="aiwhy" data-aiscout="${id}" style="margin-top:12px">🤖 AI scouting take</button><div class="aiwhyout" id="gScoutOut"></div>`:""; }
+function aiScoutContext(pl){
+  const g=playerGrades(pl), L=[];
+  L.push(`Player: ${pl.name}, ${pl.pos} ${pl.team||"FA"}, age ${pl.age||"?"}, bye ${pl.bye||"?"}${pl.inj?", injury "+pl.inj:""}${pl.depth>1?", depth-chart #"+pl.depth:""}.`);
+  L.push(`Projected ${fmt(pts(pl))} fantasy pts (${fmt(pts(pl)/17)}/game).`);
+  L.push(`Grades, each a percentile vs his position: overall ${g.overall.letter}, opportunity/volume ${g.opportunity?g.opportunity.letter:"n/a"}, schedule ${g.schedule?g.schedule.letter:"n/a"}, floor ${g.floor?g.floor.letter:"n/a"}, ceiling ${g.ceiling?g.ceiling.letter:"n/a"}, health ${g.health.letter}.`);
+  L.push(`Draft value: ADP ${g.adp.adp}, our value rank #${g.adp.rank} → ${g.adp.label}.`);
+  L.push(`Schedule strength: season ${sosOf(pl,1,14).toFixed(2)}, fantasy playoffs wk15-17 ${sosOf(pl,15,17).toFixed(2)} (1.0=average, higher=easier).`);
+  const tv=gTradeValue(pl); if(tv)L.push(`Trade read: ${tv.read.t}.`);
+  return L.join("\n");
+}
+async function aiScoutRun(id){
+  const out=$("#gScoutOut"), btn=document.querySelector(`[data-aiscout="${id}"]`), pl=state.players[id];
+  if(!pl||!out)return; out.innerHTML=`<span class="aithinking">scouting…</span>`; if(btn)btn.disabled=true;
+  try{ const ans=await askAI(aiScoutContext(pl),`Give me a 3-4 sentence scouting take on ${pl.name} for a fantasy draft or trade: what his grades say about his profile (safe floor vs boom/bust, opportunity, schedule), whether he's a value at his ADP, and the kind of team he fits. Use the grades. Be decisive.`);
+    out.innerHTML=aiFmt(ans); }
+  catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+function gradeDetail(pl){
+  if(!pl) return `<div class="panel"><div class="bd"><div class="emptystate">Search a player, or pick one from the grade board below, to see the full breakdown.</div></div></div>`;
+  const g=playerGrades(pl);
+  const bar=(lab,gr)=>gr?`<div class="gsub"><span class="gsub-l">${lab}</span><span class="gsub-bar"><span class="${gr.cls}" style="width:${Math.round(gr.pct*100)}%"></span></span><b class="tier ${gr.cls}">${gr.letter}</b></div>`:"";
+  const posRank=state.players.filter(p=>p.pos===pl.pos&&inLeague(p)&&pts(p)>pts(pl)).length+1;
+  const tv=gTradeValue(pl), adp=g.adp;
+  return `<div class="panel"><div class="bd">
+    <div class="gd-head">
+      <div style="min-width:0">
+        <div class="gd-name"><span class="pos ${pl.pos}">${pl.pos}${posRank}</span> ${pl.name} ${injChip(pl)} ${gameEnvChip(pl,state.ui.seasonWeek||1)}</div>
+        <div class="meta">${pl.team||"FA"} · age ${pl.age||"—"} · bye ${pl.bye||"—"}${pl.depth>1?` · depth #${pl.depth}`:""}</div>
+      </div>
+      <div class="gd-grade"><div class="tier ${g.overall.cls}" style="font-size:34px;font-weight:800;line-height:1">${g.overall.letter}</div><div class="meta">overall · ${pl.pos}${posRank}</div></div>
+    </div>
+    <div class="gd-cols">
+      <div>
+        <div class="eyebrow" style="margin-bottom:6px">Profile <span class="meta">(vs ${POSWORD[pl.pos]||pl.pos}s)</span></div>
+        ${bar("Production",g.overall)}${bar("Opportunity",g.opportunity)}${bar("Schedule",g.schedule)}${bar("Floor",g.floor)}${bar("Upside",g.ceiling)}${bar("Health",g.health)}
+        <div class="meta" style="margin-top:6px;font-size:11px">Floor = how dependable week to week; Upside = boom potential. A steady stud grades high Floor / low Upside; a boom-or-bust type is the reverse.</div>
+        <div class="eyebrow" style="margin:14px 0 6px">Draft value</div>
+        <div class="kv"><span>ADP (${ADP_SRC[state.settings.adpSource||"ffc"]||"consensus"})</span><b>${adp.adp}</b></div>
+        <div class="kv"><span>Our value rank</span><b>#${adp.rank}</b></div>
+        <div class="kv"><span>Verdict</span><b class="chip ${adp.cls}">${adp.label}${adp.gap>0?` — falls ${adp.gap} past his value`:adp.gap<0?` — going ${-adp.gap} ahead of value`:""}</b></div>
+        ${tv?`<div class="eyebrow" style="margin:14px 0 6px">Trade value</div>
+          <div class="kv"><span>Market value</span><b>${tv.v.toLocaleString()}</b></div>
+          <div class="kv"><span>Read</span><b class="chip ${tv.read.c}">${tv.read.t}</b></div>`:""}
+      </div>
+      <div style="min-width:0">
+        <div class="eyebrow" style="margin-bottom:6px">Projected line · ${fmt(pts(pl))} pts (${fmt(pts(pl)/17)}/gm)</div>
+        ${gStatLine(pl)}
+        <div class="eyebrow" style="margin:14px 0 6px">Season &amp; playoff schedule — projected ${pl.pos} rank by week</div>
+        ${matchupGrid(pl)}
+        <div class="meta" style="margin-top:6px">Green = a defense that's soft against ${POSWORD[pl.pos]||pl.pos}s, red = tough; the number is his projected ${pl.pos} rank that week. Weeks 15–17 (fantasy playoffs) are outlined.</div>
+        ${aiScoutBtn(pl.id)}
+      </div>
+    </div>
+  </div></div>`;
+}
+function gradesList(){
+  const pos=state.ui.gPos||"ALL", q=nrm(state.ui.gSearch||"");
+  let list=state.players.filter(p=>inLeague(p)&&pts(p)>0&&(pos==="ALL"||p.pos===pos));
+  if(q)list=list.filter(p=>nrm(p.name).indexOf(q)>=0);
+  const sort=state.ui.gSort||"overall";
+  const key=p=>{ if(sort==="value")return playerGrades(p).adp.gap; if(sort==="schedule")return sosOf(p,1,14);
+    if(sort==="playoff")return sosOf(p,15,17); if(sort==="ceiling")return p.dist?p.dist.c:0;
+    if(sort==="floor")return p.dist?p.dist.f:0; return pts(p); };
+  return list.map(p=>({p,k:key(p)})).sort((a,b)=>b.k-a.k).map(x=>x.p);
+}
+function gradesRefresh(){
+  const body=$("#gBody"); if(!body)return;
+  const list=gradesList();
+  const ctx=$("#gBoardCtx"); if(ctx)ctx.textContent=`${list.length} players`;
+  const mini=gr=>gr?`<span class="tier ${gr.cls}" style="font-size:11px">${gr.letter}</span>`:`<span class="meta">—</span>`;
+  body.innerHTML=list.slice(0,220).map((p,i)=>{ const g=playerGrades(p);
+    return `<tr data-gpid="${p.id}" class="grow${state.ui.gPlayer===p.id?" on":""}">
+      <td class="meta">${i+1}</td>
+      <td><span class="pos ${p.pos}">${p.pos}</span> ${p.name} ${injChip(p)}</td>
+      <td class="r"><b class="tier ${g.overall.cls}">${g.overall.letter}</b></td>
+      <td class="r"><span class="chip ${g.adp.cls}" style="font-size:11px">${g.adp.label}</span></td>
+      <td class="r">${mini(g.opportunity)}</td><td class="r">${mini(g.schedule)}</td>
+      <td class="r">${mini(g.floor)}</td><td class="r">${mini(g.ceiling)}</td>
+      <td class="r num">${fmt(pts(p))}</td></tr>`;
+  }).join("")||`<tr><td colspan="9" class="meta" style="padding:16px">No players match.</td></tr>`;
+  body.querySelectorAll("[data-gpid]").forEach(tr=>tr.onclick=()=>{ state.ui.gPlayer=+tr.dataset.gpid; gradesRefresh(); });
+  let sel=state.ui.gPlayer?state.players[state.ui.gPlayer]:null;
+  if(!sel||!list.includes(sel)) sel=list[0]||null;
+  const det=$("#gDetail"); if(det)det.innerHTML=gradeDetail(sel);
+}
+function renderGrades(){
+  const posBox=$("#gPos");
+  if(posBox&&!posBox.dataset.built){
+    posBox.innerHTML=["ALL","QB","RB","WR","TE","K","DST"].map(p=>`<button class="chipbtn${(state.ui.gPos||"ALL")===p?" on":""}" data-gp="${p}">${p}</button>`).join("");
+    posBox.dataset.built="1";
+    posBox.querySelectorAll("[data-gp]").forEach(b=>b.onclick=()=>{ state.ui.gPos=b.dataset.gp; posBox.querySelectorAll("[data-gp]").forEach(x=>x.classList.toggle("on",x===b)); gradesRefresh(); });
+  }
+  const ss=$("#gSort"); if(ss){ ss.value=state.ui.gSort||"overall"; ss.onchange=()=>{ state.ui.gSort=ss.value; gradesRefresh(); }; }
+  const se=$("#gSearch"); if(se&&!se.dataset.wired){ se.dataset.wired="1"; se.value=state.ui.gSearch||""; se.oninput=()=>{ state.ui.gSearch=se.value; gradesRefresh(); }; }
+  gradesRefresh();
+}
 function renderPlayersTab(){
   const u=state.ui, detail=!!u.pdetail, unit=u.pview==="game"?"pts/gm":"pts";
   let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pviewOf(pl)}));
@@ -8975,6 +9269,9 @@ function init(){
     b.disabled=true; b.textContent="🤖 …"; aiWhyRun(+b.dataset.aiwhy,out,b); });
   if($("#wwBriefBtn"))$("#wwBriefBtn").onclick=aiWaiverBrief;
   if($("#teamReportBtn"))$("#teamReportBtn").onclick=aiRosterReport;
+  // AI scouting take on the Player Grades detail card (delegated — the card re-renders on every selection)
+  if($("#gDetail"))$("#gDetail").addEventListener("click",e=>{ const b=e.target.closest("[data-aiscout]"); if(!b)return;
+    e.preventDefault(); aiScoutRun(+b.dataset.aiscout); });
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
