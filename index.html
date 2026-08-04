@@ -5147,6 +5147,21 @@ function selfTest(){
     const bud=state.settings.budget||200;
     add("The best player costs a sane share of the budget",topBid>bud*0.15&&topBid<bud*0.6,
         `top bid $${topBid} of a $${bud} budget (${Math.round(topBid/bud*100)}%)`);
+    /* A fresh auction must allocate the WHOLE budget — prices over the players actually bought sum to
+       teams×budget with inflation ≈ 1. The denominator once summed the whole ~790-man pool (incl. the
+       ~600 min-price scrubs nobody drafts), pinning inflation at the 0.6 floor and pricing the best
+       player at ~60% of his balanced value, so ~40% of every team's money was unspendable. */
+    (()=>{
+      const svPicks=state.picks.slice(); state.picks=[];
+      const s2=state.settings, T2=s2.teams, rs2=Object.values(s2.roster).reduce((a,b)=>a+b,0), tot2=T2*(s2.budget||200), N2=T2*rs2;
+      const A2=auctionCtx(), lv2=replacementLevels().levels;
+      const sumVal=state.players.filter(inLeague).map(p=>({p,v:vorp(p,lv2)})).sort((a,b)=>b.v-a.v).slice(0,N2)
+                     .reduce((a,x)=>a+A2.val(x.p),0);
+      state.picks=svPicks;
+      add("A fresh auction allocates the whole budget (inflation ~1)",
+          Math.abs(A2.infl-1)<0.12 && Math.abs(sumVal-tot2)<tot2*0.08,
+          `infl ${A2.infl.toFixed(2)}, prices sum to $${Math.round(sumVal)} of $${tot2}`);
+    })();
     // the market comparison must be same-currency on both sides: an all-$1 roster is under market
     const wasCap=state.settings.salaryCap; state.settings.salaryCap=true;
     const sample=P.filter(x=>!x.idp&&x.pos!=="K"&&x.pos!=="DST").slice(0,12);
@@ -9743,9 +9758,18 @@ function auctionCtx(){
   let totalPV=pv.reduce((a,b)=>a+b,0); totalPV=totalPV||1;
   const drafted=draftedIds();
   let spent=0; state.picks.forEach(pk=>spent+=(pk.price||0));
-  let remVal=0; state.players.forEach(p=>{if(!drafted.has(p.id))remVal+=Math.max(1,1+Math.max(0,vorp(p,lv))/totalPV*pool);});
-  const infl=remVal>0?Math.max(0.6,Math.min(1.8,(total-spent)/remVal)):1;
   const base=p=>Math.max(1,1+Math.max(0,vorp(p,lv))/totalPV*pool);
+  /* Inflation reprices the board so the money still on the table gets fully spent on the players
+     still worth buying. remVal must therefore sum only the top REMAINING draftable players — as many
+     as there are open slots across the league — NOT all ~790 in the pool. Summing the whole pool folded
+     in ~600 min-price scrubs nobody drafts (each $1 of base), padding the denominator by hundreds of
+     phantom dollars, which pinned inflation at the 0.6 floor and priced the best player at ~60% of his
+     balanced value (a fresh $200 auction allocated only 61% of the budget). Now infl≈1 at the start
+     (base already sums to the budget) and moves as real money is spent. */
+  const remSlots=Math.max(1,willBeDrafted-state.picks.length);
+  const remVal=state.players.filter(p=>!drafted.has(p.id)&&inLeague(p))
+                 .map(base).sort((a,b)=>b-a).slice(0,remSlots).reduce((a,b)=>a+b,0)||1;
+  const infl=Math.max(0.6,Math.min(1.8,(total-spent)/remVal));
   return {base:p=>Math.round(base(p)), val:p=>Math.max(1,Math.round(base(p)*infl)), infl};
 }
 function myBudget(){
