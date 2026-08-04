@@ -3852,22 +3852,48 @@ function draftForwardRoster(forceId){
   const myRos=teamRoster(myI).slice(), oppRos={};
   for(let t=0;t<T;t++)if(t!==myI)oppRos[t]=teamRoster(t).slice();
   const alive=state.players.filter(p=>inLeague(p)&&!taken.has(p.id));
-  const byVorp=alive.slice().sort((a,b)=>(vorp(b,levels)||pts(b))-(vorp(a,levels)||pts(a)));
+  const vOf=p=>{const v=vorp(p,levels); return isFinite(v)?v:pts(p);};   // vorp, falling back only when NaN
+  const byVorp=alive.slice().sort((a,b)=>vOf(b)-vOf(a));
   const byAdp=alive.slice().sort((a,b)=>adpOf(a)-adpOf(b));
+  // Positional caps — a team never hoards a position it can't start (mirrors cpuPickFor). Keeps both
+  // my rollout picks and the opponents' from producing an illegal, unrealistic board.
+  const posCap={QB:(R.QB||0)+(R.SUPERFLEX||0)+1, RB:(R.RB||0)+(R.FLEX||0)+(R.SUPERFLEX||0)+2,
+    WR:(R.WR||0)+(R.FLEX||0)+(R.SUPERFLEX||0)+2, TE:(R.TE||0)+2, K:(R.K||1), DST:(R.DST||1),
+    DL:(R.DL||0)+2, LB:(R.LB||0)+2, DB:(R.DB||0)+2};
+  const countPos=ros=>{const c={};ros.forEach(p=>c[p.pos]=(c[p.pos]||0)+1);return c;};
   let ah=0;
   for(let pick=startPick;pick<endPick;pick++){
     const tm=teamForPick(pick); let chosen=null;
     if(pick===startPick&&tm===myI&&forceId!=null){ chosen=state.players[forceId]; }
     else if(tm===myI){
       if(myRos.length>=rosterSize)continue;
-      const w=needWeight(myRos); let bs=-1e9, scanned=0;
-      for(let i=0;i<byVorp.length&&scanned<40;i++){ const p=byVorp[i]; if(taken.has(p.id))continue; scanned++;
-        const s=((vorp(p,levels))||pts(p)*0.5)*(w[p.pos]||0.4); if(s>bs){bs=s;chosen=p;} }
+      const w=needWeight(myRos), cnt=countPos(myRos);
+      // Park K/DST while a skill-position starter (or flex/superflex) slot is still open — cross-positional
+      // VORP inflates them, and no real drafter takes a 2nd defense over roster depth. Mirrors the
+      // recommendation engine + the coach board, and keeps inflated D/ST off my early rollout picks.
+      const {need:nd,flexNeed:fn,superNeed:sn}=positionalNeed(myRos);
+      const coreNeed=(nd.QB||0)+(nd.RB||0)+(nd.WR||0)+(nd.TE||0)+fn+sn;
+      let bs=-1e9, scanned=0;
+      for(let i=0;i<byVorp.length&&scanned<80;i++){ const p=byVorp[i]; if(taken.has(p.id))continue; scanned++;
+        if((cnt[p.pos]||0)>=(posCap[p.pos]||99))continue;
+        if((p.pos==="K"||p.pos==="DST")&&coreNeed>0)continue;
+        const s=Math.max(vOf(p),0.5*pts(p))*(w[p.pos]||0.4); if(s>bs){bs=s;chosen=p;} }
+      // fallbacks: first an UNCAPPED body (never breaks a positional cap), then anything as a last resort
+      if(!chosen){ for(const p of byVorp){ if(!taken.has(p.id)&&(cnt[p.pos]||0)<(posCap[p.pos]||99)){chosen=p;break;} } }
+      if(!chosen){ for(const p of byVorp){ if(!taken.has(p.id)){chosen=p;break;} } }
     } else {
-      if((oppRos[tm]||[]).length>=rosterSize)continue;
-      const w=needWeight(oppRos[tm]||[]); let bs=-1e9, scanned=0;
+      const oros=oppRos[tm]||[];
+      if(oros.length>=rosterSize)continue;
+      const round=Math.floor(pick/T)+1, bias=oppBias(tm,round);
+      const w=needWeight(oros), cnt=countPos(oros); let bs=1e18, scanned=0;   // pick the EARLIEST effective ADP
       for(let i=ah;i<byAdp.length&&scanned<50;i++){ const p=byAdp[i]; if(taken.has(p.id))continue; scanned++;
-        const s=(w[p.pos]||0.3)-adpOf(p)*0.002; if(s>bs){bs=s;chosen=p;} }
+        if((cnt[p.pos]||0)>=(posCap[p.pos]||99))continue;
+        // Consensus ADP is the frontier prior; the learned lean shifts it (a lover's bias<1 => earlier),
+        // and a light need pull (a few picks) breaks ties toward a starting hole — same shape as cpuPickFor.
+        const eadp=adpOf(p)*(bias&&bias[p.pos]?bias[p.pos]:1)-(w[p.pos]||0.3)*3;
+        if(eadp<bs){bs=eadp;chosen=p;} }
+      // fallbacks: an UNCAPPED body first (respect the cap), then earliest ADP as a last resort
+      if(!chosen){ for(let i=ah;i<byAdp.length;i++){ const p=byAdp[i]; if(!taken.has(p.id)&&(cnt[p.pos]||0)<(posCap[p.pos]||99)){chosen=p;break;} } }
       if(!chosen){ for(let i=ah;i<byAdp.length;i++){ if(!taken.has(byAdp[i].id)){chosen=byAdp[i];break;} } }
     }
     if(!chosen)continue;
@@ -3885,7 +3911,6 @@ function renderDraftForward(){
   setTimeout(()=>{
     let list=[]; try{ list=recommendations().list.slice(0,3); }catch(e){}
     if(!list.length){ box.innerHTML=`<div class="meta">No candidates to preview yet.</div>`; return; }
-    const mineNow=new Set(teamRoster(myIdx()).map(p=>p.id));
     const results=list.map(r=>{ const ros=draftForwardRoster(r.pl.id); const {slots}=fillLineup(ros);
       return {pl:r.pl, slots, proj:slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0)}; }).sort((a,b)=>b.proj-a.proj);
     const best=results[0];
@@ -4775,15 +4800,21 @@ function selfTest(){
           "coach persona is bound to the computed draft context");
     })();
     /* Draft-forward preview: rolling the draft out must return a LEGAL finished team for me — exactly a full
-       roster, all real players, no duplicates — projecting a believable lineup total. */
+       roster, all real players, no duplicates, NO position past its cap (inflated K/DST once stacked 3 deep),
+       and determinstic — projecting a believable lineup total. */
     (()=>{
-      const size=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
-      let ros=[]; try{ ros=draftForwardRoster(); }catch(e){}
+      const RR=state.settings.roster, size=Object.values(RR).reduce((a,b)=>a+b,0);
+      let ros=[],ros2=[]; try{ ros=draftForwardRoster(); ros2=draftForwardRoster(); }catch(e){}
       const ids=new Set(ros.map(p=>p.id));
-      const legal=ros.length===size && ids.size===ros.length && ros.every(p=>p&&inLeague(p));
+      const cap={QB:(RR.QB||0)+(RR.SUPERFLEX||0)+1,RB:(RR.RB||0)+(RR.FLEX||0)+(RR.SUPERFLEX||0)+2,
+        WR:(RR.WR||0)+(RR.FLEX||0)+(RR.SUPERFLEX||0)+2,TE:(RR.TE||0)+2,K:(RR.K||1),DST:(RR.DST||1)};
+      const cnt={}; ros.forEach(p=>cnt[p.pos]=(cnt[p.pos]||0)+1);
+      const overCap=Object.keys(cnt).filter(pos=>cap[pos]&&cnt[pos]>cap[pos]);
+      const deterministic=ros.map(p=>p.id).join(",")===ros2.map(p=>p.id).join(",");
+      const legal=ros.length===size && ids.size===ros.length && ros.every(p=>p&&inLeague(p)) && !overCap.length && deterministic;
       const {slots}=fillLineup(ros); const proj=slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0);
-      add("Draft-forward rolls out a full, legal team",legal&&proj>400,
-          `finishes ${ros.length}/${size} players, ${fmt(proj)} projected lineup pts`);
+      add("Draft-forward rolls out a full, legal, capped team",legal&&proj>400,
+          `finishes ${ros.length}/${size}${overCap.length?` OVER CAP: ${overCap}`:""}${deterministic?"":" NON-DETERMINISTIC"}, ${fmt(proj)} pts`);
     })();
     /* Roster-build trajectory: the position targets it charts progress against must cover the real starting
        slots and sit inside the roster size — never zero, never absurd. */
