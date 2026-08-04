@@ -254,6 +254,15 @@
   .tierpl:hover{border-color:var(--accent)} .tierpl.on{outline:2px solid var(--accent);outline-offset:-1px}
   .tiercliff{font-size:11px;color:var(--crit-ink);text-align:center;margin:6px 0;font-weight:600}
   .tiersec{margin-bottom:6px}
+  /* draft build trajectory bars */
+  .bld-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:4px 0}
+  .bld-bar{height:8px;background:var(--panel-2);border-radius:5px;overflow:hidden}
+  .bld-bar span{display:block;height:100%;border-radius:5px}
+  .bld-bar .good{background:var(--good-ink)} .bld-bar .warn{background:var(--warn-ink)} .bld-bar .crit{background:var(--crit-ink)}
+  /* draft-forward preview */
+  .dfwd-lineup{display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;font-size:12px;margin-top:4px}
+  .dfwd-lineup .slot{font-size:10px;font-weight:700;color:var(--ink-2)}
+  .dfwd-new{color:var(--good-ink);font-weight:700}
   @media(max-width:700px){.aipanel{right:8px;bottom:8px;left:8px;width:auto;max-height:78vh}.aifab{right:14px;bottom:14px}}
   /* Slot-by-slot: the centre column is the lineup position, so the eye reads outward to each side. */
   .lcmp{width:100%}
@@ -830,6 +839,10 @@
         <div class="panel" style="margin-bottom:14px" id="intelPanel">
           <div class="hd"><h2>Live draft intel</h2><span id="intelCtx" class="pickcounter" style="margin-left:auto"></span></div>
           <div class="bd" id="draftIntel"></div>
+        </div>
+        <div class="panel" style="margin-bottom:14px" id="dfwdPanel">
+          <div class="hd"><h2>🔮 Draft forward</h2><button class="ghost sm" id="dfwdBtn" title="Play the draft out for your top options">Preview my team</button></div>
+          <div class="bd" id="dfwd"></div>
         </div>
         <div class="panel" style="margin-bottom:14px">
           <div class="hd"><h2>Picks so far</h2>
@@ -3811,6 +3824,63 @@ function aiCoachTick(){
   if(!aiConfigured()){ if(!out.innerHTML.trim())aiDraftCoach(); return; }
   if(onClock && AI_COACH.lastPick!==currentPick() && !AI_COACH.busy) aiDraftCoach();
 }
+/* ---- Draft forward: play the whole draft out to see the TEAM you'd finish with for a given pick ----
+   A pick isn't just the player in front of you — it's the roster it leads to. This rolls the rest of the
+   draft forward deterministically (your best-value picks, the room's likely picks by ADP + learned lean)
+   for each top candidate, so you can compare the FINISHED lineup each choice gives you, not just the name. */
+function draftForwardRoster(forceId){
+  const T=state.settings.teams, myI=myIdx(), R=state.settings.roster;
+  let levels={}; try{ levels=replacementLevels().levels; }catch(e){}
+  const rosterSize=Object.values(R).reduce((a,b)=>a+b,0), endPick=T*rosterSize, startPick=currentPick();
+  const taken=new Set(draftedIds());
+  const myRos=teamRoster(myI).slice(), oppRos={};
+  for(let t=0;t<T;t++)if(t!==myI)oppRos[t]=teamRoster(t).slice();
+  const alive=state.players.filter(p=>inLeague(p)&&!taken.has(p.id));
+  const byVorp=alive.slice().sort((a,b)=>(vorp(b,levels)||pts(b))-(vorp(a,levels)||pts(a)));
+  const byAdp=alive.slice().sort((a,b)=>adpOf(a)-adpOf(b));
+  let ah=0;
+  for(let pick=startPick;pick<endPick;pick++){
+    const tm=teamForPick(pick); let chosen=null;
+    if(pick===startPick&&tm===myI&&forceId!=null){ chosen=state.players[forceId]; }
+    else if(tm===myI){
+      if(myRos.length>=rosterSize)continue;
+      const w=needWeight(myRos); let bs=-1e9, scanned=0;
+      for(let i=0;i<byVorp.length&&scanned<40;i++){ const p=byVorp[i]; if(taken.has(p.id))continue; scanned++;
+        const s=((vorp(p,levels))||pts(p)*0.5)*(w[p.pos]||0.4); if(s>bs){bs=s;chosen=p;} }
+    } else {
+      if((oppRos[tm]||[]).length>=rosterSize)continue;
+      const w=needWeight(oppRos[tm]||[]); let bs=-1e9, scanned=0;
+      for(let i=ah;i<byAdp.length&&scanned<50;i++){ const p=byAdp[i]; if(taken.has(p.id))continue; scanned++;
+        const s=(w[p.pos]||0.3)-adpOf(p)*0.002; if(s>bs){bs=s;chosen=p;} }
+      if(!chosen){ for(let i=ah;i<byAdp.length;i++){ if(!taken.has(byAdp[i].id)){chosen=byAdp[i];break;} } }
+    }
+    if(!chosen)continue;
+    taken.add(chosen.id);
+    if(tm===myI)myRos.push(chosen); else (oppRos[tm]=oppRos[tm]||[]).push(chosen);
+    while(ah<byAdp.length&&taken.has(byAdp[ah].id))ah++;
+  }
+  return myRos;
+}
+function renderDraftForward(){
+  const box=$("#dfwd"); if(!box)return;
+  const onClock=teamForPick(currentPick())===myIdx();
+  if(!onClock){ box.innerHTML=`<div class="meta">On your pick, this plays the draft out to the end for your top options — so you can see the <b>team you'd actually finish with</b> for each choice, not just the player in front of you.</div>`; return; }
+  box.innerHTML=`<span class="aithinking">drafting it forward…</span>`;
+  setTimeout(()=>{
+    let list=[]; try{ list=recommendations().list.slice(0,3); }catch(e){}
+    if(!list.length){ box.innerHTML=`<div class="meta">No candidates to preview yet.</div>`; return; }
+    const mineNow=new Set(teamRoster(myIdx()).map(p=>p.id));
+    const results=list.map(r=>{ const ros=draftForwardRoster(r.pl.id); const {slots}=fillLineup(ros);
+      return {pl:r.pl, slots, proj:slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0)}; }).sort((a,b)=>b.proj-a.proj);
+    const best=results[0];
+    const lineup=best.slots.filter(x=>x.pl).map(x=>`<span class="slot">${x.slot==="SUPERFLEX"?"SF":x.slot}</span><span class="${x.pl.id===best.pl.id?'dfwd-new':''}">${lastName(x.pl.name)}</span><span class="meta num">${Math.round(pts(x.pl))}</span>`).join("");
+    box.innerHTML=`<div class="kv"><span>Strongest finish: <b>take ${lastName(best.pl.name)}</b></span><span class="chip good">~${fmt(best.proj)} lineup pts</span></div>
+      <div class="dfwd-lineup" style="margin-top:6px">${lineup}</div>
+      ${results.length>1?`<div class="eyebrow" style="margin:10px 0 4px">Other options finish:</div>`
+        +results.slice(1).map(r=>`<div class="kv"><span><span class="pos ${r.pl.pos}">${r.pl.pos}</span> take ${lastName(r.pl.name)}</span><span class="meta">~${fmt(r.proj)} pts${r.proj<best.proj-1?` <span style="color:var(--crit-ink)">−${fmt(best.proj-r.proj)}</span>`:""}</span></div>`).join(""):""}
+      <div class="meta" style="margin-top:6px">Each option plays the rest of the draft out — your best-value picks and the room's likely picks — and shows the starting lineup you'd finish with (this pick in green).</div>`;
+  },20);
+}
 function renderDraftIntel(){
   try{ aiCoachTick(); }catch(e){}
   const box=$("#draftIntel"); if(!box)return;
@@ -3844,6 +3914,35 @@ function renderDraftIntel(){
     h+=`<div class="meta" style="margin-bottom:8px">Nothing's forcing your hand — the positions you need are deep enough to wait.</div>`;
   }
   if(waits.length)h+=`<div class="meta" style="margin:2px 0 8px">Safe to wait on: ${waits.map(s=>`${s.pos} (${lastName(s.best.name)})`).join(", ")}.</div>`;
+
+  // 1b. YOUR BUILD — trajectory toward a full, balanced roster
+  try{
+    const mine=teamRoster(myIdx());
+    const {t:tgt}=rosterTargets();
+    const have={}; mine.forEach(p=>have[p.pos]=(have[p.pos]||0)+1);
+    const bld=["QB","RB","WR","TE"].map(pos=>{ const tg=tgt[pos]||0; if(!tg)return "";
+      const hv=have[pos]||0, pct=Math.min(100,hv/tg*100), cls=hv>=tg?"good":hv>=tg-1?"warn":"crit";
+      return `<div class="bld-row"><span class="pos ${pos}">${pos}</span>
+        <span class="bld-bar"><span class="${cls}" style="width:${pct}%"></span></span>
+        <span class="meta num">${hv}/${tg}</span></div>`;}).join("");
+    const thin=["QB","RB","WR","TE"].filter(pos=>(tgt[pos]||0)-(have[pos]||0)>=(tgt[pos]||0)*0.6&&(tgt[pos]||0)>0);
+    if(bld)h+=`<div class="eyebrow" style="margin:12px 0 5px">Your build</div>${bld}`
+      +(thin.length?`<div class="meta" style="margin-top:5px">Furthest from full: <b>${thin.join(", ")}</b>.</div>`:`<div class="meta" style="margin-top:5px">Balanced build so far.</div>`);
+  }catch(e){}
+
+  // 1c. WILL THEY COME BACK? survival of your top targets to your next pick
+  if(!onClock){ try{
+    const mine=teamRoster(myIdx()), {need,flexNeed}=positionalNeed(mine), dft=draftedIds();
+    const wants=p=>(need[p.pos]>0)||(FLEX_POS.includes(p.pos)&&flexNeed>0);
+    const targets=state.players.filter(p=>inLeague(p)&&!dft.has(p.id)&&wants(p))
+      .sort((a,b)=>valueOf(b)-valueOf(a)).slice(0,4);
+    const mineNext=myNextPick();
+    const cb=targets.map(p=>{const s=Math.round(pAvailAt(p,mineNext)*100);
+      return `<div class="intel-row ${s>=60?"good":s>=35?"warn":"crit"}"><span class="pos ${p.pos}">${p.pos}</span>
+        <span class="ir-body"><b>${lastName(p.name)}</b> <span class="meta">${s}% still there at pick #${mineNext+1}${s<35?" — grab-or-lose":s>=60?" — safe to wait":""}</span></span>
+        <span class="ir-ic">${s>=60?"✅":s>=35?"🤔":"🏃"}</span></div>`;}).join("");
+    if(cb)h+=`<div class="eyebrow" style="margin:12px 0 5px">Will they come back to you?</div>${cb}`;
+  }catch(e){} }
 
   // 2. the pulse
   const pulseBits=[];
@@ -4620,6 +4719,27 @@ function selfTest(){
           grounded?`context leads with "${c.slice(0,46)}…"`:"draft coach context missing the board/roster");
       add("Draft Coach is told never to invent picks",/never invent/i.test(AI_DRAFT_SYSTEM)&&/ONLY from the CONTEXT/i.test(AI_DRAFT_SYSTEM),
           "coach persona is bound to the computed draft context");
+    })();
+    /* Draft-forward preview: rolling the draft out must return a LEGAL finished team for me — exactly a full
+       roster, all real players, no duplicates — projecting a believable lineup total. */
+    (()=>{
+      const size=Object.values(state.settings.roster).reduce((a,b)=>a+b,0);
+      let ros=[]; try{ ros=draftForwardRoster(); }catch(e){}
+      const ids=new Set(ros.map(p=>p.id));
+      const legal=ros.length===size && ids.size===ros.length && ros.every(p=>p&&inLeague(p));
+      const {slots}=fillLineup(ros); const proj=slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0);
+      add("Draft-forward rolls out a full, legal team",legal&&proj>400,
+          `finishes ${ros.length}/${size} players, ${fmt(proj)} projected lineup pts`);
+    })();
+    /* Roster-build trajectory: the position targets it charts progress against must cover the real starting
+       slots and sit inside the roster size — never zero, never absurd. */
+    (()=>{
+      const R=state.settings.roster, size=Object.values(R).reduce((a,b)=>a+b,0);
+      let t={}; try{ t=rosterTargets().t; }catch(e){}
+      const sum=["QB","RB","WR","TE","K","DST"].reduce((s,p)=>s+(t[p]||0),0);
+      const sane=(t.RB||0)>=(R.RB||0)&&(t.WR||0)>=(R.WR||0)&&(t.QB||0)>=(R.QB||0)&&sum>=4&&sum<=size;
+      add("Build-trajectory targets cover the starting slots",sane,
+          `targets QB ${t.QB} RB ${t.RB} WR ${t.WR} TE ${t.TE} within a ${size}-man roster`);
     })();
     /* Playoff push (weeks 15-17): the value and schedule must be sane — roughly three weeks of a player's
        weekly rate, and an SOS in a believable band. */
@@ -7782,7 +7902,7 @@ function kickSlots(units,week){
   units.forEach(u=>{const k=kickoffOf(u.pl.team,week); if(k)seen.set(k,(seen.get(k)||0)+1);});
   return [...seen.keys()].sort();
 }
-function slotLabel(iso){
+function kickLabel(iso){
   const d=new Date(iso);
   if(isNaN(d)) return iso;
   const day=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
@@ -7859,7 +7979,7 @@ function driftChart(dp,startP){
     <polyline points="${pathOf(dp.band.map(b=>b.med))}" class="dc-med"/>
     ${dp.stages.map((s,i)=>`<line x1="${sx(i)}" y1="0" x2="${sx(i)}" y2="${H}" class="dc-tick"/>`).join("")}
   </svg>
-  <div class="dc-lab">${dp.stages.map((s,i)=>`<span><b>${s?slotLabel(s):"kickoff"}</b><br>${
+  <div class="dc-lab">${dp.stages.map((s,i)=>`<span><b>${s?kickLabel(s):"kickoff"}</b><br>${
      s?dp.counts[i].mine+dp.counts[i].theirs+" play":"nothing played"}</span>`).join("")}</div>`;
 }
 function needCurveChart(nc,mine){
@@ -8448,7 +8568,7 @@ function renderMatchups(){
           ${driftChart(dp,sim.p)}
           <div class="meta" style="margin-top:4px">Each faint line is one way the week could go; the solid line is the typical path and the band covers the middle 80%.
           It starts at your ${pct}% and ends at a win or a loss — the width in between is how much is still undecided.
-          After <b>${slotLabel(dp.stages[mi])}</b> you'd typically sit around <b>${Math.round(mid.med*100)}%</b>,
+          After <b>${kickLabel(dp.stages[mi])}</b> you'd typically sit around <b>${Math.round(mid.med*100)}%</b>,
           but anywhere from <b>${Math.round(mid.lo*100)}%</b> to <b>${Math.round(mid.hi*100)}%</b>.
           ${dp.left[dp.left.length-2]>0?`Going into the last window <b>${dp.left[dp.left.length-2]}</b> player${dp.left[dp.left.length-2]===1?"":"s"} can still change it.`:""}</div></div>`;})()}
       ${lineupCompare(A,B,opp)}`;
@@ -9772,6 +9892,7 @@ function init(){
   if($("#coachBtn"))$("#coachBtn").onclick=()=>aiDraftCoach();
   if($("#coachAsk"))$("#coachAsk").onclick=()=>{ const v=$("#coachInput").value.trim(); if(v){aiDraftCoach(v);$("#coachInput").value="";} };
   if($("#coachInput"))$("#coachInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault(); const v=$("#coachInput").value.trim(); if(v){aiDraftCoach(v);$("#coachInput").value="";}} });
+  if($("#dfwdBtn"))$("#dfwdBtn").onclick=()=>renderDraftForward();
   $("#mWeek").onchange=e=>{state.ui.mWeek=+e.target.value;renderMatchups();};
   const stepWeek=d=>{const ws=[...$("#mWeek").options].map(o=>+o.value);
     const i=ws.indexOf(state.ui.mWeek); const j=Math.max(0,Math.min(ws.length-1,i+d));
