@@ -2516,16 +2516,20 @@ function rosteredIds(){
 function liveFreeAgents(){ const r=rosteredIds(); return state.players.filter(p=>p&&!r.has(p.id)&&inLeague(p)); }
 
 /* ---- roster slotting: fills starting lineup optimally ---- */
-function fillLineup(roster){
+/* Optimal starting lineup. Ranks by pts() by default; callers that care about a specific week (weekUnits)
+   pass an availability-adjusted value so an Out/Questionable player isn't optimised into a slot a healthy
+   bench player deserves. The default keeps every other caller (season/draft use) byte-for-byte identical. */
+function fillLineup(roster,valFn){
+  const val=valFn||pts;
   const R=state.settings.roster;
-  const byPos={};ALLPOS.forEach(p=>byPos[p]=roster.filter(x=>x.pos===p).slice().sort((a,b)=>pts(b)-pts(a)));
+  const byPos={};ALLPOS.forEach(p=>byPos[p]=roster.filter(x=>x.pos===p).slice().sort((a,b)=>val(b)-val(a)));
   const used=new Set(), slots=[];
   function take(pos){const arr=byPos[pos];for(const pl of arr){if(!used.has(pl.id)){used.add(pl.id);return pl;}}return null;}
   const order=[["QB",R.QB],["RB",R.RB],["WR",R.WR],["TE",R.TE]];
   order.forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
   function fillBest(poolPos,label,n){
     for(let i=0;i<(n||0);i++){
-      let best=null;poolPos.forEach(pos=>{const arr=byPos[pos];for(const pl of arr){if(!used.has(pl.id)){if(!best||pts(pl)>pts(best.pl))best={pl,pos};break;}}});
+      let best=null;poolPos.forEach(pos=>{const arr=byPos[pos];for(const pl of arr){if(!used.has(pl.id)){if(!best||val(pl)>val(best.pl))best={pl,pos};break;}}});
       if(best){used.add(best.pl.id);slots.push({slot:label,pl:best.pl});}else slots.push({slot:label,pl:null});
     }
   }
@@ -2534,7 +2538,7 @@ function fillLineup(roster){
   [["K",R.K],["DST",R.DST]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
   [["DL",R.DL],["LB",R.LB],["DB",R.DB]].forEach(([pos,n])=>{for(let i=0;i<(n||0);i++)slots.push({slot:pos,pl:take(pos)});});
   fillBest(IDP_POS,"IDP_FLEX",R.IDP_FLEX);
-  const bench=roster.filter(x=>!used.has(x.id)).sort((a,b)=>pts(b)-pts(a));
+  const bench=roster.filter(x=>!used.has(x.id)).sort((a,b)=>val(b)-val(a));
   return {slots,bench};
 }
 
@@ -4484,6 +4488,13 @@ function selfTest(){
       add("Injured starters are discounted in the win-probability sim",unchanged&&outBenched&&qDisc,
           unchanged&&outBenched&&qDisc?`healthy=full, Out benched, Q at ${(qb/hb).toFixed(2)}× — no over-crediting an injured player`
             :`unchanged ${unchanged} · outBenched ${outBenched} · qDisc ${qDisc}`);
+      // the OPTIMIZER itself must bench a higher-projected Questionable player for healthy alternatives
+      const mkWR=(id,p,inj)=>({id:id,pos:"WR",name:"wr"+id,override:p,inj:inj||null,bye:99,dist:{f:0.6,c:1.4}});
+      const synthR=[mkWR(990001,220,null),mkWR(990002,200,null),mkWR(990003,210,"Questionable"),mkWR(990004,180,null)];
+      const wu=weekUnits(synthR,curWk), startedIds=new Set(wu.starters.map(u=>u.pl.id));
+      add("The lineup optimizer benches an injured player for a healthy one",!startedIds.has(990003),
+          !startedIds.has(990003)?"a Questionable WR projected higher (210 vs 180) sat this week for healthy WRs"
+            :"the optimizer still auto-started the injured player over a healthy one");
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -6530,7 +6541,7 @@ function simOdds(rosters,slots,iters){
   const from=Math.max(1,Math.min(regEnd+1,state.ui.seasonWeek||1));
   const lastW=pStart+3;
   // picks are assets, not starters — they never score
-  const lineups=rosters.map(r=>lineupOnSlots((r||[]).filter(p=>p&&!p.isPick),slots,p=>pts(p)).chosen.map(p=>{
+  const lineups=rosters.map(r=>lineupOnSlots((r||[]).filter(p=>p&&!p.isPick),slots,p=>pts(p)*availROS(p)).chosen.map(p=>{
     const d=p.dist;
     // per-game baseline, the season-long error that persists all year, this player's weekly
     // swing, and his real week-by-week schedule (0 on a bye) precomputed once
@@ -7310,7 +7321,7 @@ function weeklyScore(roster,week){
 function unitAvail(p,week){ return (week===(state.ui.seasonWeek||1)) ? availWeek(p) : availROS(p); }
 function weekUnits(roster,week){
   const active=(roster||[]).filter(p=>p&&!p.isPick&&p.bye!==week&&unitAvail(p,week)>0.02);
-  const {slots,bench}=fillLineup(active);
+  const {slots,bench}=fillLineup(active, p=>pts(p)*unitAvail(p,week));
   const unit=p=>{const d=p.dist;return {pl:p,base:pts(p)/17*unitAvail(p,week),sd:d?(d.c-d.f)/2.08:0.18,
     cv:weekCvOf(p.pos),mult:weeklyMultOf(p,week)};};
   return {starters:slots.filter(s=>s.pl).map(s=>Object.assign(unit(s.pl),{slot:s.slot})),
