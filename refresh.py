@@ -529,6 +529,42 @@ def pull_advanced():
     log(f"  advanced: {len(out)} players' real usage from {use} ({'current season' if use==str(cy) else 'last season as pre-season prior'})")
     return {"year":use,"current":use==str(cy),"players":out}
 
+def pull_injury_reports():
+    """Official NFL injury reports — practice participation (DNP / Limited / Full) plus the game-status
+    designation — from nflverse, straight off the league's Wednesday-Friday reports.
+
+    Practice participation is the read beat writers act on: a starter who Did Not Practice Wed and Thu is far
+    more likely to sit than one who was a Full go, and you know it days before the Sunday inactive list. The
+    live ESPN feed already carries the STATUS; this adds the practice detail behind it. In-season only — empty
+    in the pre-season, like the other weekly feeds — and it overlays onto the Injuries tab and every
+    injury-aware tool the moment Week 1 reports drop.
+    """
+    url=f"https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_{SEASON}.csv"
+    try: raw=get(url,timeout=90).decode("utf-8","replace")
+    except Exception as ex:
+        log(f"  injury reports: no {SEASON} data yet ({ex.__class__.__name__}) — dormant until in-season"); return {}
+    import io as _io
+    PMAP={"did not participate in practice":"DNP","limited participation in practice":"LP","full participation in practice":"FP"}
+    latest={}
+    try:
+        for r in csv.DictReader(_io.StringIO(raw)):
+            if (r.get("season_type") or "REG")!="REG": continue
+            nm=norm(r.get("full_name") or "")
+            if not nm: continue
+            try: w=int(r.get("week") or 0)
+            except (TypeError,ValueError): w=0
+            if nm in latest and latest[nm][0]>=w: continue
+            pr=(r.get("practice_status") or "").strip().lower()
+            latest[nm]=(w,{"status":(r.get("report_status") or "").strip() or None,
+                           "inj":(r.get("report_primary_injury") or r.get("practice_primary_injury") or "").strip() or None,
+                           "practice":PMAP.get(pr),"week":w})
+    except Exception as ex:
+        log("  injury reports parse failed:",ex); return {}
+    out={nm:rec for nm,(w,rec) in latest.items() if rec.get("status") or rec.get("practice")}
+    wk=max((w for w,_ in latest.values()),default=0)
+    log(f"  injury reports: {len(out)} players through week {wk} of {SEASON}")
+    return out
+
 def archive_projections(players):
     """Snapshot what we projected, before the games are played.
 
@@ -568,6 +604,7 @@ def build_data():
     usage_wk=pull_usage_week()
     dvp=pull_dvp()
     adv=pull_advanced()
+    inj_reports=pull_injury_reports()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -771,7 +808,7 @@ def build_data():
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":(dvp or base["DVP"]),"DVP_LIVE":bool(dvp),"ADV_META":({"year":adv["year"],"current":adv["current"]} if adv else None),
-         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,
+         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,"INJ_REPORTS":inj_reports,
          "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,

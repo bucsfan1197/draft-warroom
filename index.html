@@ -1860,6 +1860,9 @@ function weeklyMultOf(pl,w){
 }
 function floorOf(pl){return pl.dist?pts(pl)*pl.dist.f:pts(pl);}
 function ceilOf(pl){return pl.dist?pts(pl)*pl.dist.c:pts(pl);}
+// official injury report — practice participation (DNP/LP/FP) + game status, from nflverse (in-season)
+function injReportFor(pl){ const D=window.__FFDATA__; if(!D||!D.INJ_REPORTS||!pl)return null; return D.INJ_REPORTS[nrm(pl.name)]||null; }
+function practiceWord(p){ return p==="DNP"?"did not practice":p==="LP"?"limited in practice":p==="FP"?"full practice":p; }
 function injChip(pl){
   let h="";const s=pl.inj;
   if(s){const m={Questionable:["Q","warn"],Doubtful:["D","warn"],Out:["OUT","crit"],IR:["IR","crit"],PUP:["PUP","crit"],Sus:["SUS","crit"],NA:["NA","crit"],COV:["COV","warn"],DNR:["DNR","crit"]};
@@ -1869,6 +1872,12 @@ function injChip(pl){
     const tip=[s,pl.injPart&&pl.injPart!=="Undisclosed"?pl.injPart:"",pl.injNote||"",pl.injFresh?"("+agoText(pl.injFresh)+")":""]
       .filter(Boolean).join(" · ").replace(/"/g,"'");
     h+=`<span class="chip ${x[1]}" title="${tip}">${x[0]}</span>`;}
+  // official practice-report chip: DNP is a strong "likely out" tell, Full is reassuring — shown wherever a
+  // player appears, in-season. Empty in the pre-season.
+  const ir=injReportFor(pl);
+  if(ir&&ir.practice){ const pc={DNP:["DNP","crit"],LP:["LTD","warn"],FP:["FULL","good"]}[ir.practice]||[ir.practice,"warn"];
+    const t=`Official injury report${ir.week?" (wk "+ir.week+")":""}: ${ir.status?ir.status+" · ":""}${practiceWord(ir.practice)}${ir.inj?" · "+ir.inj:""}`.replace(/"/g,"'");
+    h+=`<span class="chip ${pc[1]}" title="${t}">${pc[0]}</span>`; }
   if((pl.pos==="RB"||pl.pos==="WR")&&pl.depth>1)h+=`<span class="chip" title="Depth chart #${pl.depth} — not clear starter">2nd</span>`;
   return h;
 }
@@ -2209,7 +2218,7 @@ function aiContext(){
       L.push(`It is week ${state.ui.mWeek||state.ui.seasonWeek||1}. ${anyLive?"Games are in progress (live).":"See the Matchups tab for your win probability and start/sit."}`);
       label="Matchups"; quick=["Who should I start this week?","How do I win this matchup?","Any risky starts?"];
     } else if(tab==="injuries"){
-      const inj=myR.filter(p=>p&&p.inj); if(inj.length)L.push(`Your injured players: ${inj.map(p=>`${p.name} ${p.inj}${p.injPart?" ("+p.injPart+")":""}${p.injNote?" — "+p.injNote:""}`).join("; ")}`);
+      const inj=myR.filter(p=>p&&(p.inj||injReportFor(p))); if(inj.length)L.push(`Your injured players: ${inj.map(p=>{const ir=injReportFor(p);return `${p.name} ${p.inj||(ir&&ir.status)||""}${p.injPart?" ("+p.injPart+")":""}${ir&&ir.practice?" — "+practiceWord(ir.practice):""}${p.injNote?" — "+p.injNote:""}`;}).join("; ")}`);
       label="Injuries"; quick=["Who's a real concern?","Who should I replace?"];
     } else if(tab==="trade"){
       label="Trades"; quick=["What should I target in a trade?","Who can I sell high?","Am I a contender or rebuild?"];
@@ -3664,9 +3673,11 @@ function renderInjuries(){
   const scope=state.ui.injScope||"mine";
   const synced=TRADE.teams&&TRADE.teams.length;
   const mineIds=new Set((synced?teamAssets(TRADE.teams[TRADE.me]||{}):teamRoster(myIdx())).map(p=>p&&p.id).filter(x=>x!=null));
-  let list=state.players.filter(p=>p.inj&&!p.idp&&["QB","RB","WR","TE","K","DST"].includes(p.pos));
+  // a player belongs on the board if the live feed flags him OR the official report carries a status/practice note
+  const stOf=p=>p.inj||((injReportFor(p)||{}).status)||"";
+  let list=state.players.filter(p=>(p.inj||injReportFor(p))&&!p.idp&&["QB","RB","WR","TE","K","DST"].includes(p.pos));
   if(scope==="mine")list=list.filter(p=>mineIds.has(p.id));
-  list.sort((a,b)=>(INJ_RANK[a.inj]??9)-(INJ_RANK[b.inj]??9)||(b.injFresh||0)-(a.injFresh||0)||pts(b)-pts(a));
+  list.sort((a,b)=>(INJ_RANK[stOf(a)]??9)-(INJ_RANK[stOf(b)]??9)||(b.injFresh||0)-(a.injFresh||0)||pts(b)-pts(a));
   if(!list.length){
     box.innerHTML=`<div class="emptystate">${scope==="mine"
       ? (mineIds.size?"None of your players are on the injury report right now. That's the good news.":"Sync your league on the Trades tab (or draft a roster) to see just your players — or switch to Whole league.")
@@ -3674,20 +3685,23 @@ function renderInjuries(){
     return;
   }
   const sev={Out:"crit",IR:"crit",Doubtful:"crit",PUP:"crit",Sus:"crit",Questionable:"warn",NA:"warn",DNR:"warn",COV:"warn"};
-  box.innerHTML=list.map(p=>`<div class="injcard ${sev[p.inj]||"warn"}">
+  const pDot={DNP:["🔴","did not practice"],LP:["🟡","limited in practice"],FP:["🟢","full practice"]};
+  box.innerHTML=list.map(p=>{const st=stOf(p), ir=injReportFor(p);
+    return `<div class="injcard ${sev[st]||"warn"}">
     <div class="injhead">
       <span class="pos ${p.pos}">${p.pos}</span>
       <b class="injname">${p.injLink?`<a href="${p.injLink}" target="_blank" rel="noopener">${p.name}</a>`:p.name}</b>
       <span class="meta">${p.team||""}</span>
-      <span class="chip ${sev[p.inj]||"warn"}" style="margin-left:auto">${p.inj}${p.injPart&&p.injPart!=="Undisclosed"?" · "+p.injPart:""}</span>
+      <span class="chip ${sev[st]||"warn"}" style="margin-left:auto">${st}${p.injPart&&p.injPart!=="Undisclosed"?" · "+p.injPart:(ir&&ir.inj?" · "+ir.inj:"")}</span>
     </div>
+    ${ir&&ir.practice?`<div class="injnote"><b>Official report${ir.week?` (wk ${ir.week})`:""}:</b> ${(pDot[ir.practice]||["•",ir.practice])[0]} ${(pDot[ir.practice]||["",ir.practice])[1]}${ir.status&&ir.status!==p.inj?` · game status ${ir.status}`:""}</div>`:""}
     ${p.injNote?`<div class="injnote">${p.injNote}</div>`:""}
     <div class="injmeta">
       ${p.injFresh?`<span>🕑 ${agoText(p.injFresh)}</span>`:""}
       <span>hit to your projection: <b>${injImpactText(p)}</b></span>
       ${p.injLink?`<a href="${p.injLink}" target="_blank" rel="noopener" class="meta">ESPN player page ↗</a>`:""}
     </div>
-  </div>`).join("");
+  </div>`;}).join("");
 }
 /* Plain-language version of what this injury does to his value, straight from the availability
    model the rest of the app already uses — so the injury tab and the projections agree. */
@@ -4444,6 +4458,14 @@ function selfTest(){
       else { const bad=P.filter(p=>p.adv&&!(p.adv.ts>=0&&p.adv.ts<=1&&p.adv.tgt>=0)).length;
         add("Measured opportunity (target share, snap %, WOPR) is loaded and sane",withAdv>150&&bad===0,
             `${withAdv} players carry real usage from ${adv.year}, all shares in range`); }
+      // official injury practice reports: dormant in the pre-season, but the plumbing must work — a synthetic
+      // report must resolve and render a practice chip, with DNP flagged critical.
+      const wrx=P.find(p=>p.pos==="WR"&&pts(p)>0), keepIR=D.INJ_REPORTS;
+      if(wrx){ D.INJ_REPORTS={[nrm(wrx.name)]:{status:"Questionable",inj:"Hamstring",practice:"DNP",week:5}};
+        const ir=injReportFor(wrx), chip=injChip(wrx);
+        add("Official injury practice reports wire through when present",!!(ir&&ir.practice==="DNP")&&/DNP/.test(chip),
+            "a DNP report resolves and shows a red practice chip everywhere the player appears");
+        D.INJ_REPORTS=keepIR; }
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
