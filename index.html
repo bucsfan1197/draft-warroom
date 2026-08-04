@@ -4505,6 +4505,21 @@ function selfTest(){
           !startedIds.has(990003)?"a Questionable WR projected higher (210 vs 180) sat this week for healthy WRs"
             :"the optimizer still auto-started the injured player over a healthy one");
     })();
+    /* A synced league fills TRADE.teams, not state.picks — so the in-season renders (Matchups, My Team,
+       Dynasty) must read the live bridge, not the empty draft picks. Regression guard for a bug the stress
+       test caught: renderMatchups used teamRoster(myIdx()) and went blank for synced leagues. */
+    (()=>{
+      const savedT=TRADE.teams, savedMe=TRADE.me;
+      const sk=P.filter(p=>["QB","RB","WR","TE"].includes(p.pos)&&pts(p)>0).sort((a,b)=>pts(b)-pts(a)).slice(0,20);
+      TRADE.teams=[{rosterId:1,name:"me",players:sk.slice(0,10),picks:[]},{rosterId:2,name:"t2",players:sk.slice(10,20),picks:[]}];
+      TRADE.me=0;
+      const rosters=liveRosters(), me=myTeamIdx(), A=weekUnits((rosters[me]||[]),state.ui.seasonWeek||1);
+      const ok=leagueSynced()&&me===0&&rosters.length===2&&A.starters.length>0&&myLiveRoster().length>0;
+      TRADE.teams=savedT; TRADE.me=savedMe;
+      add("A synced league flows into the in-season tabs (bridge-aware)",ok,
+          ok?`synced roster → ${A.starters.length} starters via liveRosters()[myTeamIdx()], not empty draft picks`
+            :"the in-season renders still read empty draft picks when synced");
+    })();
     /* In-season accuracy monitor: dormant in the pre-season, sane when present. */
     (()=>{
       const m=D.MONITOR;
@@ -7237,7 +7252,7 @@ function renderTeamReport(){
 
 function renderTeamTab(){
   renderTeamReport();
-  const roster=teamRoster(myIdx());
+  const roster=myLiveRoster();   // bridge-aware: real roster when a league is synced, draft roster otherwise
   // construction: position points bar chart vs league avg
   const {levels}=replacementLevels();
   const posPts={};ALLPOS.forEach(p=>posPts[p]=roster.filter(x=>x.pos===p).reduce((s,x)=>s+pts(x),0));
@@ -8246,9 +8261,12 @@ function renderPlayoffPush(){
     </div>`;
 }
 function renderMatchups(){
-  const T=state.settings.teams, me=myIdx();
-  const SC=seasonSchedule(), rosters=[...Array(T).keys()].map(teamRoster);
-  const filled=state.picks.length/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0));
+  // bridge-aware: a synced league fills TRADE.teams, not state.picks, so use liveRosters()/myTeamIdx() —
+  // the same source the season sim and playoff push use. Draft mode is unchanged (the bridge falls through
+  // to teamRoster/myIdx). Without this the whole "this week" side of the tab was blank for synced leagues.
+  const T=state.settings.teams, me=myTeamIdx();
+  const SC=seasonSchedule(), rosters=liveRosters();
+  const filled=leagueSynced()?1:(state.picks.length/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0)));
 
   // ---- week selector ----
   const myWeeks=SC.weeks.filter(w=>w.pairs.some(p=>p.includes(me)));
@@ -9201,7 +9219,7 @@ function renderCalib(){
 
 /* ---- DYNASTY tab ---- */
 function renderDynasty(){
-  const roster=teamRoster(myIdx());
+  const roster=myLiveRoster();   // bridge-aware: synced roster in a real league, draft roster otherwise
   const skill=roster.filter(p=>['QB','RB','WR','TE'].includes(p.pos));
   const box=$("#ageProfile");
   if(!skill.length){box.innerHTML=`<div class="emptystate">Draft some players to see your age profile.</div>`;$("#ageProfileHd").textContent="";}
