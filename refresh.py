@@ -476,7 +476,13 @@ def pull_dvp():
     teams=set(t for t,_ in blend);
     if len(teams)<28:
         log("  dvp: not enough nflverse data — keeping static DVP from base.json"); return None
-    SHRINK=0.70
+    # SHRINK regresses each DvP toward league average. Was 0.70 (a guess); tools_validate_dvp.py backtested
+    # it two ways and 0.70 was too aggressive — it made a naive projection WORSE (+0.2% in 2023, +1.2% in 2024),
+    # because DvP is only weakly persistent and consensus already prices most of the matchup. The optimal
+    # out-of-sample shrink was ~0.30 (2023) / ~0.00 (2024), so 0.35 is the honest setting: near-neutral for
+    # prediction while keeping a modest, real spread for the schedule grade and matchup grid. DvP is a small
+    # directional signal, and it's now sized like one.
+    SHRINK=0.35
     DVP=defaultdict(dict)
     for tp,v in blend.items():
         raw=v/(wsum[tp] or 1); DVP[tp[0]][tp[1]]=round(1+(raw-1)*SHRINK,3)
@@ -565,6 +571,55 @@ def pull_injury_reports():
     log(f"  injury reports: {len(out)} players through week {wk} of {SEASON}")
     return out
 
+def pull_accuracy():
+    """In-season self-monitoring — how accurate have the projections ACTUALLY been this year?
+
+    Everything else here is a forecast; this is the receipt. It scores the consensus weekly projection
+    against real results as the season plays out (MAE per position) and re-measures the bias per position,
+    which is an early warning if the shipped bias correction drifts. Honest accountability, shown in the app.
+    Dormant in the pre-season — no games to score — like the other weekly feeds.
+    """
+    import io as _io, statistics as _st
+    POS=("QB","RB","WR","TE")
+    try: raw=get(_stats_week_url(SEASON),timeout=90).decode("utf-8","replace")
+    except Exception:
+        log("  accuracy: no current-season actuals yet — dormant"); return None
+    act={}
+    for r in csv.DictReader(_io.StringIO(raw)):
+        if (r.get("season_type") or "REG")!="REG": continue
+        if r.get("position") not in POS: continue
+        try: w=int(r["week"])
+        except Exception: continue
+        act[(norm(r.get("player_display_name") or ""),r["position"],w)]=_ff(r.get("fantasy_points_ppr"))
+    weeks=sorted({w for (_,_,w) in act})
+    if not weeks: log("  accuracy: no played weeks yet — dormant"); return None
+    posq="&".join(f"position[]={p}" for p in POS)
+    rows=[]
+    for w in weeks:
+        try: d=getj(f"https://api.sleeper.com/projections/nfl/{SEASON}/{w}?season_type=regular&{posq}&order_by=pts_ppr",timeout=60)
+        except Exception: continue
+        for it in d or []:
+            pl=it.get("player") or {}; p=pl.get("position")
+            if p not in POS: continue
+            pr=(it.get("stats") or {}).get("pts_ppr")
+            if pr is None or pr<3: continue
+            key=(norm((pl.get("first_name","")+" "+pl.get("last_name","")).strip()),p,w)
+            if key in act: rows.append((p,float(pr),act[key]))
+    if len(rows)<100:
+        log(f"  accuracy: only {len(rows)} scored player-weeks — too few, dormant"); return None
+    mae=sum(abs(pr-a) for _,pr,a in rows)/len(rows)
+    corr=None
+    try:
+        pj=[pr for _,pr,_ in rows]; ac=[a for _,_,a in rows]
+        mp,ma=_st.mean(pj),_st.mean(ac)
+        cov=sum((x-mp)*(y-ma) for x,y in zip(pj,ac)); sp=(sum((x-mp)**2 for x in pj))**.5; sa=(sum((y-ma)**2 for y in ac))**.5
+        corr=round(cov/(sp*sa),3) if sp and sa else None
+    except Exception: pass
+    bias={p:round(_st.mean([a-pr for pp,pr,a in rows if pp==p]),2) for p in POS if any(pp==p for pp,_,_ in rows)}
+    maeByPos={p:round(sum(abs(pr-a) for pp,pr,a in rows if pp==p)/max(1,sum(1 for pp,_,_ in rows if pp==p)),2) for p in POS}
+    log(f"  accuracy: scored {len(rows)} player-weeks through wk {max(weeks)} — consensus MAE {mae:.2f}, corr {corr}")
+    return {"weeks":max(weeks),"n":len(rows),"mae":round(mae,2),"corr":corr,"bias":bias,"maeByPos":maeByPos}
+
 def archive_projections(players):
     """Snapshot what we projected, before the games are played.
 
@@ -605,6 +660,7 @@ def build_data():
     dvp=pull_dvp()
     adv=pull_advanced()
     inj_reports=pull_injury_reports()
+    accuracy=pull_accuracy()
     if not ffc: raise RuntimeError("FFC returned nothing — aborting this cycle")
 
     # consensus per (pos,key)
@@ -808,7 +864,7 @@ def build_data():
 
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":(dvp or base["DVP"]),"DVP_LIVE":bool(dvp),"ADV_META":({"year":adv["year"],"current":adv["current"]} if adv else None),
-         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,"INJ_REPORTS":inj_reports,
+         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,"INJ_REPORTS":inj_reports,"MONITOR":accuracy,
          "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,

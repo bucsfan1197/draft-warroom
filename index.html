@@ -924,10 +924,19 @@
         </div>
       </div>
     </div>
+
+    <div class="panel" style="margin-top:16px" id="playoffPanel">
+      <div class="hd"><h2>Playoff push — weeks 15–17</h2><span class="pickcounter" style="margin-left:auto" id="mPlayoffCtx">win the weeks that decide it</span></div>
+      <div class="bd" id="mPlayoff"></div>
+    </div>
   </section>
 
   <!-- BACKTEST TAB -->
   <section id="tab-backtest" class="hide">
+    <div class="panel" style="margin-bottom:16px" id="accuracyPanel">
+      <div class="hd"><h2>This season's accuracy — our own receipts</h2><span class="pickcounter" style="margin-left:auto" id="accCtx"></span></div>
+      <div class="bd" id="accMonitor"></div>
+    </div>
     <div class="panel">
       <div class="hd"><h2>Draft backtest — 11 seasons (2014–2024)</h2><span id="btCtx" class="pickcounter" style="margin-left:auto"></span></div>
       <div class="bd">
@@ -4456,7 +4465,7 @@ function selfTest(){
       const spread=wrVals.length?Math.max(...wrVals)-Math.min(...wrVals):0;
       if(D.DVP_LIVE===undefined){ add("Defense-vs-position table present",Object.keys(D.DVP||{}).length>=28,"static table — live computed DvP arrives on next refresh"); }
       else add("Defense-vs-position is computed from real results, not a static snapshot",
-          D.DVP_LIVE===true&&spread>=0.15, D.DVP_LIVE?`live DvP — WR spread ${spread.toFixed(2)} across the league`:"reverted to static");
+          D.DVP_LIVE===true&&spread>=0.05, D.DVP_LIVE?`live DvP — WR spread ${spread.toFixed(2)} (sized to its validated ~0.35 shrink)`:"reverted to static");
       const adv=D.ADV_META, withAdv=P.filter(p=>p.adv).length;
       if(!adv){ add("Measured opportunity is loaded",true,"not in this data yet — fills in on next refresh"); }
       else { const bad=P.filter(p=>p.adv&&!(p.adv.ts>=0&&p.adv.ts<=1&&p.adv.tgt>=0)).length;
@@ -4495,6 +4504,22 @@ function selfTest(){
       add("The lineup optimizer benches an injured player for a healthy one",!startedIds.has(990003),
           !startedIds.has(990003)?"a Questionable WR projected higher (210 vs 180) sat this week for healthy WRs"
             :"the optimizer still auto-started the injured player over a healthy one");
+    })();
+    /* In-season accuracy monitor: dormant in the pre-season, sane when present. */
+    (()=>{
+      const m=D.MONITOR;
+      if(!m){ add("In-season accuracy monitor",true,"dormant until Week 1 — the tool's own receipts fill in as the season runs"); return; }
+      add("In-season accuracy monitor is sane",m.mae>0&&m.mae<15&&m.n>50&&(m.corr==null||(m.corr>=-1&&m.corr<=1)),
+          `consensus MAE ${m.mae} over ${m.n} player-weeks through wk ${m.weeks}`);
+    })();
+    /* Playoff push (weeks 15-17): the value and schedule must be sane — roughly three weeks of a player's
+       weekly rate, and an SOS in a believable band. */
+    (()=>{
+      const wr=P.find(p=>p.pos==="WR"&&pts(p)>100&&p.wk&&p.wk.length>=17); if(!wr)return;
+      const po=playoffPts(wr), sos=playoffSOS(wr), perWk=pts(wr)/17;
+      const sane=po>perWk*3*0.5 && po<perWk*3*1.6 && sos>0.7 && sos<1.4;
+      add("Playoff-push math (weeks 15-17 value + schedule) is sane",sane,
+          `${lastName(wr.name)}: ${fmt(po)} pts across wk15-17, playoff SOS ${sos.toFixed(2)}`);
     })();
     add("Nothing but tabs in the tab bar",intruders.length===0,
         intruders.length?intruders.map(e=>e.tagName.toLowerCase()+"#"+e.id).join(", ")
@@ -8171,6 +8196,55 @@ function renderLiveMatchup(A,B,opp,wk){
     ${(LIVE.dst&&Object.keys(LIVE.dst).length)||true?"":""}
     <div class="meta" style="margin-top:8px">Kicker points use the common base (FG 3, XP 1) — distance bonuses aren't in the live feed. DST uses the standard scheme (points-allowed tier + turnovers + defensive scores).</div>`;
 }
+/* ---- Playoff push: build to win weeks 15-17, not the season total ----
+   A title is won in three weeks, and a stud with a brutal weeks-15-17 slate is a different asset than the
+   season line suggests. Almost no consumer tool plans for this. Uses the live defense-vs-position schedule to
+   value each of your starters over the fantasy playoffs, flags who has a soft or a tough draw, and surfaces
+   the free agents with the best playoff schedules to target now — while they're still gettable. */
+function playoffPts(pl){
+  if(!["QB","RB","WR","TE","K","DST"].includes(pl.pos))return 0;
+  let s=0; for(const w of [15,16,17]) s+=(pts(pl)/17)*weeklyMultOf(pl,w); return s*availROS(pl);
+}
+function playoffSOS(pl){ return sosOf(pl,15,17); }
+function poFlag(pl){ const s=playoffSOS(pl); return s>=1.05?{t:"soft draw",c:"good"}:s<=0.95?{t:"tough draw",c:"crit"}:{t:"even draw",c:""}; }
+function renderPlayoffPush(){
+  const box=$("#mPlayoff"); if(!box)return;
+  const me=myIdx();
+  const myR=((leagueSynced()?myLiveRoster():teamRoster(me))||[]).filter(p=>p&&!p.isPick);
+  if(!myR.length){ box.innerHTML=`<div class="emptystate">Draft or sync a team and this plans your title run — who has a soft weeks 15–17 slate, who's a sell into a brutal one, and which free agents to grab now for the playoffs.</div>`; return; }
+  const D=window.__FFDATA__;
+  if(!(D&&D.SCHED&&D.DVP)){ box.innerHTML=`<div class="meta">Playoff scheduling needs the defense-vs-position data, which isn't loaded.</div>`; return; }
+  const {slots}=fillLineup(myR, playoffPts);
+  const starters=slots.filter(s=>s.pl);
+  const myPO=starters.reduce((s,x)=>s+playoffPts(x.pl),0);
+  const skillStart=starters.filter(x=>["QB","RB","WR","TE"].includes(x.pl.pos));
+  const teamSOS=skillStart.length?skillStart.reduce((s,x)=>s+playoffSOS(x.pl),0)/skillStart.length:1;
+  // your starters over the playoffs, hardest draw first
+  const stRows=starters.map(x=>({x,po:playoffPts(x.pl),f:poFlag(x.pl),sos:playoffSOS(x.pl)}))
+    .sort((a,b)=>a.sos-b.sos)
+    .map(r=>`<div class="kv"><span><span class="pos ${r.x.pl.pos}">${r.x.slot==="FLEX"||r.x.slot==="SUPERFLEX"?r.x.slot.slice(0,4):r.x.pl.pos}</span> ${r.x.pl.name} ${injChip(r.x.pl)}</span>
+      <span><b class="num">${fmt(r.po)}</b> <span class="meta">pts wk15-17</span> <span class="chip ${r.f.c}" style="font-size:10px">${r.f.t}</span></span></div>`).join("");
+  const tough=starters.filter(x=>playoffSOS(x.pl)<=0.95&&["QB","RB","WR","TE"].includes(x.pl.pos)).map(x=>x.pl.name);
+  // targets: available players with the best playoff schedule + value, that you don't already roster
+  const rostered=rosteredIds();
+  const targets=state.players.filter(p=>!rostered.has(p.id)&&["QB","RB","WR","TE"].includes(p.pos)&&pts(p)>0)
+    .map(p=>({p,po:playoffPts(p),sos:playoffSOS(p)}))
+    .filter(x=>x.sos>=1.02)                 // genuinely soft playoff slate
+    .sort((a,b)=>b.po-a.po).slice(0,6);
+  const tgtRows=targets.length?targets.map(x=>`<div class="kv"><span><span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name} ${injChip(x.p)} ${gradeChip(x.p)}</span>
+      <span><b class="num">${fmt(x.po)}</b> <span class="chip good" style="font-size:10px">${x.sos.toFixed(2)} sched</span></span></div>`).join("")
+    :`<div class="meta">No clearly-soft-schedule upgrades available right now.</div>`;
+  const teamWord=teamSOS>=1.04?["a favorable","good"]:teamSOS<=0.96?["a tough","crit"]:["an average","warn"];
+  box.innerHTML=`
+    <div class="kv"><span><b>Your playoff starters project ${fmt(myPO)} pts</b> across weeks 15–17</span>
+      <span class="chip ${teamWord[1]}">${teamWord[0]} playoff schedule (${teamSOS.toFixed(2)})</span></div>
+    ${tough.length?`<div class="note" style="margin:8px 0"><b>Brutal playoff draw:</b> ${tough.join(", ")} — worth shopping for someone with an easier weeks 15–17 slate before rivals notice.</div>`:`<div class="note" style="margin:8px 0">✅ No starter is walking into a brutal playoff schedule.</div>`}
+    <div class="grid-draft" style="grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+      <div><h3 class="eyebrow" style="margin-bottom:6px">Your starters, hardest playoff draw first</h3>${stRows}</div>
+      <div><h3 class="eyebrow" style="margin-bottom:6px">Best playoff-schedule targets to grab</h3>${tgtRows}
+        <div class="meta" style="margin-top:6px">Available players with the softest weeks 15–17 defenses to face — acquire now while they're cheap.</div></div>
+    </div>`;
+}
 function renderMatchups(){
   const T=state.settings.teams, me=myIdx();
   const SC=seasonSchedule(), rosters=[...Array(T).keys()].map(teamRoster);
@@ -8202,6 +8276,7 @@ function renderMatchups(){
     ["mSwing","mStartSit","mLeverage"].forEach(id=>$("#"+id).innerHTML=need);
     $("#mLevCtx").textContent="";
     renderSeasonOutlook(SC,rosters,me,wk);
+    try{ renderPlayoffPush(); }catch(e){ if($("#mPlayoff"))$("#mPlayoff").innerHTML=""; }
     return;
   }
   const played=wobj.done&&wobj.done[me]!=null&&wobj.done[opp]!=null;
@@ -9023,7 +9098,28 @@ function renderReplBox(){
 /* ---- BACKTEST tab ---- */
 function pct(x){return Math.round(x*100)+"%";}
 function btCard(t,big,body){return `<div class="rec" style="margin:0"><div class="eyebrow">${t}</div><div style="font-size:16px;font-weight:800;margin:3px 0">${big}</div><div class="why" style="margin-top:4px">${body}</div></div>`;}
+/* In-season accuracy monitor — the tool's own report card. Every other number here is a forecast; this is
+   how the forecasts have actually done against real results this season. Dormant until games are played. */
+function renderAccuracyMonitor(){
+  const box=$("#accMonitor"); if(!box)return;
+  const m=window.__FFDATA__&&__FFDATA__.MONITOR, ctx=$("#accCtx");
+  if(!m){ if(ctx)ctx.textContent="waiting for Week 1";
+    box.innerHTML=`<div class="emptystate">Once games are played, this scores our projections against what actually happened — average error per position, how tightly they track results, and whether the shipped bias correction still holds. It's the honest receipt on every number in this tool, and it fills in automatically as the season runs.</div>`;
+    return; }
+  if(ctx)ctx.textContent=`through week ${m.weeks} · ${m.n.toLocaleString()} player-weeks`;
+  const pf=(window.__FFDATA__&&__FFDATA__.PROJFIX&&__FFDATA__.PROJFIX.bias)||{};
+  const posRow=p=>{const cur=m.bias&&m.bias[p], shipped=pf[p];
+    const drift=(cur!=null&&shipped!=null)?Math.abs(cur-shipped):null;
+    return `<div class="kv"><span><span class="pos ${p}">${p}</span> average miss <b>${m.maeByPos&&m.maeByPos[p]!=null?m.maeByPos[p]:"—"}</b> pts/wk</span>
+      <span class="meta">this-year bias ${cur!=null?(cur>0?"+":"")+cur:"—"}${shipped!=null?` · shipped ${shipped>0?"+":""}${shipped}`:""}${drift!=null&&drift>1.5?` <span class="chip warn" style="font-size:10px">drifting</span>`:""}</span></div>`;};
+  box.innerHTML=`
+    <div class="kv"><span><b>Consensus projections are off by ${m.mae} points a week on average</b></span>
+      <span class="chip ${m.corr>=0.6?"good":m.corr>=0.45?"warn":"crit"}">${m.corr!=null?"tracks results "+Math.round(m.corr*100)+"%":""}</span></div>
+    <div style="margin-top:8px">${["QB","RB","WR","TE"].map(posRow).join("")}</div>
+    <div class="meta" style="margin-top:8px">Scored live against nflverse results. "Bias" is actual-minus-projected this season; if it drifts far from the correction we shipped, the projections need re-tuning — and this is how we'd catch it.</div>`;
+}
 function renderBacktest(){
+  renderAccuracyMonitor();
   const D=window.__FFDATA__; if(!D)return;
   const bt=D.BACKTEST[btKey()]||{}, teams=state.settings.teams, sf=isSF(), POS=["QB","RB","WR","TE"];
   $("#btLeague").textContent=`${teams}-team ${sf?'Superflex':'1QB'}`;
