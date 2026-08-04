@@ -4461,6 +4461,18 @@ function selfTest(){
           wbT.rows.every(r=>r.gain>0)&&wbT.rows.every(r=>r.bid>=0),
           wbT.rows.length?`${wbT.rows.length} targets, smallest +${wbT.rows[wbT.rows.length-1].gain.toFixed(1)} pts`
                          :"nothing on the wire cracks the lineup");
+      // FAAB bids must be MONOTONIC in marginal value — the biggest upgrade warrants the biggest bid.
+      // The old gap-to-next pricing was non-monotonic (a mid-tier player above a cliff could outbid #1).
+      add("FAAB bids rank with the upgrade — best pickup bids most",
+          wbT.rows.length<2||wbT.rows.every((r,i)=>i===0||r.bid<=wbT.rows[i-1].bid+0.5),
+          wbT.rows.length?`bids ${wbT.rows.slice(0,4).map(r=>"$"+r.bid).join(" ≥ ")}`:"no board");
+      // Week-aware availability: an OUT player scores 0 THIS week but isn't benched all season.
+      (()=>{ const wp=state.players.find(x=>x.pos==="WR"&&pts(x)>120); if(!wp)return;
+        const cw=Math.max(1,Math.min(13,state.ui.seasonWeek||1)), lw=cw+4, sv=wp.inj;
+        wp.inj="Out"; const tw=wkPts(wp,cw), fw=wkPts(wp,lw); wp.inj=sv;
+        add("An Out player is zero this week, not benched all season",tw<0.01&&fw>1,
+            `wk${cw} ${tw.toFixed(1)} → wk${lw} ${fw.toFixed(1)}`);
+      })();
     }
     /* Live draft intelligence, on a mid-draft board. The prediction must never spend one of YOUR
        picks (it forecasts opponents), must not predict more players gone than there are picks in
@@ -6975,7 +6987,12 @@ function availWeek(pl){
   const m=INJ_WEEK[s]; return m===undefined?1:m;
 }
 function availROS(pl){const m=pl.inj?INJ_ROS[pl.inj]:undefined;return m===undefined?1:m;}
-function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w)*availWeek(pl); }
+// Week-aware availability: THIS week uses the questionable/out tag (availWeek), later weeks use the
+// rest-of-season model (availROS) — a Questionable tag says nothing lasting, and an Out player this
+// week isn't out all season. Using availWeek for every week docked injured players across the whole
+// horizon and zeroed an Out player's entire rest-of-season, understating waiver/ROS value. Matches
+// the championship sim's unitAvail and rosPts.
+function wkPts(pl,w){ return (pts(pl)/17)*weeklyMultOf(pl,w)*unitAvail(pl,w); }
 /* A projection is a midpoint, not a promise. Every player already carries an outcome
    distribution (floor/ceil from 11 seasons of actual spread by position and ADP rank); these
    surface it as an explicit range so a 12.0 with a 4–23 spread never reads like a safe 12.
@@ -8130,7 +8147,10 @@ function moveOdds(add,drop,iters){
    free agents by their own projection answers "who is good"; this answers "who helps me", and
    they are different lists. */
 function lineupWeekPts(roster,w){
-  const {slots}=fillLineup(roster.filter(p=>p.bye!==w));
+  // Choose the lineup by the SAME week-w value it's scored on (matchup + availability), not by
+  // season points — otherwise a great week-w matchup play gets benched for a higher season-average
+  // body and its marginal value reads as zero.
+  const {slots}=fillLineup(roster.filter(p=>p.bye!==w), p=>wkPts(p,w));
   return slots.reduce((s,x)=>s+(x.pl?wkPts(x.pl,w):0),0);
 }
 function marginalROS(add,roster,from,to){
@@ -8197,18 +8217,21 @@ function waiverBoard(roster,from,to,limit){
   const short=fa.sort((a,b)=>rosPts(b,from)-rosPts(a,from)).slice(0,90);
   const rows=short.map(p=>({p,gain:marginalROS(p,base,from,to)}))
                   .filter(x=>x.gain>0.05).sort((a,b)=>b.gain-a.gain).slice(0,limit||12);
-  /* FAAB priced off the alternative, not off the player. What a claim is worth is the gap
-     between him and whoever you could add for a dollar instead — if the next name down does
-     almost the same job, the right bid is almost nothing, however good he looks. The budget is
-     then split across those gaps. Stated as a share of REMAINING budget, because the published
-     advice everyone quotes is inconsistent about that and mostly means remaining. */
-  const totalGap=rows.reduce((s,r,i)=>s+Math.max(0,r.gain-(rows[i+1]?rows[i+1].gain:0)),0)||1;
+  /* FAAB priced off the alternative you could add cheaply — the weakest useful piece on the board —
+     so a claim's worth is how much he beats that floor, and the budget is split across those excesses.
+     This is MONOTONIC: the biggest upgrade always warrants the biggest bid, and when the wire is a
+     tight cluster every excess is small so nothing is overpaid. The old version priced each name by
+     the one-step gap to the VERY next name, which is non-monotonic — it handed the largest bid to
+     whoever sat just above a cliff, so the #1 pickup could show a token bid while #2 showed most of
+     the budget. Stated as a share of REMAINING budget, which is what published advice usually means. */
+  const floorGain=rows.length>1?rows[rows.length-1].gain:0;   // the weakest add shown = the cheap alternative
+  const totalExcess=rows.reduce((s,r)=>s+Math.max(0,r.gain-floorGain),0)||1;
   const spent=state.picks.filter(p=>p.teamIdx===myIdx()).reduce((s,p)=>s+(p.faab||0),0);
   const remaining=Math.max(0,(state.settings.faab||100)-spent);
-  rows.forEach((r,i)=>{
-    r.gap=Math.max(0,r.gain-(rows[i+1]?rows[i+1].gain:0));
-    r.bidPct=Math.round(r.gap/totalGap*100);
-    r.bid=Math.round(remaining*r.gap/totalGap);
+  rows.forEach(r=>{
+    r.gap=Math.max(0,r.gain-floorGain);
+    r.bidPct=Math.round(r.gap/totalExcess*100);
+    r.bid=Math.round(remaining*r.gap/totalExcess);
     r.noise=belowNoise(r.p,r.gain,from,to);
     r.drop=drop;
   });
