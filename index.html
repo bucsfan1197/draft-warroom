@@ -1155,7 +1155,7 @@
   <section id="tab-team" class="hide">
     <div class="panel" style="margin-bottom:16px">
       <div class="hd"><h2>How good is my team?</h2>
-        <button class="ghost sm hide" id="teamReportBtn" style="margin-left:auto">🤖 GM report</button></div>
+        <button class="ghost sm hide" id="teamReportBtn" style="margin-left:auto">🤖 Fix-it plan</button></div>
       <div class="bd"><div id="teamReport"></div><div id="teamAIReport" class="aiwhyout"></div></div>
     </div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr">
@@ -2756,16 +2756,20 @@ function aiRosterContext(){
         const old=ages.filter(p=>p.age>=29).map(p=>`${p.name} ${p.age}`), young=ages.filter(p=>p.age<=24).map(p=>`${p.name} ${p.age}`);
         L.push(`Dynasty age: avg starter ${avgAge.toFixed(1)}. Win-now vets (29+): ${old.join(", ")||"none"}. Young core (≤24): ${young.join(", ")||"none"}. Window setting: ${s.window||"balanced"}.`); }
     }
+    try{ const wb=waiverBoard(mine,state.ui.seasonWeek||1,18,4);
+      if(wb&&wb.rows&&wb.rows.length)L.push(`Best waiver upgrades available now (points added to your starting lineup, suggested FAAB): ${wb.rows.slice(0,4).map(r=>`${r.p.name} (${r.p.pos}) +${fmt(r.gain)}pts ~$${r.bid}`).join("; ")}${wb.drop?`; cheapest drop is ${wb.drop.name}`:""}.`);
+    }catch(e){}
   }catch(e){ L.push("(some roster detail unavailable this render)"); }
   return L.join("\n");
 }
 async function aiRosterReport(){
   const out=$("#teamAIReport"), btn=$("#teamReportBtn"); if(!out)return;
-  out.innerHTML=`<span class="aithinking">grading your roster…</span>`; if(btn)btn.disabled=true;
+  out.innerHTML=`<span class="aithinking">building your plan…</span>`; if(btn)btn.disabled=true;
   try{
     const ans=await askAI(aiRosterContext(),
-      `Give me a straight state-of-my-roster read in 4-5 sentences: my biggest strength, my most urgent hole, whether I'm built to contend now or should think longer-term, and the single highest-leverage move to make. Use the numbers. Be specific and decisive — no hedging.`);
-    out.innerHTML=aiFmt(ans);
+      `Give me a fix-it plan for my team as exactly 3 ranked moves, most impactful first, one per category: (1) a **trade** to pursue (buy my weakest slot, or sell from a strength), (2) a **waiver add** worth making (name the player and FAAB), (3) a **lineup / roster** tweak (a start/sit lean, a bye-week gap, or a drop). One tight line each with the reason and the number. Lead with a one-line verdict: contender, bubble, or rebuild. Be specific and decisive.`);
+    out.innerHTML=aiFmt(ans)+`<div class="brief-jump" id="teamPlanJump"><button class="ghost sm" data-jump="trade">Trades →</button><button class="ghost sm" data-jump="waivers">Waiver Wire →</button><button class="ghost sm" data-jump="season">Start / Sit →</button></div>`;
+    out.querySelectorAll("#teamPlanJump [data-jump]").forEach(b=>b.onclick=()=>showTab(b.dataset.jump));
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
 }
