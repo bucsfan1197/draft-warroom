@@ -1247,6 +1247,10 @@
       <div class="hd"><h2>Playoff push — weeks 15–17</h2><span class="pickcounter" style="margin-left:auto" id="mPlayoffCtx">win the weeks that decide it</span></div>
       <div class="bd" id="mPlayoff"></div>
     </div>
+    <div class="panel" style="margin-top:16px" id="ledgerPanel">
+      <div class="hd"><h2>Your weekly receipts</h2><span class="pickcounter" style="margin-left:auto">predicted vs. actual — the honest scoreboard</span></div>
+      <div class="bd" id="ledgerBox"></div>
+    </div>
   </section>
 
   <!-- BACKTEST TAB -->
@@ -9568,11 +9572,63 @@ function renderPlayoffPush(){
         <div class="meta" style="margin-top:6px">Available players with the softest weeks 15–17 defenses to face — acquire now while they're cheap.</div></div>
     </div>`;
 }
+/* ---- WEEKLY RECEIPTS LEDGER ----
+   The honest counterweight to every projection claim: a running record of what this app predicted
+   for YOUR team versus what actually happened. Captured automatically when you view your matchup —
+   the pregame projection and win probability get frozen, and once the week is final the real result
+   is filled in. Nothing to maintain; it just accumulates a track record you can hold the tool to. */
+function ledgerKey(){ return (leagueSynced()&&TRADE.leagueId)?String(TRADE.leagueId):"local"; }
+function ledgerBook(){ try{ return (JSON.parse(localStorage.getItem("ffwr_ledger")||"{}"))[ledgerKey()]||{}; }catch(e){ return {}; } }
+function ledgerCapture(wk,sim,played,wobj,me,opp){
+  const all=(()=>{try{return JSON.parse(localStorage.getItem("ffwr_ledger")||"{}");}catch(e){return {};}})();
+  const book=all[ledgerKey()]=all[ledgerKey()]||{};
+  const cur=book[wk]||{};
+  if(played&&wobj&&wobj.done){
+    cur.actual=+(+wobj.done[me]).toFixed(1); cur.oppActual=+(+wobj.done[opp]).toFixed(1);
+    cur.won=wobj.done[me]>wobj.done[opp]?1:(wobj.done[me]<wobj.done[opp]?0:0.5);
+  }else if(sim&&sim.a){
+    // pregame — keep refreshing until the week is played, then it freezes (the branch above only fills actuals)
+    cur.proj=+sim.a.mean.toFixed(1); cur.oppProj=+sim.b.mean.toFixed(1); cur.winProb=+sim.p.toFixed(3);
+  }
+  book[wk]=cur; localStorage.setItem("ffwr_ledger",JSON.stringify(all));
+}
+function ledgerStats(book){
+  const wks=Object.keys(book).map(Number).sort((a,b)=>a-b).map(w=>Object.assign({week:w},book[w]));
+  const scored=wks.filter(r=>r.proj!=null&&r.actual!=null);
+  const called=wks.filter(r=>r.winProb!=null&&r.won!=null);
+  const mae=scored.length?scored.reduce((s,r)=>s+Math.abs(r.proj-r.actual),0)/scored.length:null;
+  const bias=scored.length?scored.reduce((s,r)=>s+(r.proj-r.actual),0)/scored.length:null;
+  const brier=called.length?called.reduce((s,r)=>s+Math.pow(r.winProb-r.won,2),0)/called.length:null;
+  const favored=called.filter(r=>r.winProb>=0.5);
+  const favW=favored.reduce((s,r)=>s+(r.won>=1?1:0),0);
+  return {wks,scored,called,mae,bias,brier,favored:favored.length,favW};
+}
+function renderLedger(){
+  const box=$("#ledgerBox"); if(!box)return;
+  const st=ledgerStats(ledgerBook());
+  if(!st.wks.length){ box.innerHTML=`<div class="emptystate">No games yet. Each week you open your matchup, this freezes the app's pregame projection and win probability for your team, then records the real result — building an honest track record you can hold it to.</div>`; return; }
+  const row=r=>{
+    const proj=r.proj!=null?fmt(r.proj):"—", act=r.actual!=null?fmt(r.actual):"—";
+    const err=(r.proj!=null&&r.actual!=null)?`${r.actual-r.proj>=0?"+":""}${fmt(r.actual-r.proj)}`:"";
+    const wp=r.winProb!=null?Math.round(r.winProb*100)+"%":"—";
+    const res=r.won==null?'<span class="meta">pending</span>':r.won>=1?'<span class="chip good">W</span>':r.won<=0?'<span class="chip crit">L</span>':'<span class="chip">T</span>';
+    const hit=(r.winProb!=null&&r.won!=null)?((r.winProb>=0.5)===(r.won>=1)?"✓":"✗"):"";
+    return `<div class="kv"><span><b>Wk ${r.week}</b> <span class="meta">proj ${proj} · actual ${act}${err?` (${err})`:""}</span></span>
+      <span class="meta">called ${wp} ${res} ${hit}</span></div>`;
+  };
+  const sum=[];
+  if(st.mae!=null) sum.push(`Projection error: <b>${fmt(st.mae)} pts</b> per week${st.bias!=null?` (${st.bias>=0?"over":"under"}-projects by ${fmt(Math.abs(st.bias))})`:""}, over ${st.scored.length} game${st.scored.length>1?"s":""}.`);
+  if(st.brier!=null) sum.push(`Win-prob Brier score: <b>${st.brier.toFixed(3)}</b> — lower is better; 0.25 is a coin flip, and calibrated forecasting beats that.`);
+  if(st.favored) sum.push(`When it favored you, you went <b>${st.favW}-${st.favored-st.favW}</b>.`);
+  box.innerHTML=st.wks.map(row).join("")
+    +(sum.length?`<div class="note" style="margin-top:10px">${sum.join(" ")}</div>`:"");
+}
 function renderMatchups(){
   // bridge-aware: a synced league fills TRADE.teams, not state.picks, so use liveRosters()/myTeamIdx() —
   // the same source the season sim and playoff push use. Draft mode is unchanged (the bridge falls through
   // to teamRoster/myIdx). Without this the whole "this week" side of the tab was blank for synced leagues.
   if($("#mWinBtn"))$("#mWinBtn").classList.toggle("hide",!aiConfigured());
+  try{ renderLedger(); }catch(e){}   // receipts panel reads its own store, independent of lineup state
   const T=state.settings.teams, me=myTeamIdx();
   const SC=seasonSchedule(), rosters=liveRosters();
   const filled=leagueSynced()?1:(state.picks.length/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0)));
@@ -9608,6 +9664,7 @@ function renderMatchups(){
   }
   const played=wobj.done&&wobj.done[me]!=null&&wobj.done[opp]!=null;
   const sim=simMatchup(A.starters,B.starters,3000);
+  try{ ledgerCapture(wk,sim,played,wobj,me,opp); }catch(e){}
 
   const pct=Math.round(sim.p*100), word=oddsWord(sim.p);
   const maxHi=Math.max(sim.a.hi,sim.b.hi)||1;
