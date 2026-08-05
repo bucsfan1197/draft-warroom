@@ -977,7 +977,7 @@
         </div>
         <div class="panel" style="margin-bottom:14px">
           <div class="hd"><h2>Picks so far</h2>
-            <span class="seg" id="logMode" style="margin-left:auto;transform:scale(.85);transform-origin:right">
+            <span class="seg segsm" id="logMode" style="margin-left:auto">
               <button data-v="feed" class="on">List</button><button data-v="board">Board</button></span></div>
           <div class="bd"><div id="pickLog"></div></div>
         </div>
@@ -3582,7 +3582,7 @@ function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show"
    rest dirty, and showTab draws a dirty tab the moment you open it. The pick clock and header
    stay global because the timer can auto-draft while you're reading another tab. */
 const TAB_RENDER={
-  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderDraftTiers();renderDraftIntel();},
+  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderDraftTiers();renderDraftIntel();renderDraftForward();},
   team:    ()=>renderTeamTab(),
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
