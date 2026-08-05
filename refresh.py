@@ -959,12 +959,38 @@ def git_push():
         subprocess.run(["git","-C",HERE,"commit","-m",f"data update {time.strftime('%Y-%m-%d %H:%M')}"],check=True)
         subprocess.run(["git","-C",HERE,"push"],check=True)
         log("git: pushed OK - your live site will update in ~1 min")
+        return True
     except Exception as ex:
         log("git push failed (is the repo set up? see README):",ex)
+    return False
+
+def keepalive():
+    """GitHub disables a SCHEDULED workflow after 60 days with no repo commits. In-season the data
+    commits on its own; this only fires in a dead offseason where nothing changed for a week, adding
+    one trivial heartbeat commit so the schedule never auto-pauses and you never have to touch it.
+    The timestamp lives in the committed file (not the filesystem mtime, which resets on each CI
+    checkout), so the weekly gate survives fresh runners."""
+    if not GIT_PUSH: return
+    hb=os.path.join(HERE,".heartbeat")
+    try:
+        last=0
+        if os.path.exists(hb):
+            try: last=int(json.load(open(hb)).get("ts",0))
+            except Exception: last=0
+        if time.time()-last < 6*86400: return         # at most one heartbeat a week
+        json.dump({"ts":int(time.time()),"utc":time.strftime("%Y-%m-%d %H:%M")},open(hb,"w"))
+        subprocess.run(["git","-C",HERE,"add",".heartbeat"],check=True)
+        subprocess.run(["git","-C",HERE,"commit","-m",f"keepalive {time.strftime('%Y-%m-%d')}"],check=True)
+        subprocess.run(["git","-C",HERE,"push"],check=True)
+        log("keepalive: heartbeat committed — schedule stays active")
+    except Exception as ex:
+        log("keepalive skipped:",ex)
 
 def cycle():
     try:
-        data=build_data(); write_data_js(data); git_push()
+        data=build_data(); write_data_js(data)
+        pushed=git_push()
+        if not pushed: keepalive()   # only when real data didn't change this cycle
     except Exception:
         log("cycle error:\n"+traceback.format_exc())
 
