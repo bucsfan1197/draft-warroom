@@ -1672,6 +1672,9 @@
               <div class="seg" id="s_waiverType"><button data-v="faab" class="on">FAAB</button><button data-v="priority">Priority</button></div>
             </div>
             <div class="field" id="faabField"><label>FAAB budget ($)</label><input type="number" id="s_faab" min="0" step="1"></div>
+            <div class="field"><label>Median scoring <span class="meta">(2nd W/L vs league median)</span></label>
+              <div class="seg" id="s_median"><button data-v="0" class="on">Off</button><button data-v="1">On</button></div>
+            </div>
           </div>
           <div class="note" style="margin-top:10px"><b>ESPN</b> = live ESPN ADP (+ superflex board); <b>Yahoo</b> = Yahoo ADP (1QB); <b>FFC</b> = Fantasy Football Calculator consensus (1QB + true superflex). <b>Sleeper</b> = live Sleeper ADP (1QB, superflex and dynasty). You can also <b>paste any list</b> below to use as a “Custom” source.</div>
           <button class="ghost" id="adpPasteToggle" style="margin-top:8px;font-size:12px">＋ Paste custom ADP (Sleeper, etc.)</button>
@@ -2045,7 +2048,7 @@ function buildPlayers(){
 }
 function freshState(){
   return {
-    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,faab:100,waiverType:"faab",tradeDeadline:null,usageBlend:true,_projv:21},
+    settings:{teams:12,slot:6,snake:1,roster:{...DEF_ROSTER},scoring:{...DEF_SCORING},format:"redraft",window:"balanced",pickClock:0,adpSource:"ffc",bestball:false,auction:false,budget:200,faab:100,waiverType:"faab",tradeDeadline:null,medianMatch:false,usageBlend:true,_projv:21},
     players:buildPlayers(),
     picks:[], // [{playerId, teamIdx}]
     ui:{sort:"vorp",dir:-1,posFilter:"ALL",search:"",hideDrafted:true,psort:"proj",pdir:-1,pposFilter:"ALL",psearch:"",pview:"season",pdetail:0,popen:null,injScope:"mine",wwPos:"ALL"}
@@ -2956,8 +2959,8 @@ async function aiBacktestBrief(){
    bounds-checked JSON; the app applies it — so a bad parse can't produce a wild setting, and
    everything it sets is a normal field the user can see and edit right below. */
 const AI_SETUP_SYS=`You extract fantasy-football league settings from a description and return ONLY a JSON object — no prose, no markdown fences. Include ONLY keys you can determine from the text; omit everything else.
-Schema: {"teams":int,"format":"redraft"|"dynasty"|"keeper","superflex":bool,"roster":{"QB":int,"RB":int,"WR":int,"TE":int,"FLEX":int,"SUPERFLEX":int,"K":int,"DST":int,"BENCH":int},"scoring":{"passYd":num,"passTd":num,"int":num,"rushYd":num,"rushTd":num,"rec":num,"recYd":num,"recTd":num,"fl":num},"waiverType":"faab"|"priority","faab":int,"tradeDeadline":int}
-Rules: passYd/recYd/rushYd are POINTS PER YARD (1 pt per 25 yds = 0.04; 1 per 10 = 0.1). rec is points per reception (full PPR=1, half=0.5, standard=0). fl = fumble lost. Superflex/2QB → "superflex":true. FAAB/blind-bid budget → "waiverType":"faab" with "faab" = the dollar budget; rolling/reverse waiver priority → "waiverType":"priority". tradeDeadline = the week number trades close. Output valid JSON only.`;
+Schema: {"teams":int,"format":"redraft"|"dynasty"|"keeper","superflex":bool,"roster":{"QB":int,"RB":int,"WR":int,"TE":int,"FLEX":int,"SUPERFLEX":int,"K":int,"DST":int,"BENCH":int},"scoring":{"passYd":num,"passTd":num,"int":num,"rushYd":num,"rushTd":num,"rec":num,"recYd":num,"recTd":num,"fl":num},"waiverType":"faab"|"priority","faab":int,"tradeDeadline":int,"medianMatch":bool}
+Rules: passYd/recYd/rushYd are POINTS PER YARD (1 pt per 25 yds = 0.04; 1 per 10 = 0.1). rec is points per reception (full PPR=1, half=0.5, standard=0). fl = fumble lost. Superflex/2QB → "superflex":true. FAAB/blind-bid budget → "waiverType":"faab" with "faab" = the dollar budget; rolling/reverse waiver priority → "waiverType":"priority". tradeDeadline = the week number trades close. medianMatch = true if every team also plays the league median/average score each week (a second weekly W/L). Output valid JSON only.`;
 async function aiSetupApply(){
   const out=$("#setupAiOut"), btn=$("#setupAiBtn"), txt=($("#setupPasteText")&&$("#setupPasteText").value||"").trim();
   if(!out)return;
@@ -2980,6 +2983,7 @@ async function aiSetupApply(){
     if(obj.waiverType==="faab"||obj.waiverType==="priority"){ s.waiverType=obj.waiverType; changed.push(obj.waiverType==="faab"?"FAAB waivers":"waiver priority"); }
     if(num(obj.faab,0,1000)){ s.faab=Math.round(obj.faab); if(s.waiverType==="priority")s.waiverType="faab"; changed.push(`$${s.faab} FAAB`); }
     if(num(obj.tradeDeadline,1,18)){ s.tradeDeadline=Math.round(obj.tradeDeadline); changed.push(`trade deadline wk ${s.tradeDeadline}`); }
+    if(typeof obj.medianMatch==="boolean"){ s.medianMatch=obj.medianMatch; changed.push(obj.medianMatch?"median scoring":"no median scoring"); }
     if(!changed.length){ out.innerHTML=`<span class="meta">Couldn't find recognizable settings in that text. Try including team count, PPR type, and your starting lineup.</span>`; }
     else { SIMCACHE={key:null}; loadSetupInputs(); renderAll(); save();
       out.innerHTML=`<b>✅ Applied:</b> ${changed.join(" · ")}. Everything below is updated — review and tweak anything that's off.`; }
@@ -6056,6 +6060,8 @@ function applyLeagueSettings(lg){
   if(lgs.waiver_type!=null)state.settings.waiverType=lgs.waiver_type===2?"faab":lgs.waiver_type===1?"reverse":"priority";
   if(lgs.waiver_budget!=null)state.settings.faab=+lgs.waiver_budget;
   if(lgs.trade_deadline!=null)state.settings.tradeDeadline=+lgs.trade_deadline;
+  // Median / "everyone plays the league median" scoring: each week is a second W/L vs the median score.
+  if(lgs.league_average_match!=null)state.settings.medianMatch=(+lgs.league_average_match)===1;
   SIMCACHE={key:null}; SEASONSIM={key:null};
   return applied;
 }
@@ -7709,6 +7715,7 @@ function seedTeams(order,nSeeds){
   const winSet=new Set(winners);
   return winners.concat(order.filter(t=>!winSet.has(t))).slice(0,nSeeds);
 }
+function medianOf(arr){ const a=arr.slice().sort((x,y)=>x-y), n=a.length; if(!n)return 0; return n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2; }
 function simTitle(rosters,slots,iters){ return simOdds(rosters,slots,iters).title; }
 /* The championship simulator, now reporting BOTH the odds of making the playoffs and the odds of
    winning it all, for your team. Playoffs is the more actionable number and moves the most; the
@@ -7721,6 +7728,7 @@ function simOdds(rosters,slots,iters){
   const nSeeds=Math.min(T,S?S.playoffTeams:6);
   const from=Math.max(1,Math.min(regEnd+1,state.ui.seasonWeek||1));
   const wpr=S&&S.weeksPerRound?S.weeksPerRound:1;
+  const medianOn=!!state.settings.medianMatch;   // each week is also a W/L vs the league median score
   const lastW=Math.min(18,S&&S.playoffEnd?S.playoffEnd:pStart+3);
   // picks are assets, not starters — they never score
   const lineups=rosters.map(r=>lineupOnSlots((r||[]).filter(p=>p&&!p.isPick),slots,p=>pts(p)*availROS(p)).chosen.map(p=>{
@@ -7740,6 +7748,8 @@ function simOdds(rosters,slots,iters){
       (pairs||[]).forEach(({a,b})=>{ const pa=res[a],pb=res[b];
         if(pa==null||pb==null)return; if(pa>pb)rec0[a]++; else if(pb>pa)rec0[b]++; else {rec0[a]+=0.5;rec0[b]+=0.5;} });
       Object.keys(res).forEach(k=>pf0[+k]+=res[k]);
+      if(medianOn){ const med=medianOf(Object.values(res));
+        Object.keys(res).forEach(k=>{ if(res[k]>med)rec0[+k]++; else if(res[k]===med)rec0[+k]+=0.5; }); }
     }
   }
   for(let it=0;it<N;it++){
@@ -7762,6 +7772,8 @@ function simOdds(rosters,slots,iters){
       const pairs=(S&&S.sched[w])||null;
       if(pairs){ pairs.forEach(({a,b})=>{ if(wk[a][w]>wk[b][w])rec[a]++; else if(wk[b][w]>wk[a][w])rec[b]++; }); }
       else { for(let i=0;i<T;i++){ const opp=(i+w)%T; if(opp!==i&&wk[i][w]>wk[opp][w])rec[i]+=0.5; } }
+      if(medianOn){ const scores=[]; for(let t=0;t<T;t++)scores.push(wk[t][w]); const med=medianOf(scores);
+        for(let t=0;t<T;t++){ if(wk[t][w]>med)rec[t]++; else if(wk[t][w]===med)rec[t]+=0.5; } }
       for(let t=0;t<T;t++)pf[t]+=wk[t][w];
     }
     const seeds=seedTeams([...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])),nSeeds);
@@ -8712,18 +8724,23 @@ function simSeason(iters,override){
   const teamSd=rosters.map((r,ti)=>{ const m={}; SC.weeks.forEach(w=>U[w.week][ti].forEach(u=>{ if(m[u.pl.id]==null)m[u.pl.id]=u.sd; })); return m; });
   const made=new Array(T).fill(0), wins=new Array(T).fill(0), pfs=new Array(T).fill(0);
   const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
+  const medianOn=!!state.settings.medianMatch;   // second W/L each week vs the league median
   for(let it=0;it<N;it++){
     const sf=teamSd.map(m=>{ const o={}; for(const id in m)o[id]=seasonFactor(m[id]); return o; });
     const scoreOf=(ti,units)=>units.reduce((s,u)=>s+u.base*u.mult*(sf[ti][u.pl.id]||1)*weekFactor(u.cv),0);
     const w=new Array(T).fill(0), pf=new Array(T).fill(0);
     SC.weeks.forEach(wk=>{
+      const sc={};
       wk.pairs.forEach(([a,b])=>{
         let sa,sb;
         if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){ sa=wk.done[a]; sb=wk.done[b]; }
         else { sa=scoreOf(a,U[wk.week][a]||[]); sb=scoreOf(b,U[wk.week][b]||[]); }
+        sc[a]=sa; sc[b]=sb;
         pf[a]+=sa; pf[b]+=sb;
         if(sa>sb)w[a]++; else if(sb>sa)w[b]++; else {w[a]+=.5;w[b]+=.5;}
       });
+      if(medianOn){ const med=medianOf(Object.values(sc));
+        for(const k in sc){ if(sc[k]>med)w[+k]++; else if(sc[k]===med)w[+k]+=0.5; } }
     });
     seedTeams([...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])),nSeeds).forEach(i=>made[i]++);
     for(let i=0;i<T;i++){wins[i]+=w[i];pfs[i]+=pf[i];}
@@ -9329,11 +9346,12 @@ function renderSeasonOutlook(SC,rosters,me,wk){
     ? [...Array(T).keys()].sort((x,y)=>((S_.teamDiv[x]||99)-(S_.teamDiv[y]||99))||(S[y].wins-S[x].wins)||(S[y].pf-S[x].pf))
     : [...Array(T).keys()].sort((x,y)=>S[y].playoff-S[x].playoff||S[y].wins-S[x].wins);
   const divLeader={}; if(hasDiv)order.forEach(i=>{ const d=S_.teamDiv[i]; if(d!=null&&divLeader[d]==null)divLeader[d]=i; });
+  const medOn=!!state.settings.medianMatch;
   $("#standingsBody").innerHTML=order.map(i=>{
-    const r=S[i], g=Math.max(1,r.games), po=Math.round(r.playoff*100);
+    const r=S[i], g=Math.max(1,r.games)*(medOn?2:1), po=Math.round(r.playoff*100);
     const dn=hasDiv?divName(i):null, isLead=hasDiv&&divLeader[S_.teamDiv[i]]===i;
     return `<tr${i===me?' style="background:var(--accent-soft)"':''}>
-      <td>${i===me?"★ ":""}${teamLabel(i)}${dn?` <span class="chip"${isLead?' title="Division leader — projected top seed"':''}>${isLead?"🏆 ":""}${dn}</span>`:""}</td>
+      <td>${i===me?"★ ":""}${teamLabel(i)}${dn?` <span class="chip"${isLead?' title="Division leader — projected top seed"':''}>${isLead?"🏆 ":""}${dn}</span>`:""}${medOn&&i===order[0]?` <span class="chip" title="Each week is also a game vs the league median">median</span>`:""}</td>
       <td class="r num">${r.wins.toFixed(1)}-${(g-r.wins).toFixed(1)}</td>
       <td class="r num meta">${fmt(r.pf/g)}</td>
       <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
@@ -10697,6 +10715,7 @@ function loadSetupInputs(){
   const wt=s.waiverType||"faab";
   $$("#s_waiverType button").forEach(b=>b.classList.toggle("on",b.dataset.v===(wt==="faab"?"faab":"priority")));
   $("#s_faab").value=s.faab!=null?s.faab:100; $("#faabField").classList.toggle("hide",wt!=="faab");
+  $$("#s_median button").forEach(b=>b.classList.toggle("on",(b.dataset.v==="1")===!!s.medianMatch));
   Object.keys(DEF_ROSTER).forEach(k=>$("#r_"+k).value=s.roster[k]);
   Object.keys(DEF_SCORING).forEach(k=>$("#sc_"+k).value=s.scoring[k]);
   $$("#s_ppr button").forEach(b=>b.classList.toggle("on",+b.dataset.v===s.scoring.rec));
@@ -10763,6 +10782,7 @@ function wireSetup(){
   $("#s_budget").oninput=e=>{state.settings.budget=Math.max(1,+e.target.value||200);renderAll();};
   $$("#s_waiverType button").forEach(b=>b.onclick=()=>{state.settings.waiverType=b.dataset.v;loadSetupInputs();renderAll();flash(b.dataset.v==="faab"?"FAAB waivers":"Waiver priority");});
   $("#s_faab").oninput=e=>{state.settings.faab=Math.max(0,+e.target.value||0);renderAll();};
+  $$("#s_median button").forEach(b=>b.onclick=()=>{state.settings.medianMatch=(b.dataset.v==="1");SIMCACHE={key:null};SEASONSIM={key:null};loadSetupInputs();renderAll();flash(state.settings.medianMatch?"Median scoring on":"Median scoring off");});
   Object.keys(DEF_ROSTER).forEach(k=>$("#r_"+k).oninput=e=>{state.settings.roster[k]=Math.max(0,+e.target.value||0);renderAll();});
   Object.keys(DEF_SCORING).forEach(k=>$("#sc_"+k).oninput=e=>{state.settings.scoring[k]=+e.target.value||0;if(k==='rec')loadSetupInputs();renderAll();});
   $$("#s_ppr button").forEach(b=>b.onclick=()=>{state.settings.scoring.rec=+b.dataset.v;loadSetupInputs();renderAll();});
