@@ -663,15 +663,33 @@ def build_data():
 
     # consensus per (pos,key)
     PF_BIAS=(BASE.get("PROJFIX") or {}).get("bias") or {}
+    # Accuracy-weighted ensemble: once a season plays out, tools_ensemble.py fits per-position
+    # ESPN/Sleeper weights on proj_archive.csv and writes ensemble.json ONLY if they beat the equal
+    # blend out of sample. Consume them here so the validated weights actually reach the projection;
+    # absent the file (pre-season, or weighting didn't beat equal) this is empty and the blend stays
+    # the plain average — byte-for-byte the previous behaviour.
+    ENS_W={}
+    try:
+        _ep=os.path.join(HERE,"ensemble.json")
+        if os.path.exists(_ep): ENS_W=(json.load(open(_ep,encoding="utf-8")) or {}).get("weights") or {}
+    except Exception as ex: log("  ensemble.json unreadable, using equal blend:",ex)
+    if ENS_W: log(f"  ensemble: accuracy-weighted blend active {ENS_W}")
     def cons(pos,key):
         e=espn_proj.get((pos,key)); s=slw.get((pos,key))
         seas=[v["season"] for v in (e,s) if v and v.get("season")]
         if not seas: return None
+        # weights only apply when BOTH sources are present (the weighting was fit on ESPN-vs-Sleeper);
+        # with one source, or no fitted weights, fall back to the equal average.
+        ew=ENS_W.get(pos) if (ENS_W and e and s and e.get("season") is not None and s.get("season") is not None) else None
         wk=[]
         for i in range(18):
-            vs=[v["wk"][i] for v in (e,s) if v and v.get("wk") and v["wk"][i]>0]
-            wk.append(round(sum(vs)/len(vs),2) if vs else 0.0)
-        base_s=sum(seas)/len(seas)
+            ve=e["wk"][i] if (e and e.get("wk") and e["wk"][i]>0) else None
+            vs=s["wk"][i] if (s and s.get("wk") and s["wk"][i]>0) else None
+            if ew and ve is not None and vs is not None: wk.append(round(ew[0]*ve+ew[1]*vs,2))
+            else:
+                got=[x for x in (ve,vs) if x is not None]
+                wk.append(round(sum(got)/len(got),2) if got else 0.0)
+        base_s=(ew[0]*e["season"]+ew[1]*s["season"]) if ew else sum(seas)/len(seas)
         # Apply the measured, cross-validated bias correction to the SHIPPED consensus blend at FULL
         # strength (see pull_sleeper_weekly for the rationale). Faded in above 3 pts so a backup
         # projection is never driven to zero. The season total is shifted by exactly the sum of the
