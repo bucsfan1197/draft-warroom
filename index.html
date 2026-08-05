@@ -598,9 +598,9 @@
   :root{
     /* Neutrals carry a slight green-slate bias so they read chosen next to the
        accent, instead of the stock cool grey every dashboard defaults to. */
-    --bg:#f1f4f2; --panel:#ffffff; --panel-2:#e9efea;
-    --ink:#111f19; --ink-2:#5b6b63;
-    --line:#e2e8e4; --line-2:#ccd7d0;
+    --bg:#f5f6f8; --panel:#ffffff; --panel-2:#eef0f4;
+    --ink:#171a1f; --ink-2:#697386;
+    --line:#e7e9ef; --line-2:#d6dae2;
     /* Elevation in two quiet layers rather than one heavy drop. */
     --shadow:0 1px 1px rgba(17,31,25,.04),0 8px 22px -10px rgba(17,31,25,.14);
     --shadow-lg:0 2px 4px rgba(17,31,25,.05),0 18px 40px -16px rgba(17,31,25,.22);
@@ -629,9 +629,9 @@
     --good-ink:var(--good); --warn-ink:var(--warn); --crit-ink:var(--crit);
   }
   :root[data-theme="light"]{
-    --bg:#f1f4f2; --panel:#ffffff; --panel-2:#e9efea;
-    --ink:#111f19; --ink-2:#5b6b63;
-    --line:#e2e8e4; --line-2:#ccd7d0;
+    --bg:#f5f6f8; --panel:#ffffff; --panel-2:#eef0f4;
+    --ink:#171a1f; --ink-2:#697386;
+    --line:#e7e9ef; --line-2:#d6dae2;
     --shadow:0 1px 1px rgba(17,31,25,.04),0 8px 22px -10px rgba(17,31,25,.14);
     --shadow-lg:0 2px 4px rgba(17,31,25,.05),0 18px 40px -16px rgba(17,31,25,.22);
     --good-ink:#0a7150; --warn-ink:#8a5200; --crit-ink:#b02a2e;
@@ -709,6 +709,31 @@
   .kv{padding:7px 0}
   .slotrow{padding:7px 0}
   .barrow{margin:7px 0}
+
+  /* ══════════════════════════════════════════════════════════════════════
+     SLEEK SAAS REFRESH — the direction the user chose: a polished, modern
+     product feel across every tab. Neutral palette (green kept only as the
+     accent), softer cards, clean sentence-case section titles, calmer type,
+     roomier tables. Appended last so it wins the cascade; theme-agnostic. */
+  .panel{border-radius:16px}
+  /* Section titles read as product headings, not tiny all-caps labels */
+  .panel .hd{padding:14px 20px;background:none}
+  .panel .hd h2{font-size:13.5px;text-transform:none;letter-spacing:-.012em;font-weight:700;color:var(--ink)}
+  .panel .bd{padding:18px 20px}
+  /* Inputs / selects: rounded, calm, generous tap target */
+  input[type=text],input[type=number],select,textarea{border-radius:10px;padding:9px 12px}
+  /* Controls and pills: rounder and lighter */
+  .ghost{border-radius:10px;padding:8px 13px}
+  .fbtn{border-radius:9px;padding:6px 11px}
+  .chip{border-radius:8px}
+  .mini{border-radius:9px}
+  .note,.emptystate{border-radius:12px}
+  /* Tables: taller rows and a calm hover — the tuned draft board keeps its own
+     tighter padding via its higher-specificity #availTable rules */
+  th{font-size:10.5px;padding:9px 10px}
+  td{padding:9px 10px}
+  /* The header bar: a hair more presence for the wordmark lockup */
+  .topin{padding-top:14px;padding-bottom:14px}
 
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
