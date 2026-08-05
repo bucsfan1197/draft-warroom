@@ -836,6 +836,15 @@
   .gsub-bar .g-a{background:var(--good)} .gsub-bar .g-b{background:var(--info)}
   .gsub-bar .g-c{background:var(--warn)} .gsub-bar .g-d{background:var(--orange)} .gsub-bar .g-f{background:var(--crit)}
 
+  /* ── Backtest insight cards: icon + headline stat + muted takeaway ── */
+  .bt-card{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;
+    padding:14px 15px;display:flex;flex-direction:column;gap:7px;transition:border-color .16s ease,box-shadow .16s ease}
+  .bt-card:hover{border-color:var(--line-2);box-shadow:var(--shadow)}
+  .bt-card-h{display:flex;align-items:center;gap:8px}
+  .bt-ic{font-size:16px;line-height:1;flex:none}
+  .bt-big{font-family:var(--display);font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.15}
+  .bt-body{font-size:12.5px;color:var(--ink-2);line-height:1.5}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -3722,8 +3731,36 @@ function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show"
    away. Each tab now declares its own renderers; renderAll draws the visible one and marks the
    rest dirty, and showTab draws a dirty tab the moment you open it. The pick clock and header
    stay global because the timer can auto-draft while you're reading another tab. */
+/* The available-players list is the only thing in the centre column, while the
+   left (recs) and right (intel/roster/tiers) columns stack many panels — so on a
+   tall screen the centre ended ~400px short of the sides and looked stunted. Match
+   its scroll height to the taller side column so the three columns end together.
+   Falls back to the CSS max-height on a single-column (phone) layout. */
+function syncAvailHeight(){
+  const sec=document.getElementById('tab-draft');
+  if(!sec||sec.classList.contains('hide'))return;
+  const grid=sec.querySelector('.grid-draft'), sb=sec.querySelector('.scrollbox');
+  if(!grid||!sb)return;
+  const cols=[...grid.children].filter(c=>c.nodeType===1);
+  const threeCol=getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length>=3;
+  if(!threeCol||cols.length<3){ sb.style.maxHeight=''; return; }
+  const sideMax=Math.max(cols[0].offsetHeight,cols[2].offsetHeight);
+  const chrome=cols[1].offsetHeight-sb.offsetHeight;   // panel header + toolbar + padding around the scroller
+  sb.style.maxHeight=Math.max(460,sideMax-chrome)+"px";
+}
+let __ahT; const __ahSync=()=>{clearTimeout(__ahT);__ahT=setTimeout(syncAvailHeight,60);};
+addEventListener("resize",__ahSync);
+/* The side columns fill asynchronously (draft-forward plays out on a timer, the
+   coach/intel load), so a one-shot measure at render time is too early. Observe
+   the two side columns and re-match whenever their height settles. Only the
+   centre column is resized, and it's not observed, so there's no feedback loop. */
+function initAvailSync(){
+  const grid=document.querySelector('#tab-draft .grid-draft'); if(!grid||!window.ResizeObserver)return;
+  const cols=[...grid.children].filter(c=>c.nodeType===1); if(cols.length<3)return;
+  const ro=new ResizeObserver(__ahSync); ro.observe(cols[0]); ro.observe(cols[2]);
+}
 const TAB_RENDER={
-  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderDraftTiers();renderDraftIntel();renderDraftForward();},
+  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderDraftTiers();renderDraftIntel();renderDraftForward();__ahSync();},
   team:    ()=>renderTeamTab(),
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
@@ -9891,7 +9928,9 @@ function renderReplBox(){
 
 /* ---- BACKTEST tab ---- */
 function pct(x){return Math.round(x*100)+"%";}
-function btCard(t,big,body){return `<div class="rec" style="margin:0"><div class="eyebrow">${t}</div><div style="font-size:16px;font-weight:800;margin:3px 0">${big}</div><div class="why" style="margin-top:4px">${body}</div></div>`;}
+function btCard(t,big,body,icon){return `<div class="bt-card">`
+  +`<div class="bt-card-h"><span class="bt-ic">${icon||"📊"}</span><span class="eyebrow">${t}</span></div>`
+  +`<div class="bt-big">${big}</div><div class="bt-body">${body}</div></div>`;}
 /* In-season accuracy monitor — the tool's own report card. Every other number here is a forecast; this is
    how the forecasts have actually done against real results this season. Dormant until games are played. */
 function renderAccuracyMonitor(){
@@ -9921,12 +9960,12 @@ function renderBacktest(){
   $("#btNote").innerHTML=`Real data, no estimates. For 11 seasons we joined each player's <b>actual ADP</b> (Fantasy Football Calculator${sf?', superflex/2QB board':''}) to their <b>actual end-of-season fantasy points</b> (nflverse), bucketed by the round they'd go in a ${teams}-team draft, and measured how often the pick returned a startable season. Change team count or toggle Superflex in <span class="link" id="btToSetup">League Setup</span> to re-cut it live.`;
   const rows=Object.keys(bt).map(Number).sort((a,b)=>a-b), maxR=Math.min(Math.max(...rows,1),14);
   const r1=bt["1"]||{}, ins=[];
-  if(r1.WR&&r1.RB)ins.push(btCard("Round 1: WR is the safer anchor",`WR ${pct(r1.WR.hit)} vs RB ${pct(r1.RB.hit)}`,`First-round WRs returned a startable season ${pct(r1.WR.hit)} of the time vs ${pct(r1.RB.hit)} for RBs — WR the steadier anchor, RB the higher-variance swing.`));
+  if(r1.WR&&r1.RB)ins.push(btCard("Round 1: WR is the safer anchor",`WR ${pct(r1.WR.hit)} vs RB ${pct(r1.RB.hit)}`,`First-round WRs returned a startable season ${pct(r1.WR.hit)} of the time vs ${pct(r1.RB.hit)} for RBs — WR the steadier anchor, RB the higher-variance swing.`,"⚓"));
   const s=D.META.sfShift||[65,20];
-  ins.push(btCard("Superflex pulls QBs up ~2 rounds",`ADP ${s[1]} vs ${s[0]}`,`Top-12 QBs go at overall ADP ~${s[1]} in superflex vs ~${s[0]} in 1QB. ${sf?"You're in superflex — treat the elite QBs as first-round assets.":"You're in 1QB — you can wait on QB and let value fall to you."}`));
+  ins.push(btCard("Superflex pulls QBs up ~2 rounds",`ADP ${s[1]} vs ${s[0]}`,`Top-12 QBs go at overall ADP ~${s[1]} in superflex vs ~${s[0]} in 1QB. ${sf?"You're in superflex — treat the elite QBs as first-round assets.":"You're in 1QB — you can wait on QB and let value fall to you."}`,"🔀"));
   let pocket=null;
   rows.forEach(rn=>POS.forEach(p=>{const c=bt[rn]&&bt[rn][p];if(c&&rn>=3&&c.hit>=0.68&&(!pocket||c.hit>pocket.hit))pocket={rn,p,...c};}));
-  if(pocket)ins.push(btCard("Best mid-round value pocket",`R${pocket.rn} ${pocket.p} · ${pct(pocket.hit)} hit`,`A ${pocket.p} taken in Round ${pocket.rn} still hit ${pct(pocket.hit)} of the time (avg ${Math.round(pocket.avg)} pts) — the strongest bang-for-ADP in the middle rounds for this format.`));
+  if(pocket)ins.push(btCard("Best mid-round value pocket",`R${pocket.rn} ${pocket.p} · ${pct(pocket.hit)} hit`,`A ${pocket.p} taken in Round ${pocket.rn} still hit ${pct(pocket.hit)} of the time (avg ${Math.round(pocket.avg)} pts) — the strongest bang-for-ADP in the middle rounds for this format.`,"💎"));
   $("#btInsights").innerHTML=ins.join("");
   let head=`<thead><tr><th></th>${POS.map(p=>`<th><span class="pos ${p}">${p}</span></th>`).join("")}</tr></thead>`, body="<tbody>";
   for(let rn=1;rn<=maxR;rn++){
@@ -10501,6 +10540,7 @@ function init(){
     flash(state.ui.mock?"Mock draft ON — opponents auto-pick to your turn":"Mock draft OFF");
   };
   boot();
+  try{ initAvailSync(); syncAvailHeight(); }catch(e){}
 }
 init();
 </script>
