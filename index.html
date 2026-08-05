@@ -6175,6 +6175,25 @@ function acceptCheck(myGain,theirGain,takingTheirBest){
   else if(bestBlock) why = "managers don't ship their best player unless the return is close to even";
   return {ok:fair&&!bestBlock, fair, bestBlock, why};
 }
+/* Whether what the OTHER manager receives fits their roster. Value tells you a deal is fair; need
+   tells you they'd actually want it. A manager thin at a position bites faster on a player there;
+   one already stacked wants a premium to add a fourth. theirGain captures the lineup effect, but
+   this makes the reason legible on the card AND nudges away from dumping into a strength. */
+function posDepthOf(team){
+  const c={}; (team.players||[]).filter(p=>p&&!p.isPick&&!p.taxi&&!p.onIr)
+    .forEach(p=>{ c[p.pos]=(c[p.pos]||0)+1; });
+  return c;
+}
+function tradeFit(opp,get){
+  const need=state.settings.roster||{}, depth=posDepthOf(opp), fills=[], surplus=[];
+  get.filter(p=>p&&!p.isPick).forEach(p=>{
+    const req=(need[p.pos]||0)+(FLEX_POS.includes(p.pos)?(need.FLEX||0)+(need.SUPERFLEX||0):0);
+    const have=depth[p.pos]||0;
+    if(have<=Math.max(1,req))      fills.push(p.pos);
+    else if(have>=req+2)           surplus.push(p.pos);
+  });
+  return {fills:[...new Set(fills)], surplus:[...new Set(surplus)]};
+}
 /* ---- Draft picks as dynasty trade assets ----
    Half of real dynasty trading is picks, and a pick can't be valued by lineupOnSlots because it
    occupies no slot. It's valued as the asset it will BECOME: the expected dynasty rank a pick at
@@ -7627,7 +7646,11 @@ function findTrades(){
      the time: a deal can add lineup value and move your season not at all (you were already a lock,
      or already out), and a smaller deal that patches your one thin position can move it a lot. Every
      trade tool on the market ranks by value; this ranks by the only thing that decides your year. */
-  const value=c=>c.myGain+c.theirGain*0.35+c.even*40;
+  // Need-fit nudge: prefer deals that hand the other manager a position they're THIN at (they bite
+  // faster) over ones that pile onto a strength (harder sell even at fair value). Small weights — a
+  // tiebreaker on top of championship equity, not a driver.
+  const fitScore=c=>{const f=tradeFit(TRADE.teams[c.oi],c.get);return f.fills.length*3-f.surplus.length*4;};
+  const value=c=>c.myGain+c.theirGain*0.35+c.even*40+fitScore(c);
   cands.sort((a,b)=>value(b)-value(a));
   const shortlist=[];const seen=new Set(),perOpp={};
   for(const c of cands){ const k=c.oi+"|"+c.get.map(p=>p.id).join(",");
@@ -7688,6 +7711,10 @@ function renderTrades(list,base,slots,V,baseline){
           ? `Lifts your season — ${dP>0?`<b>+${dP}</b> points of playoff odds`:`title equity`}${dP>0&&dT>0?", ":""}${dT>0?`<b>+${dT}</b> toward the title`:""}.`
           : `Adds <b style="color:var(--good-ink)">+${Math.round(c.myGain)}</b> ${dyn?"dynasty value":"lineup pts"} but barely moves your odds — you're ${c.playoffBefore>=85?"already a lock":c.playoffBefore<=15?"a long way from the bracket":"about where a trade can't shift much"}.`}
         Their side <b>+${Math.round(c.theirGain)}</b> ${dyn?"value":"pts"}, so it's plausibly accepted.
+        ${(()=>{const f=tradeFit(TRADE.teams[c.oi],c.get);
+          if(f.fills.length)return `<span class="chip good" title="They're thin here, so they'll want it">fills their ${f.fills.join("/")}</span>`;
+          if(f.surplus.length)return `<span class="chip warn" title="They're already deep here — expect a premium ask">they're deep at ${f.surplus.join("/")}</span>`;
+          return "";})()}
         ${c.even!=null&&c.even<0.6?`<span class="meta">(only ${lopsidedPct(c.even)}% of real trades were this lopsided — expect pushback)</span>`:""}</div>
     </div>`;}).join("")
     +`<div class="note"><b>Ranked by what each deal does to your season, not by trade value.</b> Every shortlisted package is run through
