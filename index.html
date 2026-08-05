@@ -818,6 +818,24 @@
   #gTable tbody tr.grow:hover{background:var(--panel-2)}
   #gTable td:last-child{font-family:var(--display);font-weight:700}
 
+  /* ── Grade colour scale: a real A→F gradient (green→blue→amber→orange→red)
+     instead of everything-good-is-blue. Tinted bg + bold themed-ink text so it
+     stays legible in BOTH light and dark (no white-on-bright-badge contrast
+     trap). One new hue token (orange) for the D band; the rest reuse existing
+     status hues + their contrast-tuned -ink tokens. */
+  :root{--orange:#d9730d;--orange-ink:#b45309}
+  @media (prefers-color-scheme: dark){ :root{--orange:#f0994d;--orange-ink:#f0994d} }
+  :root[data-theme="dark"]{--orange:#f0994d;--orange-ink:#f0994d}
+  :root[data-theme="light"]{--orange:#d9730d;--orange-ink:#b45309}
+  .tier.g-a{color:var(--good-ink);background:color-mix(in srgb,var(--good) 15%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--good) 34%,transparent)}
+  .tier.g-b{color:var(--info);background:color-mix(in srgb,var(--info) 15%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--info) 34%,transparent)}
+  .tier.g-c{color:var(--warn-ink);background:color-mix(in srgb,var(--warn) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 36%,transparent)}
+  .tier.g-d{color:var(--orange-ink);background:color-mix(in srgb,var(--orange) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--orange) 36%,transparent)}
+  .tier.g-f{color:var(--crit-ink);background:color-mix(in srgb,var(--crit) 15%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--crit) 34%,transparent)}
+  /* the sub-grade progress bars want a solid fill of the same hue */
+  .gsub-bar .g-a{background:var(--good)} .gsub-bar .g-b{background:var(--info)}
+  .gsub-bar .g-c{background:var(--warn)} .gsub-bar .g-d{background:var(--orange)} .gsub-bar .g-f{background:var(--crit)}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -9322,7 +9340,9 @@ function gradePools(){
 }
 function pctileSorted(v,arr){ if(!arr||!arr.length)return .5; let n=0; for(const x of arr){ if(x<v)n++; else break; } return n/arr.length; }
 function gradeFromPct(p){ return p>=.97?"A+":p>=.90?"A":p>=.82?"A−":p>=.72?"B+":p>=.60?"B":p>=.48?"B−":p>=.36?"C+":p>=.24?"C":p>=.15?"C−":p>=.08?"D":"F"; }
-function gradeCls(p){ return p>=.72?"good":p>=.42?"warn":"crit"; }
+/* 5-step scale aligned to the letter bands in gradeFromPct: A→green, B→blue,
+   C→amber, D→orange, F→red. (Was 3 buckets that painted every A/B grade blue.) */
+function gradeCls(p){ return p>=.82?"g-a":p>=.48?"g-b":p>=.15?"g-c":p>=.08?"g-d":"g-f"; }
 function mkGrade(p){ return {pct:p,letter:gradeFromPct(p),cls:gradeCls(p)}; }
 function healthGrade(pl){
   const m={Out:.12,IR:.05,PUP:.1,Sus:.1,DNR:.05,Doubtful:.32,Questionable:.68,COV:.6};
