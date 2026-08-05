@@ -1,0 +1,38 @@
+name: selftest
+
+# Runs the app's own 138-check selfTest() in a headless browser on every push and PR,
+# so a change that breaks the math, a data field, or a lineup rule fails CI instead of
+# shipping. No logic is extracted from the single-file app — the browser is the harness.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'data.js'
+      - 'tools_ci_selftest.py'
+      - '.github/workflows/selftest.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright + browser
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run selfTest in headless Chromium
+        run: python tools_ci_selftest.py

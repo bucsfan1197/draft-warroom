@@ -1,0 +1,46 @@
+name: refresh-data
+
+# Replaces the every-6h refresh.py loop that used to run on the PC. Runs on GitHub's
+# servers, rebuilds data.js from the live sources, and pushes it back so the site updates.
+# Free: public repos get unlimited Actions minutes. The push keeps the repo "active" so
+# GitHub never auto-pauses this schedule.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # 00:00 / 06:00 / 12:00 / 18:00 UTC
+  workflow_dispatch: {}       # lets you run it on demand from the Actions tab
+
+# The built-in token needs write access to push the rebuilt data.js + proj_archive.csv.
+permissions:
+  contents: write
+
+# Never let two refreshes run at once (they'd race on the push).
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history so proj_archive.csv appends cleanly
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Identify the committer
+        run: |
+          git config user.name  "warroom-bot"
+          git config user.email "bot@users.noreply.github.com"
+
+      - name: Rebuild data and push
+        run: python refresh.py --once
