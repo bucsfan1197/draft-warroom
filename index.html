@@ -8190,13 +8190,17 @@ function renderInSeason(){
       ? `Start <b>${best.inPl.name}</b> over <b>${best.outPl.name}</b> at ${slotLabel(best.slot)} — <b>+${(best.gain*100).toFixed(1)}%</b> to win against ${teamLabel(oppIdx)}.`
       : `No swap improves your odds against ${teamLabel(oppIdx)} — this is your best lineup for the game, not just the highest total.`);
   } else if(A.starters.length&&A.bench.length){
-    // No opponent known for this week, so fall back to points — but only across LEGAL swaps.
+    // No opponent known for this week, so fall back to points — but only across LEGAL swaps, and
+    // honestly: a projection's own weekly error is several points, so a sub-2pt edge is noise, not
+    // advice. Find the best positive swap, then say plainly whether it clears that bar.
     let best=null;
     A.bench.forEach(b=>A.starters.forEach(s=>{
       if(!canFill(b.pl.pos,s.slot))return;
       const d=(b.base*b.mult)-(s.base*s.mult);
-      if(d>0.5&&(!best||d>best.d))best={b,s,d};}));
-    if(best)advice.push(`Consider <b>${best.b.pl.name}</b> over <b>${best.s.pl.name}</b> at ${slotLabel(best.s.slot)} (+${best.d.toFixed(1)} pts).`);
+      if(d>0&&(!best||d>best.d))best={b,s,d};}));
+    if(best)advice.push(best.d>=2
+      ? `Consider <b>${best.b.pl.name}</b> over <b>${best.s.pl.name}</b> at ${slotLabel(best.s.slot)} (+${best.d.toFixed(1)} pts).`
+      : `<b>${best.b.pl.name}</b> vs <b>${best.s.pl.name}</b> at ${slotLabel(best.s.slot)} is too close to call — ${best.d.toFixed(1)} pts apart is inside a projection's weekly noise, so start either.`);
   }
   ss.innerHTML+=`<div class="note" style="margin-top:12px">${advice.join(" ")||"✅ This is your optimal lineup for week "+w+"."}</div>`;
 
