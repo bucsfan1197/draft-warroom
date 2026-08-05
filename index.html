@@ -1248,9 +1248,12 @@
       <div class="bd" id="accMonitor"></div>
     </div>
     <div class="panel">
-      <div class="hd"><h2>Draft backtest — 11 seasons (2014–2024)</h2><span id="btCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="hd"><h2>Draft backtest — 11 seasons (2014–2024)</h2>
+        <button class="ghost sm hide" id="btAiBtn" style="margin-left:auto">🤖 My draft plan</button>
+        <span id="btCtx" class="pickcounter"></span></div>
       <div class="bd">
         <div class="note" id="btNote" style="margin-bottom:14px"></div>
+        <div id="btAiOut" class="aiwhyout" style="margin-bottom:14px"></div>
         <div id="btInsights" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:18px"></div>
         <h3 class="eyebrow" style="margin-bottom:8px">Startable-season hit rate by round &amp; position</h3>
         <p class="meta" style="margin:0 0 10px">Each cell: the historical probability a player drafted in that round at that position returned a <b>startable</b> season for your league size, with average PPR points below. Colored by hit rate. This is your current league (<b id="btLeague"></b>).</p>
@@ -1466,8 +1469,11 @@
   <section id="tab-dynasty" class="hide">
     <div class="grid-draft" style="grid-template-columns:1fr 1fr">
       <div class="panel">
-        <div class="hd"><h2>Your roster age profile</h2><span id="ageProfileHd" class="pickcounter" style="margin-left:auto"></span></div>
-        <div class="bd" id="ageProfile"></div>
+        <div class="hd"><h2>Your roster age profile</h2>
+          <button class="ghost sm hide" id="dynAiBtn" style="margin-left:auto">🤖 Contend or rebuild?</button>
+          <span id="ageProfileHd" class="pickcounter"></span></div>
+        <div class="bd"><div id="ageProfile"></div>
+          <div id="dynAiOut" class="aiwhyout" style="margin-top:12px"></div></div>
       </div>
       <div class="panel">
         <div class="hd"><h2>Aging curves — dynasty value vs peak</h2></div>
@@ -1489,7 +1495,9 @@
   <!-- PROJECTIONS TAB -->
   <section id="tab-cap" class="hide">
     <div class="panel">
-      <div class="hd"><h2>Contracts &amp; cap</h2><span id="capCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="hd"><h2>Contracts &amp; cap</h2>
+        <button class="ghost sm hide" id="capAiBtn" style="margin-left:auto">🤖 Cap strategy</button>
+        <span id="capCtx" class="pickcounter"></span></div>
       <div class="bd">
         <div class="grid-draft" style="grid-template-columns:2fr 1fr;gap:12px">
           <div>
@@ -1503,12 +1511,15 @@
           </div>
         </div>
         <div id="capOut" style="margin-top:12px"></div>
+        <div id="capAiOut" class="aiwhyout" style="margin-top:10px"></div>
       </div>
     </div>
   </section>
   <section id="tab-keepers" class="hide">
     <div class="panel">
-      <div class="hd"><h2>Keeper decisions</h2><span id="keepCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="hd"><h2>Keeper decisions</h2>
+        <button class="ghost sm hide" id="keepAiBtn" style="margin-left:auto">🤖 Explain my keepers</button>
+        <span id="keepCtx" class="pickcounter"></span></div>
       <div class="bd">
         <div class="grid-draft" style="grid-template-columns:1fr 1fr;gap:12px">
           <div>
@@ -1525,6 +1536,7 @@
           </div>
         </div>
         <div id="keepOut" style="margin-top:12px"></div>
+        <div id="keepAiOut" class="aiwhyout" style="margin-top:10px"></div>
       </div>
     </div>
   </section>
@@ -1590,6 +1602,15 @@
 
   <!-- SETUP TAB -->
   <section id="tab-setup" class="hide">
+    <div class="panel hide" style="margin-bottom:16px" id="setupAiPanel">
+      <div class="hd"><h2>🤖 Set up from a description</h2></div>
+      <div class="bd">
+        <div class="meta" style="margin-bottom:8px">Paste your league's rules — from the Sleeper/ESPN/Yahoo settings screen, a commissioner email, anything — and the AI fills in teams, format, roster and scoring below. Nothing is locked; review and tweak after.</div>
+        <textarea id="setupPasteText" rows="4" spellcheck="false" placeholder="e.g. 10-team half-PPR keeper league, 6-point passing TDs, start 1 QB, 2 RB, 3 WR, 1 TE, 1 flex, 1 K, 1 DST, 6 bench…" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:14px;padding:9px 12px;border-radius:10px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);resize:vertical"></textarea>
+        <div style="margin-top:10px"><button class="draftbtn" id="setupAiBtn" style="width:auto;padding:9px 16px">Configure from this →</button></div>
+        <div id="setupAiOut" class="aiwhyout" style="margin-top:10px"></div>
+      </div>
+    </div>
     <div class="grid-draft" style="grid-template-columns:1.15fr .85fr">
       <div class="panel">
         <div class="hd"><h2>League &amp; roster</h2></div>
@@ -2841,6 +2862,118 @@ async function aiMatchupBrief(){
     out.innerHTML=aiFmt(ans);
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Re-read"; }
+}
+/* Dynasty: contend vs rebuild + direction, grounded in the value-weighted age profile. */
+function aiDynastyContext(){
+  const s=state.settings, mine=(myLiveRoster()||[]).filter(p=>p&&!p.isPick);
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}${isSF()?" superflex":""}. Window setting: ${s.window||"balanced"}.`);
+  if(!mine.length){ L.push("Roster empty — nothing to assess."); return L.join("\n"); }
+  const skill=mine.filter(p=>["QB","RB","WR","TE"].includes(p.pos));
+  try{
+    const tv=skill.reduce((a,p)=>a+Math.max(1,valueOf(p)),0)||1;
+    const wAge=skill.reduce((a,p)=>a+(p.age||27)*Math.max(1,valueOf(p)),0)/tv;
+    const youth=Math.round(skill.reduce((a,p)=>a+assetMult(p.pos,p.age||27)*Math.max(1,valueOf(p)),0)/tv*100);
+    L.push(`Value-weighted starter age ${wAge.toFixed(1)}, youth rating ${youth}/100 (higher = younger core).`);
+    const F=fillLineup(mine), startPts=F.slots.filter(x=>x.pl).reduce((a,x)=>a+pts(x.pl),0);
+    L.push(`Projected starting lineup ~${fmt(startPts)} pts. Top assets: ${skill.slice().sort((a,b)=>valueOf(b)-valueOf(a)).slice(0,6).map(p=>`${lastName(p.name)} ${p.pos} age ${p.age||"?"}`).join(", ")}.`);
+    const old=skill.filter(p=>p.age>=29).map(p=>`${lastName(p.name)}(${p.age})`), young=skill.filter(p=>p.age<=24).map(p=>`${lastName(p.name)}(${p.age})`);
+    L.push(`Win-now vets (29+): ${old.join(", ")||"none"}. Ascending young core (≤24): ${young.join(", ")||"none"}.`);
+  }catch(e){}
+  return L.join("\n");
+}
+async function aiDynastyBrief(){
+  const out=$("#dynAiOut"),btn=$("#dynAiBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">reading your window…</span>`; if(btn)btn.disabled=true;
+  try{ const ans=await askAI(aiDynastyContext(),
+    `Am I built to contend now or should I rebuild? Give me a one-word verdict — **Contend**, **Retool**, or **Rebuild** — then a 2-3 line plan: who to sell (aging vets) or buy (youth/picks), and the timeline. Use the age and value numbers. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* Keepers: which set to keep and why, grounded in surplus-over-the-pick. */
+function aiKeeperContext(){
+  const cfg=keeperCfg(), rows=keeperRows().filter(r=>r.player);
+  const L=[]; L.push(`Keeper league: ${state.settings.teams} teams, keep up to ${cfg.max}${cfg.years>1?`, planning ${cfg.years} yrs, cost climbs ${cfg.esc}/yr`:""}. Your draft slot ${state.settings.slot}.`);
+  if(!rows.length){ L.push("No keeper candidates entered yet."); return L.join("\n"); }
+  const g=rows.slice().sort((a,b)=>b.surplus-a.surplus);
+  L.push(`Candidates (surplus = points he beats the pick he'd cost you, under your scoring): ${g.map(r=>`${r.player.name} (${r.player.pos}) costs ${r.costKind==="auction"?"$"+r.costRaw:"R"+r.round} → he's worth ${Math.round(r.base)}, that pick worth ${Math.round(r.pickVal)}, surplus ${r.surplus>=0?"+":""}${Math.round(r.surplus)}`).join("; ")}.`);
+  return L.join("\n");
+}
+async function aiKeeperBrief(){
+  const out=$("#keepAiOut"),btn=$("#keepAiBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">weighing your keepers…</span>`; if(btn)btn.disabled=true;
+  try{ const ans=await askAI(aiKeeperContext(),
+    `Which players should I keep (up to my limit) and why? Name the set in one line, then a short line each on the marginal calls and anyone on the bubble worth reconsidering. Cite the surplus. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* Contracts: cap strategy — extend the bargains, cut the overpaid — grounded in surplus-over-market. */
+function aiCapContext(){
+  const rows=contractRows().filter(r=>r.player), cap=capTotal(), committed=rows.reduce((a,r)=>a+(r.salary||0),0);
+  const L=[]; L.push(`Salary-cap league: cap $${cap}, committed $${committed}, space $${cap-committed}${cap-committed<0?" (OVER THE CAP)":""}.`);
+  if(!rows.length){ L.push("No contracts entered yet."); return L.join("\n"); }
+  const g=rows.slice().sort((a,b)=>b.surplus-a.surplus);
+  L.push(`Contracts (surplus = points he beats what that salary buys on the open market): ${g.map(r=>`${r.player.name} (${r.player.pos}) $${r.salary}${r.years?"/"+r.years+"yr":""} → surplus ${r.surplus>=0?"+":""}${Math.round(r.surplus)}`).join("; ")}.`);
+  return L.join("\n");
+}
+async function aiCapBrief(){
+  const out=$("#capAiOut"),btn=$("#capAiBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">running the cap…</span>`; if(btn)btn.disabled=true;
+  try{ const ans=await askAI(aiCapContext(),
+    `Give me my cap strategy in 3-4 tight lines: am I over or under, which contracts are bargains to build around or extend, who to cut (overpaid), and how to use any space. Cite the surplus numbers. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* Backtest: 11 seasons of real drafts, turned into a plan for MY exact slot & format. */
+function aiBacktestContext(){
+  const s=state.settings, D=window.__FFDATA__, bt=(D&&D.BACKTEST||{})[btKey()]||{};
+  const L=[]; L.push(`My draft: ${s.teams}-team ${s.format}, ${isSF()?"superflex":"1QB"}, drafting from slot ${s.slot}.`);
+  L.push(`Historical startable-season hit rate by round × position (11 seasons of real drafts at THIS league size), avg PPR pts in parens:`);
+  for(let r=1;r<=10;r++){ const row=bt[String(r)]; if(!row)continue;
+    L.push(`R${r}: ${["QB","RB","WR","TE"].map(p=>row[p]?`${p} ${Math.round(row[p].hit*100)}% (${Math.round(row[p].avg)})`:`${p} —`).join(", ")}`); }
+  return L.join("\n");
+}
+async function aiBacktestBrief(){
+  const out=$("#btAiOut"),btn=$("#btAiBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">reading 11 seasons…</span>`; if(btn)btn.disabled=true;
+  try{ const ans=await askAI(aiBacktestContext(),
+    `From my exact slot and format, turn this history into a draft plan in 3-4 lines: which position to anchor in round 1, where the best value pockets are in the middle rounds, and which positions to punt until late. Cite the hit rates. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* League Setup: read a pasted rules blurb and configure the app. The AI only extracts a small,
+   bounds-checked JSON; the app applies it — so a bad parse can't produce a wild setting, and
+   everything it sets is a normal field the user can see and edit right below. */
+const AI_SETUP_SYS=`You extract fantasy-football league settings from a description and return ONLY a JSON object — no prose, no markdown fences. Include ONLY keys you can determine from the text; omit everything else.
+Schema: {"teams":int,"format":"redraft"|"dynasty"|"keeper","superflex":bool,"roster":{"QB":int,"RB":int,"WR":int,"TE":int,"FLEX":int,"SUPERFLEX":int,"K":int,"DST":int,"BENCH":int},"scoring":{"passYd":num,"passTd":num,"int":num,"rushYd":num,"rushTd":num,"rec":num,"recYd":num,"recTd":num,"fl":num}}
+Rules: passYd/recYd/rushYd are POINTS PER YARD (1 pt per 25 yds = 0.04; 1 per 10 = 0.1). rec is points per reception (full PPR=1, half=0.5, standard=0). fl = fumble lost. Superflex/2QB → "superflex":true. Output valid JSON only.`;
+async function aiSetupApply(){
+  const out=$("#setupAiOut"), btn=$("#setupAiBtn"), txt=($("#setupPasteText")&&$("#setupPasteText").value||"").trim();
+  if(!out)return;
+  if(!txt){ out.innerHTML=`<span class="meta">Paste your league's rules first.</span>`; return; }
+  out.innerHTML=`<span class="aithinking">reading your league…</span>`; if(btn)btn.disabled=true;
+  try{
+    const raw=await askAI(txt,"Extract this league's settings as JSON.",AI_SETUP_SYS);
+    let obj; try{ obj=JSON.parse(raw.replace(/```json|```/g,"").trim()); }catch(e){ throw new Error("couldn't parse the settings — try pasting a bit more detail."); }
+    const s=state.settings, changed=[];
+    const num=(v,lo,hi)=>typeof v==="number"&&isFinite(v)&&v>=lo&&v<=hi;
+    if(num(obj.teams,4,20)){ s.teams=Math.round(obj.teams); s.slot=Math.min(s.slot,s.teams); changed.push(`${s.teams} teams`); }
+    if(["redraft","dynasty","keeper"].includes(obj.format)){ s.format=obj.format; changed.push(obj.format); }
+    if(obj.roster&&typeof obj.roster==="object"){ let any=false;
+      ["QB","RB","WR","TE","FLEX","SUPERFLEX","K","DST","BENCH"].forEach(k=>{ if(num(obj.roster[k],0,14)){ s.roster[k]=Math.round(obj.roster[k]); any=true; } });
+      if(any)changed.push("roster"); }
+    if(obj.superflex===true&&!(s.roster.SUPERFLEX>0)){ s.roster.SUPERFLEX=1; if(s.roster.QB>1)s.roster.QB=1; changed.push("superflex"); }
+    if(obj.scoring&&typeof obj.scoring==="object"){ let any=false;
+      ["passYd","passTd","int","rushYd","rushTd","rec","recYd","recTd","fl"].forEach(k=>{ if(num(obj.scoring[k],-20,20)){ s.scoring[k]=obj.scoring[k]; any=true; } });
+      if(any)changed.push(`scoring (${(+s.scoring.rec>=1?"PPR":+s.scoring.rec>0?"half-PPR":"standard")}, ${s.scoring.passTd}pt pass TD)`); }
+    if(!changed.length){ out.innerHTML=`<span class="meta">Couldn't find recognizable settings in that text. Try including team count, PPR type, and your starting lineup.</span>`; }
+    else { SIMCACHE={key:null}; loadSetupInputs(); renderAll(); save();
+      out.innerHTML=`<b>✅ Applied:</b> ${changed.join(" · ")}. Everything below is updated — review and tweak anything that's off.`; }
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; }
 }
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
@@ -7141,6 +7274,7 @@ function capMarketCompare(players,salaryOf){
 }
 function renderCapSheet(){
   const box=$("#capOut"); if(!box)return;
+  if($("#capAiBtn"))$("#capAiBtn").classList.toggle("hide",!aiConfigured());
   const rows=contractRows();
   const ctx=$("#capCtx");
   const cap=capTotal();
@@ -7206,6 +7340,7 @@ function renderCapSheet(){
 }
 function renderKeepers(){
   const box=$("#keepOut"); if(!box)return;
+  if($("#keepAiBtn"))$("#keepAiBtn").classList.toggle("hide",!aiConfigured());
   const cfg=keeperCfg();
   const ctx=$("#keepCtx");
   if(ctx)ctx.textContent=`${state.settings.teams}-team · pick ${state.settings.slot} · keep ${cfg.max}`
@@ -10133,6 +10268,7 @@ function renderAccuracyMonitor(){
     <div class="meta" style="margin-top:8px">Scored live against nflverse results. "Bias" is actual-minus-projected this season; if it drifts far from the correction we shipped, the projections need re-tuning — and this is how we'd catch it.</div>`;
 }
 function renderBacktest(){
+  if($("#btAiBtn"))$("#btAiBtn").classList.toggle("hide",!aiConfigured());
   renderAccuracyMonitor();
   const D=window.__FFDATA__; if(!D)return;
   const bt=D.BACKTEST[btKey()]||{}, teams=state.settings.teams, sf=isSF(), POS=["QB","RB","WR","TE"];
@@ -10215,6 +10351,7 @@ function renderCalib(){
 
 /* ---- DYNASTY tab ---- */
 function renderDynasty(){
+  if($("#dynAiBtn"))$("#dynAiBtn").classList.toggle("hide",!aiConfigured());
   const roster=myLiveRoster();   // bridge-aware: synced roster in a real league, draft roster otherwise
   const skill=roster.filter(p=>['QB','RB','WR','TE'].includes(p.pos));
   const box=$("#ageProfile");
@@ -10469,9 +10606,11 @@ function loadSetupInputs(){
   const pc=s.pickClock||0;
   $$("#s_clock button").forEach(b=>b.classList.toggle("on",+b.dataset.v===pc));
   $("#s_clockCustom").value=pc||"";
+  if($("#setupAiPanel"))$("#setupAiPanel").classList.toggle("hide",!aiConfigured());
   applyFormatUI();
 }
 function wireSetup(){
+  if($("#setupAiBtn"))$("#setupAiBtn").onclick=aiSetupApply;
   $("#s_teams").oninput=e=>{state.settings.teams=Math.max(4,Math.min(16,+e.target.value||12));$("#s_slot").max=state.settings.teams;renderAll();};
   $("#s_slot").oninput=e=>{state.settings.slot=Math.max(1,Math.min(state.settings.teams,+e.target.value||1));renderAll();};
   $$("#s_snake button").forEach(b=>b.onclick=()=>{state.settings.snake=+b.dataset.v;loadSetupInputs();renderAll();});
@@ -10660,6 +10799,10 @@ function init(){
   if($("#injRefreshBtn"))$("#injRefreshBtn").onclick=()=>refreshInjuries();
   if($("#injBriefBtn"))$("#injBriefBtn").onclick=aiInjuryBrief;
   if($("#mWinBtn"))$("#mWinBtn").onclick=aiMatchupBrief;
+  if($("#dynAiBtn"))$("#dynAiBtn").onclick=aiDynastyBrief;
+  if($("#keepAiBtn"))$("#keepAiBtn").onclick=aiKeeperBrief;
+  if($("#capAiBtn"))$("#capAiBtn").onclick=aiCapBrief;
+  if($("#btAiBtn"))$("#btAiBtn").onclick=aiBacktestBrief;
   if($("#mLiveRefresh"))$("#mLiveRefresh").onclick=()=>{ if($("#mLiveTs"))$("#mLiveTs").textContent="loading…"; refreshLive(); };
   // ---- AI GM copilot wiring ----
   if($("#aiFab"))$("#aiFab").onclick=aiOpen;
