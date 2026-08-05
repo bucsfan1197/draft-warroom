@@ -2033,6 +2033,10 @@ const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0
 const DEF_ROSTER={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:6,TAXI:0,IR:0};
 const nrm=s=>String(s).toLowerCase().replace(/[.'`]/g,"").replace(/\b(jr|sr|ii|iii|iv|v)\b/g,"").replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
 const STORE_KEY="draftwarroom_v1";
+// Owner's default Sleeper handle — this is bucsfan1197's personal deploy, so the username box and
+// every "find your slot" fallback pre-fill to this when nothing is saved yet, making me-detection
+// work on a fresh browser without typing it. A saved/typed value always wins over this default.
+const DEFAULT_SLEEPER_USER="bucsfan1197";
 let state;
 
 function buildPlayers(){
@@ -6250,7 +6254,7 @@ async function tradeLoadLeagues(){
      Load button on this tab failed with "add your username in League Setup" and no field in sight
      — the thing you needed wasn't where you were standing. */
   const user=($("#tradeUser")&&$("#tradeUser").value.trim())||($("#syncUser")&&$("#syncUser").value.trim())
-             ||localStorage.getItem("ffwr_syncuser")||"";
+             ||localStorage.getItem("ffwr_syncuser")||DEFAULT_SLEEPER_USER||"";
   if(!user){tradeStatus("Type your Sleeper username in the box above.","var(--crit)");
             if($("#tradeUser"))$("#tradeUser").focus(); return;}
   try{localStorage.setItem("ffwr_syncuser",user);}catch(e){}
@@ -8022,7 +8026,7 @@ function wwSyncBar(){
     box.innerHTML=`<input type="text" id="wwUser" class="search" placeholder="Your Sleeper username" style="min-width:170px">
       <button class="draftbtn alt" id="wwConnect">Connect my league</button>
       <span class="meta" style="flex:1">Sync your Sleeper league — real rosters, real free agents, your league's scoring and FAAB.</span>`;
-    const known=localStorage.getItem("ffwr_syncuser")||"";
+    const known=localStorage.getItem("ffwr_syncuser")||DEFAULT_SLEEPER_USER||"";
     if(known&&$("#wwUser"))$("#wwUser").value=known;
     const go=()=>{ const u=($("#wwUser").value||"").trim(); if(!u)return;
       try{localStorage.setItem("ffwr_syncuser",u);}catch(e){}
@@ -8100,7 +8104,7 @@ function renderSeasonSync(){
     box.innerHTML=`<input type="text" id="seasonUser" class="search" placeholder="Your Sleeper username" style="min-width:170px">
       <button class="draftbtn alt" id="seasonConnect">Connect my league</button>
       <span class="meta" style="flex:1">Sync your Sleeper league to make this a live waiver wire — real rosters, real free agents, your league's scoring.</span>`;
-    const known=localStorage.getItem("ffwr_syncuser")||"";
+    const known=localStorage.getItem("ffwr_syncuser")||DEFAULT_SLEEPER_USER||"";
     if(known&&$("#seasonUser"))$("#seasonUser").value=known;
     const go=()=>{ const u=($("#seasonUser").value||"").trim(); if(!u)return;
       try{localStorage.setItem("ffwr_syncuser",u);}catch(e){}
@@ -10734,7 +10738,7 @@ function wireSetup(){
   $("#adpPasteToggle").onclick=()=>$("#adpPasteBox").classList.toggle("hide");
   // Sleeper live sync
   try{
-    const savedId=localStorage.getItem("ffwr_syncid"), savedUser=localStorage.getItem("ffwr_syncuser");
+    const savedId=localStorage.getItem("ffwr_syncid"), savedUser=localStorage.getItem("ffwr_syncuser")||DEFAULT_SLEEPER_USER;
     if(savedId&&!$("#syncDraftId").value)$("#syncDraftId").value=savedId;
     if(savedUser&&!$("#syncUser").value)$("#syncUser").value=savedUser;
   }catch(e){}
@@ -10751,7 +10755,7 @@ function wireSetup(){
   // Prefill the username if it's already known, and let Enter load — small things, but this is the
   // one gate between the user and the whole feature.
   if($("#tradeUser")){
-    const known=localStorage.getItem("ffwr_syncuser")||($("#syncUser")&&$("#syncUser").value.trim())||"";
+    const known=localStorage.getItem("ffwr_syncuser")||($("#syncUser")&&$("#syncUser").value.trim())||DEFAULT_SLEEPER_USER||"";
     if(known)$("#tradeUser").value=known;
     $("#tradeUser").onkeydown=e=>{if(e.key==="Enter")tradeLoadLeagues();};
   }
