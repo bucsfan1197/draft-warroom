@@ -3590,14 +3590,20 @@ async function sleeperConnect(){
     if(d.settings&&d.settings.teams)state.settings.teams=d.settings.teams;
     state.settings.snake=(d.type==="linear")?0:1;
     applySleeperRoster(d.settings);
-    let slotMsg="";
+    // The draft endpoint carries teams + roster slots but NOT scoring — that lives on the league.
+    // If the draft is tied to a league, pull it so ONE connect imports scoring too (nothing else needed).
+    let scoreMsg="";
+    if(d.league_id){ try{ const lg=await SJ(`https://api.sleeper.app/v1/league/${d.league_id}`);
+      if(lg&&!lg.error){ const n=applyLeagueSettings(lg); if(lg.name)TRADE.leagueName=lg.name;
+        if(n)scoreMsg=` · scoring imported`; } }catch(e){} }
+    let slotMsg=scoreMsg;
     if(user){
       try{
         const u=await (await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(user)}`)).json();
         const slot=(u&&u.user_id&&d.draft_order)?d.draft_order[u.user_id]:null;
-        if(slot){state.settings.slot=slot;slotMsg=` · you're slot ${slot}`;}
-        else slotMsg=" · couldn't find your slot (set it above)";
-      }catch(e){slotMsg=" · username lookup failed";}
+        if(slot){state.settings.slot=slot;slotMsg+=` · you're slot ${slot}`;}
+        else slotMsg+=" · couldn't find your slot (set it above)";
+      }catch(e){slotMsg+=" · username lookup failed";}
     }
     SYNC.id=id;SYNC.sig=null;
     if(state.ui.mock)state.ui.mock=false;      // live picks replace the mock CPU
