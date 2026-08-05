@@ -645,11 +645,32 @@ def archive_projections(players):
     except Exception as ex:
         log("  archive failed:",ex)
 
+def load_prev():
+    """The last data.js we shipped, so a source that dies this cycle can fall back to its last-good
+    value instead of blanking out. One dead feed should degrade one panel, not the whole board."""
+    try:
+        raw=open(os.path.join(HERE,"data.js"),encoding="utf-8").read()
+        raw=raw.split("=",1)[1].rstrip().rstrip(";")
+        return json.loads(raw)
+    except Exception:
+        return {}
+
 def build_data():
     base=json.load(open(os.path.join(HERE,"base.json"),encoding="utf-8"))
     FACT=base["DIST_FACTORS"]; BANDW=base.get("BANDW",8); TEMPL=base["STAT_TEMPLATE"]
     USAGE=base.get("USAGE",{})
     BYE=byes_from_sched(base["SCHED"])
+    PREV=load_prev()          # last-good values for failover
+    HEALTH={}                 # per-source status surfaced in the app: ok | stale | down
+    def failover(name, val, prev_key, seasonal=False):
+        # seasonal feeds (usage, injuries, in-season monitor) are legitimately empty before the season
+        # starts — mark those "dormant" (neutral), not "down", so the health chip never cries wolf.
+        empty = val is None or (isinstance(val,(list,dict)) and len(val)==0)
+        if empty and PREV.get(prev_key) not in (None,{},[]):
+            HEALTH[name]="stale"; log(f"  [health] {name} down this cycle — using last-good from data.js")
+            return PREV.get(prev_key)
+        HEALTH[name]="ok" if not empty else ("dormant" if seasonal else "down")
+        return val
     log("Pulling live sources…")
     ffc,ffc_drafts=pull_ffc(); slp=pull_sleeper_players(); slw=pull_sleeper_weekly()
     espn_proj,espn_adp=pull_espn(); yah=pull_yahoo(); sadp=pull_sleeper_adp(); fpe=pull_fantasypros_ecr()
@@ -889,12 +910,25 @@ def build_data():
 
     archive_projections(players)
 
+    # Per-source health: projection feeds degrade the blend gracefully (record ok/down for the chip);
+    # the standalone context blobs fall back to last-good so one dead feed doesn't blank a panel.
+    HEALTH["ffc"]="ok"
+    HEALTH["espn"]="ok" if espn_proj else "down"
+    HEALTH["yahoo"]="ok" if yah else "down"
+    HEALTH["sleeperAdp"]="ok" if sadp else "down"
+    HEALTH["ecr"]="ok" if fpe else "down"
+    dvp_fo    = failover("dvp",        dvp,         "DVP")
+    kick_fo   = failover("kickoffs",   kick,        "KICK")
+    vegas_fo  = failover("vegas",      vegas,       "VEGAS")
+    usage_fo  = failover("usage",      usage_wk,    "USAGE_WK",    seasonal=True)
+    inj_fo    = failover("injuries",   inj_reports, "INJ_REPORTS", seasonal=True)
+    mon_fo    = failover("monitor",    accuracy,    "MONITOR",     seasonal=True)
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
-         "DVP":(dvp or base["DVP"]),"DVP_LIVE":bool(dvp),"ADV_META":({"year":adv["year"],"current":adv["current"]} if adv else None),
-         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick,"VEGAS":vegas,"USAGE_WK":usage_wk,"INJ_REPORTS":inj_reports,"MONITOR":accuracy,
+         "DVP":(dvp_fo or base["DVP"]),"DVP_LIVE":bool(dvp_fo),"ADV_META":({"year":adv["year"],"current":adv["current"]} if adv else None),
+         "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick_fo,"VEGAS":vegas_fo,"USAGE_WK":usage_fo,"INJ_REPORTS":inj_fo,"MONITOR":mon_fo,
          "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
-                 "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,
+                 "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,"health":HEALTH,
                  "usageEval":base.get("USAGE_EVAL"),
                  "market":({"picks":market["picks"],
                             "sources":"KeepTradeCut + FantasyCalc + DynastyProcess",

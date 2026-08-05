@@ -4770,8 +4770,20 @@ function renderDataAge(){
   const h=dataAgeHours();
   if(h==null){el.textContent="";return;}
   const txt=h<1?"just now":h<48?`${Math.round(h)}h ago`:`${Math.round(h/24)}d ago`;
-  el.innerHTML=h>36?`<span class="chip crit">data ${txt} — is refresh.py running?</span>`
-                   :`<span style="opacity:.6">data ${txt}</span>`;
+  // Per-source health from the refresh pipeline. "stale" = a feed died and we're serving its
+  // last-good value; "down" = a feed that should have data returned nothing. "dormant"/"ok" are
+  // silent — dormant is just an in-season feed waiting for the season, not a problem.
+  const health=((window.__FFDATA__||{}).META||{}).health||{};
+  const NAMES={ffc:"ADP",espn:"ESPN",yahoo:"Yahoo",sleeperAdp:"Sleeper ADP",ecr:"experts",
+    dvp:"defense-vs-pos",kickoffs:"schedule",vegas:"Vegas lines",usage:"usage",injuries:"injuries",monitor:"accuracy"};
+  const stale=Object.keys(health).filter(k=>health[k]==="stale").map(k=>NAMES[k]||k);
+  const down =Object.keys(health).filter(k=>health[k]==="down").map(k=>NAMES[k]||k);
+  let hp="";
+  if(down.length)  hp=`<span class="chip crit" title="These feeds returned nothing this refresh — the panels that use them may be blank">${down.join(", ")} feed${down.length>1?"s":""} down</span>`;
+  else if(stale.length) hp=`<span class="chip warn" title="A feed failed this refresh, so its last-good value is being served">${stale.join(", ")} using last-good</span>`;
+  const age=h>36?`<span class="chip crit">data ${txt} — auto-refresh may be stuck</span>`
+                :`<span style="opacity:.6">data ${txt}</span>`;
+  el.innerHTML=age+(hp?" "+hp:"");
 }
 
 /* ---- LAYOUT PROBE ----
