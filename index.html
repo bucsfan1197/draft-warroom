@@ -1727,6 +1727,7 @@
             <div class="field"><label>Reception</label><input type="number" id="sc_rec" step="0.5"></div>
             <div class="field"><label>Rec yd (pts)</label><input type="number" id="sc_recYd" step="0.01"></div>
             <div class="field"><label>Rec TD</label><input type="number" id="sc_recTd" step="0.5"></div>
+            <div class="field"><label>TE premium (per rec)</label><input type="number" id="sc_recTe" step="0.5"></div>
             <div class="field"><label>Fumble lost</label><input type="number" id="sc_fl" step="0.5"></div>
             <div class="field idpfield" style="grid-column:1/-1"><label class="eyebrow">Defensive scoring (IDP)</label></div>
             <div class="field idpfield"><label>Solo tackle</label><input type="number" id="sc_idpSolo" step="0.25"></div>
@@ -2016,7 +2017,7 @@ const ROOKIE_PICKS=[
 ];
 
 /* ============================= STATE ============================= */
-const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0.1,recTd:6,fl:-2,
+const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0.1,recTd:6,fl:-2,recTe:0,
   // IDP defaults: a middle-of-the-road "balanced" scoring. Tackle-heavy leagues raise solo/assist,
   // big-play leagues raise sacks and turnovers — both are editable.
   idpSolo:1,idpAst:0.5,idpSack:4,idpInt:6,idpFF:4,idpFR:2,idpTD:6,idpSafe:4,idpPD:1,idpTFL:1};
@@ -2162,7 +2163,8 @@ function pts(pl){
   return (t.py||0)*s.passYd+(t.ptd||0)*s.passTd+(t.int||0)*s.int
     +(t.ry||0)*s.rushYd+(t.rtd||0)*s.rushTd
     +(t.rec||0)*s.rec+(t.recy||0)*s.recYd+(t.rectd||0)*s.recTd
-    +(t.fl||0)*s.fl;
+    +(t.fl||0)*s.fl
+    +(pl.pos==="TE"?(t.rec||0)*(s.recTe||0):0);   // TE premium: extra points per TE reception (Sleeper bonus_rec_te)
 }
 // Dynasty asset value: current-year points projected forward along the aging curve, weighted by team window.
 function dynValue(pl){
@@ -6015,7 +6017,7 @@ function applyLeagueSettings(lg){
   if(!lg)return 0;
   const sc=lg.scoring_settings||{};
   const map={passYd:"pass_yd",passTd:"pass_td",int:"pass_int",rushYd:"rush_yd",rushTd:"rush_td",
-             rec:"rec",recYd:"rec_yd",recTd:"rec_td",fl:"fum_lost"};
+             rec:"rec",recYd:"rec_yd",recTd:"rec_td",fl:"fum_lost",recTe:"bonus_rec_te"};
   let applied=0;
   Object.entries(map).forEach(([ours,theirs])=>{
     if(sc[theirs]!=null){state.settings.scoring[ours]=+sc[theirs];applied++;}
@@ -6023,10 +6025,16 @@ function applyLeagueSettings(lg){
   if(lg.roster_positions){
     const slots=parseSlots(lg.roster_positions), R=state.settings.roster, c={};
     slots.forEach(x=>c[x]=(c[x]||0)+1);
-    ["QB","RB","WR","TE","K","DST","FLEX","SUPERFLEX"].forEach(k=>{if(c[k]!=null)R[k]=c[k];});
+    // Set every standard starting slot to the league's real count — INCLUDING 0 when the league
+    // has none (e.g. a superflex league with no K/DST). Skipping absent keys used to leave the K:1
+    // DST:1 defaults in place, inventing two starting slots the league doesn't have.
+    ["QB","RB","WR","TE","K","DST","FLEX","SUPERFLEX"].forEach(k=>{R[k]=c[k]||0;});
     R.BENCH=(lg.roster_positions.filter(x=>x==="BN")||[]).length||R.BENCH;
   }
   if(lg.total_rosters)state.settings.teams=lg.total_rosters;
+  // Format: Sleeper league type 0=redraft, 1=keeper, 2=dynasty.
+  const lt=lg.settings&&lg.settings.type;
+  if(lt!=null)state.settings.format=({0:"redraft",1:"keeper",2:"dynasty"})[lt]||state.settings.format;
   SIMCACHE={key:null}; SEASONSIM={key:null};
   return applied;
 }
@@ -10142,7 +10150,8 @@ function detailRow(pl,span){
     const v=+L[c]||0, per=+s[STATDEF[c][1]]||0, sub=v*per;
     return {c,label:STATDEF[c][0],v,per,sub};
   });
-  const sum=parts.reduce((a,p)=>a+p.sub,0);
+  const teBonus=(pl.pos==="TE"?(+L.rec||0)*(+s.recTe||0):0);   // TE-premium points, shown as its own line so the math adds up
+  const sum=parts.reduce((a,p)=>a+p.sub,0)+teBonus;
   const wk=pl.wk&&pl.wk.length?pl.wk:null, mx=wk?Math.max(...wk):0;
   const sp=srcSpread(pl);
   return `<tr class="detailrow"><td colspan="${span}"><div class="dwrap">
@@ -10152,6 +10161,7 @@ function detailRow(pl,span){
         <td><input class="editcell num" type="number" step="0.1" data-so="${pl.id}:${p.c}" value="${fmt(p.v)}"></td>
         <td class="meta">${p.label}</td><td class="meta r">× ${p.per}</td>
         <td class="r num">${fmt(p.sub)}</td></tr>`).join("")}
+        ${teBonus?`<tr><td class="r num">${fmt(+L.rec||0)}</td><td class="meta">TE premium</td><td class="meta r">× ${s.recTe}</td><td class="r num">${fmt(teBonus)}</td></tr>`:""}
         <tr class="tot"><td colspan="3"><b>Projected total</b></td><td class="r num"><b>${fmt(sum)}</b></td></tr></table>
         <div class="meta" style="margin-top:6px">Change any stat and the total recomputes under <b>your</b> scoring settings.
         ${pl.so?`<button class="ghost sm" data-resetso="${pl.id}">Back to consensus</button>`:""}</div>`
