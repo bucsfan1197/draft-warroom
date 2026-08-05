@@ -4909,6 +4909,27 @@ function selfTest(){
         `${oddsSum.toFixed(2)} = ${SCk.playoffTeams} playoff spots`);
     add("Every simulated game produces exactly one win",Math.abs(winSum-gameCount)<0.01,
         `${winSum.toFixed(1)} wins across ${gameCount} games`);
+    /* Season-long error must PERSIST across weeks — one seasonFactor draw per player for the whole
+       season, not re-rolled every week. Re-drawing it weekly washed out the correlated component and
+       compressed the spread of win totals ~26%, pulling a dominant team's playoff odds toward the
+       field. A stacked roster (the best at every position) must clearly out-qualify a gutted one. */
+    (()=>{
+      const sv={picks:state.picks.slice(),sched:TRADE.schedule,wk:state.ui.seasonWeek,fmt:state.settings.format,league:state.league,teams:state.settings.teams};
+      state.settings.teams=12; state.ui.seasonWeek=1; TRADE.schedule=null; state.settings.format="redraft"; state.league=null;
+      const R=state.settings.roster;
+      const byPos={}; ["QB","RB","WR","TE","K","DST"].forEach(p=>byPos[p]=state.players.filter(x=>x.pos===p&&pts(x)>0).sort((a,b)=>pts(b)-pts(a)));
+      const slots=[]; ["QB","RB","WR","TE","K","DST"].forEach(p=>{for(let i=0;i<(R[p]||0);i++)slots.push(p);});
+      for(let i=0;i<(R.FLEX||0);i++)slots.push("WR"); for(let i=0;i<(R.SUPERFLEX||0);i++)slots.push("QB");
+      for(let i=0;i<(R.BENCH||0);i++)slots.push(i%2?"RB":"WR");
+      const used={}; ["QB","RB","WR","TE","K","DST"].forEach(p=>used[p]=0);
+      state.picks=[]; slots.forEach(pos=>{ for(let t=0;t<12;t++){ const p=byPos[pos][used[pos]++]; if(p)state.picks.push({playerId:p.id,teamIdx:t}); } });
+      SEASONSIM={key:null};
+      const SSg=simSeason(400), gap=SSg[0].playoff-SSg[11].playoff;
+      add("A dominant roster clearly out-qualifies a gutted one (season error persists)",gap>0.4,
+          `stacked ${Math.round(SSg[0].playoff*100)}% vs gutted ${Math.round(SSg[11].playoff*100)}% to make the playoffs`);
+      state.picks=sv.picks; TRADE.schedule=sv.sched; state.ui.seasonWeek=sv.wk; state.settings.format=sv.fmt;
+      state.league=sv.league; state.settings.teams=sv.teams; SEASONSIM={key:null};
+    })();
     // 2c. TRADE ENGINE: bracket resolves at every playoff size, picks are valued sanely
     const wkOf=(T,best)=>Array.from({length:T},(_,i)=>{const a=new Array(25).fill(0);
       for(let w=0;w<25;w++)a[w]=(i===best?1000:100-i);return a;});
@@ -7868,15 +7889,24 @@ function simSeason(iters,override){
   if(!override&&SEASONSIM.key===key)return SEASONSIM.val;   // a hypothetical must never be cached
   const U={};
   SC.weeks.forEach(w=>{ U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters); });
+  /* Season-long error is ONE draw per player for the WHOLE season — being wrong about a player
+     persists all year — while the weekly swing is fresh each week. Calling drawScore() per week
+     re-drew seasonFactor every week, washing that persistent component out (measured: it cut the
+     spread of win totals ~26%, compressing playoff odds — favourites read too low, bubble teams too
+     high). Seed a persistent seasonFactor per player per season here, exactly as the title simulator
+     (simOdds) does, and apply only the weekly swing inside the week loop. */
+  const teamSd=rosters.map((r,ti)=>{ const m={}; SC.weeks.forEach(w=>U[w.week][ti].forEach(u=>{ if(m[u.pl.id]==null)m[u.pl.id]=u.sd; })); return m; });
   const made=new Array(T).fill(0), wins=new Array(T).fill(0), pfs=new Array(T).fill(0);
   const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
   for(let it=0;it<N;it++){
+    const sf=teamSd.map(m=>{ const o={}; for(const id in m)o[id]=seasonFactor(m[id]); return o; });
+    const scoreOf=(ti,units)=>units.reduce((s,u)=>s+u.base*u.mult*(sf[ti][u.pl.id]||1)*weekFactor(u.cv),0);
     const w=new Array(T).fill(0), pf=new Array(T).fill(0);
     SC.weeks.forEach(wk=>{
       wk.pairs.forEach(([a,b])=>{
         let sa,sb;
         if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){ sa=wk.done[a]; sb=wk.done[b]; }
-        else { sa=drawScore(U[wk.week][a]||[]); sb=drawScore(U[wk.week][b]||[]); }
+        else { sa=scoreOf(a,U[wk.week][a]||[]); sb=scoreOf(b,U[wk.week][b]||[]); }
         pf[a]+=sa; pf[b]+=sb;
         if(sa>sb)w[a]++; else if(sb>sa)w[b]++; else {w[a]+=.5;w[b]+=.5;}
       });
