@@ -1701,6 +1701,8 @@
             <div class="field idpfield"><label>DB</label><input type="number" id="r_DB" min="0" step="1"></div>
             <div class="field idpfield"><label>IDP FLEX (DL/LB/DB)</label><input type="number" id="r_IDP_FLEX" min="0" step="1"></div>
             <div class="field"><label>Bench</label><input type="number" id="r_BENCH" min="0" step="1"></div>
+            <div class="field"><label>Taxi / practice squad</label><input type="number" id="r_TAXI" min="0" step="1"></div>
+            <div class="field"><label>IR (injured reserve)</label><input type="number" id="r_IR" min="0" step="1"></div>
             <div class="field" style="grid-column:1/-1"><label>Salary cap / contract league</label>
               <span class="seg" id="s_cap"><button data-v="0" class="on">Off</button><button data-v="1">On — contracts &amp; cap</button></span>
               <div class="note" style="margin-top:6px">Adds a <b>Contracts</b> tab that judges every cap hit against what that money would buy on the open market, and makes the trade calculator check that a deal actually fits under both teams' caps.</div>
@@ -2021,7 +2023,7 @@ const DEF_SCORING={passYd:0.04,passTd:4,int:-2,rushYd:0.1,rushTd:6,rec:1,recYd:0
   // IDP defaults: a middle-of-the-road "balanced" scoring. Tackle-heavy leagues raise solo/assist,
   // big-play leagues raise sacks and turnovers — both are editable.
   idpSolo:1,idpAst:0.5,idpSack:4,idpInt:6,idpFF:4,idpFR:2,idpTD:6,idpSafe:4,idpPD:1,idpTFL:1};
-const DEF_ROSTER={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:6};
+const DEF_ROSTER={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:6,TAXI:0,IR:0};
 const nrm=s=>String(s).toLowerCase().replace(/[.'`]/g,"").replace(/\b(jr|sr|ii|iii|iv|v)\b/g,"").replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
 const STORE_KEY="draftwarroom_v1";
 let state;
@@ -3107,7 +3109,8 @@ function liveFreeAgents(){ const r=rosteredIds(); return state.players.filter(p=
 function fillLineup(roster,valFn){
   const val=valFn||pts;
   const R=state.settings.roster;
-  const byPos={};ALLPOS.forEach(p=>byPos[p]=roster.filter(x=>x.pos===p).slice().sort((a,b)=>val(b)-val(a)));
+  // Taxi (practice squad) and IR players are owned but can't be started — leave them out of the pool.
+  const byPos={};ALLPOS.forEach(p=>byPos[p]=roster.filter(x=>x.pos===p&&!x.taxi&&!x.onIr).slice().sort((a,b)=>val(b)-val(a)));
   const used=new Set(), slots=[];
   function take(pos){const arr=byPos[pos];for(const pl of arr){if(!used.has(pl.id)){used.add(pl.id);return pl;}}return null;}
   const order=[["QB",R.QB],["RB",R.RB],["WR",R.WR],["TE",R.TE]];
@@ -6030,6 +6033,12 @@ function applyLeagueSettings(lg){
     // DST:1 defaults in place, inventing two starting slots the league doesn't have.
     ["QB","RB","WR","TE","K","DST","FLEX","SUPERFLEX"].forEach(k=>{R[k]=c[k]||0;});
     R.BENCH=(lg.roster_positions.filter(x=>x==="BN")||[]).length||R.BENCH;
+    // Taxi (practice squad) and IR live on league settings, not roster_positions. Import both so the
+    // roster size is right and synced players on taxi/IR are kept out of the startable lineup.
+    const ls=lg.settings||{};
+    R.TAXI=ls.taxi_slots!=null?ls.taxi_slots:R.TAXI;
+    const irSlots=(lg.roster_positions.filter(x=>x==="IR")||[]).length;
+    R.IR=irSlots||(ls.reserve_slots!=null?ls.reserve_slots:R.IR);
   }
   if(lg.total_rosters)state.settings.teams=lg.total_rosters;
   // Format: Sleeper league type 0=redraft, 1=keeper, 2=dynasty.
@@ -6255,10 +6264,16 @@ async function tradeLoadRosters(leagueId){
     const bySid={};state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
     TRADE.leagueId=leagueId; TRADE.users=nameOf; TRADE.leagueName=lg.name;
     TRADE.slots=parseSlots(lg.roster_positions);
-    TRADE.teams=(rosters||[]).map(r=>({
-      rosterId:r.roster_id, owner:r.owner_id, name:nameOf[r.owner_id]||("Team "+r.roster_id),
-      players:(r.players||[]).map(sid=>bySid[String(sid)]).filter(Boolean),
-      unmatched:(r.players||[]).filter(sid=>!bySid[String(sid)]).length}));
+    // Taxi (practice squad) and IR players are owned but can't be started — tag them so the lineup
+    // optimizer skips them. A player is on exactly one roster, so clear stale tags and re-tag each sync.
+    state.players.forEach(p=>{ if(p.taxi)delete p.taxi; if(p.onIr)delete p.onIr; });
+    TRADE.teams=(rosters||[]).map(r=>{
+      (r.taxi||[]).forEach(sid=>{const p=bySid[String(sid)];if(p)p.taxi=true;});
+      (r.reserve||[]).forEach(sid=>{const p=bySid[String(sid)];if(p)p.onIr=true;});
+      const ids=[...new Set([...(r.players||[]),...(r.taxi||[]),...(r.reserve||[])].map(String))];
+      return {rosterId:r.roster_id, owner:r.owner_id, name:nameOf[r.owner_id]||("Team "+r.roster_id),
+        players:ids.map(sid=>bySid[sid]).filter(Boolean),
+        unmatched:ids.filter(sid=>!bySid[sid]).length};});
     // Apply the league's own scoring, roster shape and size the moment you connect — so the waiver
     // board, start/sit and everything else compute under THIS league's rules automatically.
     TRADE.scoringApplied=applyLeagueSettings(lg);
@@ -7792,7 +7807,7 @@ function bandOf(ranges,mid){
 function weeklyLineup(roster,w){
   const R=state.settings.roster;
   const score=p=>wkPts(p,w);
-  const byPos={};ALLPOS.forEach(pos=>byPos[pos]=roster.filter(x=>x.pos===pos).slice().sort((a,b)=>score(b)-score(a)));
+  const byPos={};ALLPOS.forEach(pos=>byPos[pos]=roster.filter(x=>x.pos===pos&&!x.taxi&&!x.onIr).slice().sort((a,b)=>score(b)-score(a)));
   const used=new Set(),slots=[];
   const take=pos=>{for(const pl of (byPos[pos]||[])){if(!used.has(pl.id)){used.add(pl.id);return pl;}}return null;};
   [["QB",R.QB],["RB",R.RB],["WR",R.WR],["TE",R.TE]].forEach(([pos,n])=>{for(let i=0;i<n;i++)slots.push({slot:pos,pl:take(pos)});});
@@ -8473,7 +8488,7 @@ function weeklyScore(roster,week){
    report — a healthy roster is byte-for-byte what it was. */
 function unitAvail(p,week){ return (week===(state.ui.seasonWeek||1)) ? availWeek(p) : availROS(p); }
 function weekUnits(roster,week){
-  const active=(roster||[]).filter(p=>p&&!p.isPick&&p.bye!==week&&unitAvail(p,week)>0.02);
+  const active=(roster||[]).filter(p=>p&&!p.isPick&&!p.taxi&&!p.onIr&&p.bye!==week&&unitAvail(p,week)>0.02);
   const {slots,bench}=fillLineup(active, p=>pts(p)*unitAvail(p,week));
   const unit=p=>{const d=p.dist;return {pl:p,base:pts(p)/17*unitAvail(p,week),sd:d?(d.c-d.f)/2.08:0.18,
     cv:weekCvOf(p.pos),mult:weeklyMultOf(p,week)};};
