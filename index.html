@@ -811,6 +811,13 @@
   .buzz-nm .nmtxt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:13px}
   .buzz-nm .meta{flex:none}
 
+  /* ── Grade board table: consistent grade pills, subtle row banding, bold proj ── */
+  #gTable td .tier{display:inline-flex;align-items:center;justify-content:center;min-width:30px;
+    padding:3px 8px;border-radius:8px;font-size:11.5px;font-weight:800}
+  #gTable tbody tr.grow:nth-child(2n){background:color-mix(in srgb,var(--panel-2) 35%,transparent)}
+  #gTable tbody tr.grow:hover{background:var(--panel-2)}
+  #gTable td:last-child{font-family:var(--display);font-weight:700}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
