@@ -1190,11 +1190,13 @@
     <div class="panel">
       <div class="hd"><h2>This week</h2>
         <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <button class="ghost sm hide" id="mWinBtn">🤖 How do I win?</button>
           <button class="ghost sm" id="mPrev" title="Previous week">‹</button>
           <select id="mWeek" class="search" style="width:auto;padding:4px 8px"></select>
           <button class="ghost sm" id="mNext" title="Next week">›</button></span></div>
       <div class="bd">
         <div id="mH2H"></div>
+        <div id="mWinOut" class="aiwhyout" style="margin-top:12px"></div>
         <div class="note" id="matchNote" style="margin-top:14px;font-size:12px"></div>
       </div>
     </div>
@@ -1359,6 +1361,12 @@
 
   <!-- IN-SEASON TAB -->
   <section id="tab-injuries" class="hide">
+    <div class="panel hide" style="margin-bottom:14px" id="injBriefPanel">
+      <div class="hd"><h2>🤖 Injury impact &amp; cover</h2>
+        <button class="ghost sm" id="injBriefBtn" style="margin-left:auto">Generate</button></div>
+      <div class="bd"><div id="injBrief"><div class="meta">One tap reads your injuries the way they hit your team — the points at stake for each, hold vs drop, and the best available replacement to grab, under your scoring.</div></div>
+        <div id="injBriefJump" class="brief-jump hide"></div></div>
+    </div>
     <div class="panel">
       <div class="hd"><h2>Injury report</h2>
         <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
@@ -2773,6 +2781,67 @@ async function aiRosterReport(){
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
 }
+/* Injuries tab: read each hurt player the way it hits YOUR team — points at stake, hold/drop, cover. */
+function aiInjuryContext(){
+  const s=state.settings, wk=state.ui.seasonWeek||1, to=(state.ui.wWindow==="po")?17:18;
+  const roster=(myLiveRoster()||[]).filter(p=>p&&!p.isPick);
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}. Week ${wk}.`);
+  const hurt=roster.filter(p=>{ let ir=null; try{ir=injReportFor(p);}catch(e){} return p.inj||ir; });
+  if(!hurt.length){ L.push("None of your rostered players are on the injury report right now."); return L.join("\n"); }
+  hurt.forEach(p=>{ let ir=null; try{ir=injReportFor(p);}catch(e){}
+    L.push(`${p.name} (${p.pos}${p.team?" "+p.team:""}) — status ${p.inj||(ir&&ir.status)||"?"}${p.injPart?" ("+p.injPart+")":""}${ir&&ir.practice?", "+practiceWord(ir.practice)+" practice":""}. Projects ~${fmt(pts(p))}pts now (already discounted for the injury).${p.injNote?" Beat note: "+p.injNote:""}`);
+  });
+  try{ const ir=injuryReplacements(roster,wk,to).filter(x=>x.fill);
+    if(ir.length)L.push(`Best available replacements on the wire: ${ir.map(x=>`for ${x.starter.name} → ${x.fill.name} (${x.fill.pos})${x.fill.bid!=null?" ~$"+x.fill.bid:""}`).join("; ")}.`);
+  }catch(e){}
+  return L.join("\n");
+}
+async function aiInjuryBrief(){
+  const out=$("#injBrief"),btn=$("#injBriefBtn"),jump=$("#injBriefJump"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">reading your injuries…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiInjuryContext(),
+      `For each injured player on my roster, one tight line: the points at stake, whether to hold / bench / drop, and the single best replacement to grab if I need one (name + FAAB). Lead with the most urgent — a starter who's Out. If nobody's a real concern, say so plainly. Be decisive.`);
+    out.innerHTML=aiFmt(ans);
+    if(jump){jump.classList.remove("hide");jump.innerHTML=`<button class="ghost sm" data-jump="waivers">Waiver Wire →</button><button class="ghost sm" data-jump="season">Start / Sit →</button>`;jump.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>showTab(b.dataset.jump));}
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* Matchups tab: how to WIN this specific game — win %, the swing players, the lineup lever. */
+function aiMatchupContext(){
+  const s=state.settings, w=state.ui.mWeek||state.ui.seasonWeek||1;
+  const roster=(myLiveRoster()||[]).filter(p=>p&&!p.isPick);
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}. Week ${w} head-to-head.`);
+  if(!roster.length){ L.push("No roster yet."); return L.join("\n"); }
+  try{
+    const SC=seasonSchedule(), wkObj=SC.weeks.find(x=>x.week===w), meT=myTeamIdx();
+    const pair=wkObj&&wkObj.pairs.find(p=>p.includes(meT));
+    const opp=(pair!=null)?(pair[0]===meT?pair[1]:pair[0]):null;
+    const A=weekUnits(roster,w), B=opp!=null?weekUnits(liveRosters()[opp]||[],w).starters:null;
+    if(opp!=null&&B&&B.length&&A.starters.length){
+      const sm=simMatchup(A.starters,B,2000);
+      L.push(`Opponent: ${teamLabel(opp)}. Your win probability: ${Math.round(sm.p*100)}%. You project ~${fmt(sm.a.mean)} (bad-good ${fmt(sm.a.lo)}–${fmt(sm.a.hi)}); they project ~${fmt(sm.b.mean)} (${fmt(sm.b.lo)}–${fmt(sm.b.hi)}).`);
+      const sw=swingOf(A.starters,B,1200).slice(0,4);
+      if(sw.length)L.push(`Your players who most swing the outcome (win-prob move if they boom vs bust): ${sw.map(x=>`${lastName(x.pl.name)} ${(x.swing*100).toFixed(0)}pp`).join("; ")}.`);
+      const res=startSitAdvice(A,B,700), best=res.moves.filter(m=>m.gain>2*m.se)[0];
+      L.push(best?`Best start/sit for THIS game: start ${best.inPl.name} over ${best.outPl.name} at ${slotLabel(best.slot)} (+${(best.gain*100).toFixed(1)}% to win).`:`No bench swap improves your win odds — your lineup is already the best play for the matchup.`);
+    } else {
+      const LW=weeklyLineup(roster,w);
+      L.push(`No opponent scheduled for this week (or league not synced). Your best lineup projects ~${fmt(LW.slots.reduce((a,x)=>a+(x.pl?wkPts(x.pl,w):0),0))} pts.`);
+    }
+  }catch(e){ L.push("(matchup detail unavailable this render)"); }
+  return L.join("\n");
+}
+async function aiMatchupBrief(){
+  const out=$("#mWinOut"),btn=$("#mWinBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">reading the matchup…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiMatchupContext(),
+      `In 3 tight lines tell me how to win this week: (1) am I favored or the underdog, and by how much; (2) the one lineup lever that most improves my win probability (or confirm my lineup is set); (3) which of my players the game hinges on. Cite the win % and the swings. Be decisive, no preamble.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Re-read"; }
+}
 function isSF(){return (state.settings.roster.SUPERFLEX||0)>0;}
 function adpOf(pl){
   if(pl.idp) return pl.adpIdp!=null?pl.adpIdp:(pl.adp||999);
@@ -4106,6 +4175,7 @@ function renderAvail(){
 const INJ_RANK={Out:0,Doubtful:1,IR:2,PUP:3,Sus:4,Questionable:5,NA:6,DNR:7,COV:8};
 function renderInjuries(){
   const box=$("#injList"); if(!box)return;
+  if($("#injBriefPanel"))$("#injBriefPanel").classList.toggle("hide",!aiConfigured());
   const fresh=$("#injFresh");
   if(fresh)fresh.innerHTML=INJSTATE.loading?"updating…"
     :INJSTATE.err?`<span style="color:var(--warn)">${INJSTATE.err}${INJSTATE.ts?" · showing last pull":""}</span>`
@@ -9184,6 +9254,7 @@ function renderMatchups(){
   // bridge-aware: a synced league fills TRADE.teams, not state.picks, so use liveRosters()/myTeamIdx() —
   // the same source the season sim and playoff push use. Draft mode is unchanged (the bridge falls through
   // to teamRoster/myIdx). Without this the whole "this week" side of the tab was blank for synced leagues.
+  if($("#mWinBtn"))$("#mWinBtn").classList.toggle("hide",!aiConfigured());
   const T=state.settings.teams, me=myTeamIdx();
   const SC=seasonSchedule(), rosters=liveRosters();
   const filled=leagueSynced()?1:(state.picks.length/(T*Object.values(state.settings.roster).reduce((a,b)=>a+b,0)));
@@ -10586,6 +10657,8 @@ function init(){
   $("#pexport").onclick=exportProjCSV;
   segWire("#s_injscope",v=>{state.ui.injScope=v;renderInjuries();save();});
   if($("#injRefreshBtn"))$("#injRefreshBtn").onclick=()=>refreshInjuries();
+  if($("#injBriefBtn"))$("#injBriefBtn").onclick=aiInjuryBrief;
+  if($("#mWinBtn"))$("#mWinBtn").onclick=aiMatchupBrief;
   if($("#mLiveRefresh"))$("#mLiveRefresh").onclick=()=>{ if($("#mLiveTs"))$("#mLiveTs").textContent="loading…"; refreshLive(); };
   // ---- AI GM copilot wiring ----
   if($("#aiFab"))$("#aiFab").onclick=aiOpen;
