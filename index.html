@@ -612,18 +612,18 @@
   }
   @media (prefers-color-scheme: dark){
     :root{
-      --bg:#0c1210; --panel:#141c19; --panel-2:#1a2420;
-      --ink:#e6ede9; --ink-2:#8fa199;
-      --line:#232f2a; --line-2:#32423b;
+      --bg:#0d0f13; --panel:#161a20; --panel-2:#1e232b;
+      --ink:#e7ebf1; --ink-2:#949cab;
+      --line:#272d37; --line-2:#37404c;
       --shadow:0 1px 1px rgba(0,0,0,.4),0 10px 26px -12px rgba(0,0,0,.6);
       --shadow-lg:0 2px 6px rgba(0,0,0,.45),0 22px 48px -18px rgba(0,0,0,.7);
       --good-ink:var(--good); --warn-ink:var(--warn); --crit-ink:var(--crit);
     }
   }
   :root[data-theme="dark"]{
-    --bg:#0c1210; --panel:#141c19; --panel-2:#1a2420;
-    --ink:#e6ede9; --ink-2:#8fa199;
-    --line:#232f2a; --line-2:#32423b;
+    --bg:#0d0f13; --panel:#161a20; --panel-2:#1e232b;
+    --ink:#e7ebf1; --ink-2:#949cab;
+    --line:#272d37; --line-2:#37404c;
     --shadow:0 1px 1px rgba(0,0,0,.4),0 10px 26px -12px rgba(0,0,0,.6);
     --shadow-lg:0 2px 6px rgba(0,0,0,.45),0 22px 48px -18px rgba(0,0,0,.7);
     --good-ink:var(--good); --warn-ink:var(--warn); --crit-ink:var(--crit);
@@ -772,6 +772,15 @@
       radial-gradient(120% 90% at -10% 0%, color-mix(in srgb,var(--info) 6%,transparent), transparent 50%);
     background-attachment:fixed;background-repeat:no-repeat;
   }
+  /* Dark mode wants a clean, neutral ground — a colored glow reads as murk on near-black.
+     Replace it with a single hueless top light so there's depth but no green cast. */
+  @media (prefers-color-scheme: dark){
+    body{background-image:radial-gradient(115% 80% at 50% -25%, rgba(255,255,255,.028), transparent 62%)}
+  }
+  :root[data-theme="dark"] body{background-image:radial-gradient(115% 80% at 50% -25%, rgba(255,255,255,.028), transparent 62%)}
+  :root[data-theme="light"] body{background-image:
+      radial-gradient(130% 90% at 100% -10%, color-mix(in srgb,var(--accent) 9%,transparent), transparent 55%),
+      radial-gradient(120% 90% at -10% 0%, color-mix(in srgb,var(--info) 6%,transparent), transparent 50%)}
   ::selection{background:color-mix(in srgb,var(--accent) 26%,transparent)}
 
   /* ---- Type: a display grotesque on the wordmark, the names you read, and the
