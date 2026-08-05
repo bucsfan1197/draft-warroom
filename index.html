@@ -3694,6 +3694,11 @@ async function loadMyLeagues(){
     if(!all.length){leagueStatus("No leagues found on that account.","var(--warn)");return;}
     const sel=$("#leagueSelect");
     sel.innerHTML=all.map(l=>`<option value="${l.id}">${l.name}</option>`).join("");
+    // Default to the league you're actually working with — the connected one, or the last you learned —
+    // not just whatever sorts first (which is often a brand-new league that hasn't drafted yet).
+    let pref="";
+    try{ pref=(typeof TRADE!=="undefined"&&TRADE.leagueId)||localStorage.getItem("ffwr_learnid")||""; }catch(e){}
+    if(pref&&all.some(l=>String(l.id)===String(pref)))sel.value=String(pref);
     sel.classList.remove("hide"); $("#leagueLearnBtn").classList.remove("hide");
     leagueStatus(`Found ${all.length} leagues — pick one and hit Learn.`);
   }catch(e){leagueStatus("Couldn't reach Sleeper.","var(--crit)");}
@@ -3728,7 +3733,8 @@ async function learnLeague(leagueId){
     }
   }catch(e){leagueStatus("Error reading history: "+e,"var(--crit)");return;}
   const mgrs=Object.keys(tally);
-  if(!mgrs.length){leagueStatus("No completed drafts found for that league.","var(--warn)");return;}
+  if(!mgrs.length){leagueStatus("That league has no completed draft to learn from yet — it's brand-new with no prior season on Sleeper. Pick a league that has already drafted (dynasty or a returning redraft), or just leave it: mock opponents fall back to league-average tendencies.","var(--warn)");return;}
+  try{ localStorage.setItem("ffwr_learnid",String(leagueId)); }catch(e){}   // remember it for next time
   // league-average positional share per bucket, then each manager's bias vs it
   const bias={};
   ["early","mid","late"].forEach(b=>{
