@@ -2857,6 +2857,13 @@ function recommendations(){
     if(URANK&&URANK[pl.id]&&URANK[pl.id].u!=null&&URANK[pl.id].c!=null&&v>0)
       usageTilt=Math.max(-25,Math.min(25,URANK[pl.id].c-URANK[pl.id].u))*0.6;
     let score=posV*needMult + negV/Math.max(needMult,0.4) + Math.min(cliff,25)*0.5 + urgentBonus + usageTilt - satPen;
+    // Filling a REQUIRED starting slot is worth more than luxury depth, and more so as your picks run
+    // out — because an unfilled slot scores ZERO, not replacement level. The need multiplier only scales
+    // POSITIVE vorp, so a below-replacement must-start (the last startable QB is gone, you still have no
+    // QB) got no lift and lost to a stud at a position you're already full at — which ends the draft with
+    // an illegal lineup. This flat, urgency-scaled bonus (equal across all must-starts, so it never
+    // reorders them) lifts the required fill above luxury exactly when you're forced to make it.
+    if(mustStart)score+=urgency*6;
     if(v<=0&&!isNeed)score-=40; // don't chase below-replacement depth you don't need
     if(hardFull)score=-900-satPen; // a 2nd K / 4th TE can never crack your lineup — never recommend it
     // K/DST: park them until skill-position starters are filled (real draft behavior)
@@ -4477,6 +4484,29 @@ function selfTest(){
             `wk${cw} ${tw.toFixed(1)} → wk${lw} ${fw.toFixed(1)}`);
       })();
     }
+    /* ENDGAME LEGALITY: with a required starting slot still empty and only below-replacement players
+       left to fill it, the recommendation MUST surface that fill over a stud at a position you're
+       already full at — otherwise following the board ends the draft with an illegal lineup. The need
+       multiplier only scaled positive vorp, so a below-replacement must-start got no lift; the
+       urgency fill-bonus fixes it. */
+    (()=>{
+      const sv={teams:state.settings.teams,slot:state.settings.slot,snake:state.settings.snake,picks:state.picks.slice(),fmt:state.settings.format,auc:state.settings.auction};
+      state.settings.teams=12;state.settings.slot=6;state.settings.snake=1;state.settings.format="redraft";state.settings.auction=false;
+      const me=myIdx(), bp={};
+      state.players.filter(p=>inLeague(p)).forEach(p=>(bp[p.pos]=bp[p.pos]||[]).push(p));
+      ["QB","RB","WR","TE","K","DST"].forEach(p=>bp[p]&&bp[p].sort((a,b)=>pts(b)-pts(a)));
+      const lv0=replacementLevels().levels;
+      state.picks=[]; let qi=0;
+      (bp.QB||[]).forEach(q=>{ if(vorp(q,lv0)>-4&&qi<26){ state.picks.push({playerId:q.id,teamIdx:[0,1,2,3,4,6,7,8,9,10][qi%10]}); qi++; } });
+      const taken=new Set(state.picks.map(p=>p.playerId));
+      const grab=(pos,cnt)=>{let g=0;for(const p of (bp[pos]||[])){if(taken.has(p.id))continue;state.picks.push({playerId:p.id,teamIdx:me});taken.add(p.id);if(++g>=cnt)break;}};
+      grab("RB",5);grab("WR",5);grab("TE",2);grab("K",1);grab("DST",1);   // 14 players, no QB, 1 pick left
+      const noQB=!teamRoster(me).some(p=>p.pos==="QB"), topRec=recommendations().list[0];
+      add("Endgame recommends the required fill, not luxury depth (legal lineup)",
+          noQB&&!!topRec&&topRec.pl.pos==="QB",
+          topRec?`no QB + 1 pick left → recommends ${lastName(topRec.pl.name)}(${topRec.pl.pos})`:"no recommendation");
+      state.settings.teams=sv.teams;state.settings.slot=sv.slot;state.settings.snake=sv.snake;state.settings.format=sv.fmt;state.settings.auction=sv.auc;state.picks=sv.picks;
+    })();
     /* Live draft intelligence, on a mid-draft board. The prediction must never spend one of YOUR
        picks (it forecasts opponents), must not predict more players gone than there are picks in
        the horizon, and a "grab" must be a position you actually need — a grab you're set at is
