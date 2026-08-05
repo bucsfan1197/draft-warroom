@@ -6287,7 +6287,7 @@ async function tradeLoadRosters(leagueId){
       return {rosterId:r.roster_id, owner:r.owner_id, name:nameOf[r.owner_id]||("Team "+r.roster_id),
         players:ids.map(sid=>bySid[sid]).filter(Boolean),
         unmatched:ids.filter(sid=>!bySid[sid]).length,
-        faabUsed:rs.waiver_budget_used||0, waiverPos:rs.waiver_position||null};});
+        faabUsed:rs.waiver_budget_used||0, waiverPos:rs.waiver_position||null, division:rs.division||null};});
     // Apply the league's own scoring, roster shape and size the moment you connect — so the waiver
     // board, start/sit and everything else compute under THIS league's rules automatically.
     TRADE.scoringApplied=applyLeagueSettings(lg);
@@ -6400,6 +6400,12 @@ async function tradeLoadSchedule(leagueId,lg){
     const weeksPerRound=roundType===2?2:1;
     const nRounds=Math.max(1,Math.ceil(Math.log2(playoffTeams)));
     const playoffEnd=Math.min(18,playoffStart+nRounds*weeksPerRound-1);
+    // Divisions: each roster carries settings.division (1-based); names live in metadata.division_N.
+    // teamDiv is indexed by TRADE.teams position so the seeder can find each division's winner.
+    const divisions=+st.divisions||0;
+    const teamDiv=TRADE.teams.map(t=>t.division!=null?+t.division:null);
+    const divNames={}; const md=(lg&&lg.metadata)||{};
+    if(divisions>1)for(let i=1;i<=divisions;i++)divNames[i]=md["division_"+i]||("Division "+i);
     const regEnd=playoffStart-1;
     const idxOf={}; TRADE.teams.forEach((t,i)=>idxOf[t.rosterId]=i);
     const weeks=await Promise.all(
@@ -6419,7 +6425,7 @@ async function tradeLoadSchedule(leagueId,lg){
       sched[w]=pairs.length?pairs:null;
       if(Object.keys(scored).length>=2)done[w]=scored;      // a week with real points is in the books
     });
-    if(sched.some(Boolean)) TRADE.schedule={sched,done,regEnd,playoffStart,playoffTeams,roundType,weeksPerRound,nRounds,playoffEnd};
+    if(sched.some(Boolean)) TRADE.schedule={sched,done,regEnd,playoffStart,playoffTeams,roundType,weeksPerRound,nRounds,playoffEnd,divisions,teamDiv,divNames};
   }catch(e){ TRADE.schedule=null; }
 }
 // ---- Manual evaluator: judge a specific offer, any package size ----
@@ -7690,6 +7696,19 @@ function playBracket(seeds,wk,startW,wpr){
   }
   return alive[0];
 }
+/* Seed the playoff field from a record-sorted team order. In a flat league that's just the top
+   nSeeds. When the league has divisions, each division WINNER (its best team by record, then
+   points) is guaranteed a spot and seeded above every wildcard — the one rule divisions actually
+   change — so a 9-4 wildcard can sit below an 8-5 division winner, exactly like the real bracket.
+   No-division leagues fall straight through to the old behaviour. */
+function seedTeams(order,nSeeds){
+  const S=TRADE.schedule, D=S&&S.divisions, teamDiv=S&&S.teamDiv;
+  if(!D||D<2||!teamDiv||!teamDiv.some(d=>d!=null)) return order.slice(0,nSeeds);
+  const winners=[], seen=new Set();
+  for(const t of order){ const d=teamDiv[t]; if(d!=null&&!seen.has(d)){ seen.add(d); winners.push(t); } } // order is record-sorted, so each division's first-seen team is its winner
+  const winSet=new Set(winners);
+  return winners.concat(order.filter(t=>!winSet.has(t))).slice(0,nSeeds);
+}
 function simTitle(rosters,slots,iters){ return simOdds(rosters,slots,iters).title; }
 /* The championship simulator, now reporting BOTH the odds of making the playoffs and the odds of
    winning it all, for your team. Playoffs is the more actionable number and moves the most; the
@@ -7745,7 +7764,7 @@ function simOdds(rosters,slots,iters){
       else { for(let i=0;i<T;i++){ const opp=(i+w)%T; if(opp!==i&&wk[i][w]>wk[opp][w])rec[i]+=0.5; } }
       for(let t=0;t<T;t++)pf[t]+=wk[t][w];
     }
-    const seeds=[...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])).slice(0,nSeeds);
+    const seeds=seedTeams([...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])),nSeeds);
     if(seeds.includes(TRADE.me))playoffs++;
     if(seeds.length<2){ if(seeds[0]===TRADE.me)titles++; continue; }
     if(playBracket(seeds,wk,pStart,wpr)===TRADE.me)titles++;
@@ -8706,7 +8725,7 @@ function simSeason(iters,override){
         if(sa>sb)w[a]++; else if(sb>sa)w[b]++; else {w[a]+=.5;w[b]+=.5;}
       });
     });
-    [...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])).slice(0,nSeeds).forEach(i=>made[i]++);
+    seedTeams([...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])),nSeeds).forEach(i=>made[i]++);
     for(let i=0;i<T;i++){wins[i]+=w[i];pfs[i]+=pf[i];}
   }
   const val=[...Array(T).keys()].map(i=>({team:i,playoff:made[i]/N,wins:wins[i]/N,pf:pfs[i]/N,
@@ -9302,11 +9321,19 @@ function renderSeasonOutlook(SC,rosters,me,wk){
   }).join("");
   $$("#myScheduleBox [data-wk]").forEach(el=>el.onclick=()=>{state.ui.mWeek=+el.dataset.wk;renderMatchups();});
 
-  const order=[...Array(T).keys()].sort((x,y)=>S[y].playoff-S[x].playoff||S[y].wins-S[x].wins);
+  const S_=TRADE.schedule, hasDiv=!!(S_&&S_.divisions>1&&S_.teamDiv&&S_.teamDiv.some(d=>d!=null));
+  const divName=i=>{ const d=S_&&S_.teamDiv&&S_.teamDiv[i]; return d!=null?((S_.divNames&&S_.divNames[d])||("Division "+d)):null; };
+  // With divisions, order WITHIN each division by record then group them — that's how the standings
+  // page reads in a divisioned league, and it makes the division-winner seeds obvious.
+  const order=hasDiv
+    ? [...Array(T).keys()].sort((x,y)=>((S_.teamDiv[x]||99)-(S_.teamDiv[y]||99))||(S[y].wins-S[x].wins)||(S[y].pf-S[x].pf))
+    : [...Array(T).keys()].sort((x,y)=>S[y].playoff-S[x].playoff||S[y].wins-S[x].wins);
+  const divLeader={}; if(hasDiv)order.forEach(i=>{ const d=S_.teamDiv[i]; if(d!=null&&divLeader[d]==null)divLeader[d]=i; });
   $("#standingsBody").innerHTML=order.map(i=>{
     const r=S[i], g=Math.max(1,r.games), po=Math.round(r.playoff*100);
+    const dn=hasDiv?divName(i):null, isLead=hasDiv&&divLeader[S_.teamDiv[i]]===i;
     return `<tr${i===me?' style="background:var(--accent-soft)"':''}>
-      <td>${i===me?"★ ":""}${teamLabel(i)}</td>
+      <td>${i===me?"★ ":""}${teamLabel(i)}${dn?` <span class="chip"${isLead?' title="Division leader — projected top seed"':''}>${isLead?"🏆 ":""}${dn}</span>`:""}</td>
       <td class="r num">${r.wins.toFixed(1)}-${(g-r.wins).toFixed(1)}</td>
       <td class="r num meta">${fmt(r.pf/g)}</td>
       <td class="r num"><span class="chip ${po>=70?"good":po>=35?"":"crit"}">${po}%</span></td></tr>`;
