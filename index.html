@@ -767,6 +767,19 @@
   .ww-bid b{font-size:16px}
   .ww-bid .meta{font-size:10px}
 
+  /* ── My Team: bye-week rows + all-teams board cards ── */
+  .bye-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;
+    padding:8px 10px;border-radius:10px;transition:background .12s ease}
+  .bye-row:hover{background:var(--panel-2)}
+  .bye-wk{font-size:10.5px;font-weight:800;letter-spacing:.02em;color:var(--ink-2);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:4px 9px;
+    white-space:nowrap;font-variant-numeric:tabular-nums}
+  .bye-names{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .teamcard{border-radius:12px;padding:11px 12px}
+  .teamcard h4{font-size:11.5px;font-weight:700;color:var(--ink);
+    border-bottom:1px solid var(--line);padding-bottom:7px;margin-bottom:7px}
+  .teamcard .pl{font-size:11.5px;padding:2.5px 0;color:var(--ink)}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -7937,8 +7950,10 @@ function renderTeamTab(){
   $("#byeBox").innerHTML = roster.length? (weeks.map(w=>{
     const list=byWeek[w], starters=list.filter(p=>isLikelyStarter(p,roster));
     const risk=starters.length>=2;
-    return `<div class="kv"><span><b class="num">Wk ${w}</b> <span class="meta">${list.map(p=>p.name.split(' ').slice(-1)).join(', ')}</span></span>
-      <span class="chip ${risk?'crit':list.length>=3?'warn':'good'}">${risk?starters.length+' starters out':list.length+' out'}</span></div>`;
+    const cls=risk?'crit':list.length>=3?'warn':'good';
+    return `<div class="bye-row"><span class="bye-wk">Wk ${w}</span>
+      <span class="bye-names">${list.map(p=>lastName(p.name)).join(', ')}</span>
+      <span class="chip ${cls}">${risk?starters.length+' starters out':list.length+' out'}</span></div>`;
   }).join("") + `<div class="note" style="margin-top:12px">${byeVerdict(weeks,byWeek,roster)}</div>`)
    : `<div class="emptystate">No bye conflicts yet.</div>`;
 
