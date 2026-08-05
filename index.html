@@ -179,6 +179,14 @@
   .aifab{position:fixed;right:20px;bottom:20px;width:52px;height:52px;border-radius:50%;border:1px solid var(--line-2);
          background:var(--panel);box-shadow:var(--shadow);font-size:24px;cursor:pointer;z-index:60;line-height:1}
   .aifab:hover{background:var(--panel-2);transform:translateY(-1px)}
+  /* Draft-day mobile: the player board sits far below the recommendation column, so this one-tap
+     pill hops between the two. Desktop shows the board beside the recs, so it's hidden there. */
+  .draftjump{position:fixed;left:16px;bottom:18px;z-index:61;display:none;
+             padding:11px 16px;border-radius:22px;border:1px solid var(--accent);
+             background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:14px;
+             box-shadow:var(--shadow);cursor:pointer;line-height:1}
+  .draftjump:active{transform:scale(.97)}
+  @media(max-width:640px){.draftjump.show{display:block}}
   .aipanel{position:fixed;right:20px;bottom:20px;width:min(400px,calc(100vw - 32px));max-height:min(620px,80vh);
            display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);
            border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.28);z-index:61;overflow:hidden}
@@ -1789,6 +1797,7 @@
 <div class="flashwrap"><div class="flash" id="flash"></div></div>
 
 <button id="aiFab" class="aifab hide" title="Ask the GM copilot" aria-label="Ask the GM copilot">🤖</button>
+<button id="draftJump" class="draftjump" aria-label="Jump to the player board">↓ Board</button>
 <div id="aiPanel" class="aipanel hide" role="dialog" aria-label="AI GM copilot">
   <div class="aihd"><span class="aidot"></span><b>GM copilot</b><span class="meta" id="aiCtxLabel"></span>
     <button class="ghost sm" id="aiClose" style="margin-left:auto" aria-label="Close">✕</button></div>
@@ -4095,6 +4104,7 @@ function renderAll(){
   const t=activeTab();
   Object.keys(TAB_RENDER).forEach(k=>{ if(k!==t)TABDIRTY[k]=1; });
   renderTab(t);
+  try{ draftJumpSync(); }catch(e){}   // keep the mobile board-jump pill in sync on every render
   save();
 }
 function renderEveryTab(){ Object.keys(TAB_RENDER).forEach(renderTab); }   // used by the self-test
@@ -10862,6 +10872,22 @@ function wireSetup(){
 }
 
 /* ---- tabs ---- */
+let _djWired=false;
+function draftJumpSync(){
+  const btn=$("#draftJump"); if(!btn)return;
+  if(!_djWired){ _djWired=true;
+    const board=()=>document.querySelector(".grid-draft > .panel");
+    const atBoard=()=>{const b=board();return !!b&&b.getBoundingClientRect().top<window.innerHeight*0.4;};
+    const lbl=()=>{const x=$("#draftJump");if(x)x.textContent=atBoard()?"↑ Top":"↓ Board";};
+    btn.onclick=()=>{const b=board();if(!b)return;
+      if(atBoard())window.scrollTo({top:0,behavior:"smooth"});
+      else b.scrollIntoView({behavior:"smooth",block:"start"});
+      setTimeout(lbl,500);};
+    window.addEventListener("scroll",lbl,{passive:true}); lbl();
+  }
+  const onDraft=$("#tab-draft")&&!$("#tab-draft").classList.contains("hide");
+  btn.classList.toggle("show",!!onDraft);
+}
 function showTab(name){
   $$(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===name));
   // derive from the DOM so a new tab can never be silently left out of this list
@@ -10872,6 +10898,7 @@ function showTab(name){
     try{ refreshLive(); }catch(e){}
   // the copilot follows you: if it's open, re-point its prompts at the new tab
   try{ if(typeof aiRenderQuick==="function"&&$("#aiPanel")&&!$("#aiPanel").classList.contains("hide"))aiRenderQuick(); }catch(e){}
+  try{ draftJumpSync(); }catch(e){}   // mobile draft-board jump pill follows the active tab
 }
 
 /* ---- theme ---- */
