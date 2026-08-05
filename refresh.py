@@ -951,7 +951,7 @@ def git_push():
         # is the whole point of the accuracy work — next year's walk-forward test is fit against it —
         # so it has to leave this machine. It was accumulating locally and never pushed, one disk
         # failure from gone. Both are backed up now. Trigger on either changing.
-        tracked=["data.js","proj_archive.csv"]
+        tracked=["data.js","proj_archive.csv","props_archive.csv","props.json"]
         st=subprocess.run(["git","-C",HERE,"status","--porcelain",*tracked],capture_output=True,text=True)
         if not st.stdout.strip():
             log("git: no change, nothing to push"); return
@@ -986,9 +986,23 @@ def keepalive():
     except Exception as ex:
         log("keepalive skipped:",ex)
 
+def props_step():
+    # Player props forward-experiment. Dormant unless ODDS_API_KEY is set (a free the-odds-api key,
+    # added as an Actions secret). Pulls + archives this week's props and re-scores the archive against
+    # actuals into props.json. Props never touch the projection until that verdict proves positive.
+    key=os.environ.get("ODDS_API_KEY")
+    try:
+        import tools_props
+        if key:
+            log("  props:", tools_props.pull_and_archive(key))
+        log("  props verdict:", tools_props.validate().get("verdict"))
+    except Exception as ex:
+        log("  props step skipped:",ex)
+
 def cycle():
     try:
         data=build_data(); write_data_js(data)
+        props_step()
         pushed=git_push()
         if not pushed: keepalive()   # only when real data didn't change this cycle
     except Exception:
