@@ -735,6 +735,26 @@
   /* The header bar: a hair more presence for the wordmark lockup */
   .topin{padding-top:14px;padding-bottom:14px}
 
+  /* ── In-Season start/sit sheet: a real lineup table, not bare kv rows ── */
+  .lu-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
+    padding:0 2px 12px;border-bottom:1px solid var(--line);margin-bottom:8px}
+  .lu-total{font-family:var(--display);font-size:26px;font-weight:800;line-height:1;
+    font-variant-numeric:tabular-nums;margin-top:3px}
+  .lu-total .meta{font-size:13px;font-family:var(--sans);font-weight:600}
+  .lu-list{display:flex;flex-direction:column;gap:2px}
+  .lu-row{display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:12px;
+    padding:8px 10px;border-radius:10px;transition:background .12s ease}
+  .lu-row:hover{background:var(--panel-2)}
+  .lu-slot{font-size:10px;font-weight:800;letter-spacing:.03em;color:var(--ink-2);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:5px 0;text-align:center}
+  .lu-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-weight:600;display:flex;align-items:center;gap:7px}
+  .lu-pts{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .lu-pts b{font-size:15px;font-family:var(--display)}
+  .lu-pts .meta{margin-left:6px;font-size:10.5px}
+  .lu-list.bench .lu-row{opacity:.92}
+  .lu-list.bench .lu-pts b{font-size:13px}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -7587,16 +7607,22 @@ function renderInSeason(){
   const L=weeklyLineup(roster,w);
   const total=L.slots.reduce((a,s)=>a+(s.pl?wkPts(s.pl,w):0),0);
   const band=bandOf(L.slots.filter(s=>s.pl&&s.pl.bye!==w).map(s=>wkRange(s.pl,w)),total);
-  ss.innerHTML=`<div class="kv"><span class="meta">Projected total</span><span><b>${fmt(total)}</b> pts
-      <span class="meta" title="Likely range once every starter's boom/bust spread is combined">${fmt(band[0])}–${fmt(band[1])}</span></span></div>`
+  ss.innerHTML=`<div class="lu-head">
+      <div><div class="eyebrow">Projected total · week ${w}</div><div class="lu-total"><b>${fmt(total)}</b> <span class="meta">pts</span></div></div>
+      <div class="meta" title="Likely range once every starter's boom/bust spread is combined">likely ${fmt(band[0])}–${fmt(band[1])}</div>
+    </div>
+    <div class="lu-list">`
    + L.slots.map(s=>{
       const p=s.pl;
-      if(!p)return `<div class="kv"><span><b class="num">${slotLabel(s.slot)}</b></span><span class="chip crit">empty</span></div>`;
+      if(!p)return `<div class="lu-row empty"><span class="lu-slot">${slotLabel(s.slot)}</span><span class="lu-name meta">Empty — start someone here</span><span class="chip crit">empty</span></div>`;
       const bye=p.bye===w, r=wkRange(p,w);
-      return `<div class="kv"><span><b class="num">${slotLabel(s.slot)}</b> <span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span>
-        <span>${bye?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b> <span class="meta">${r[0].toFixed(1)}–${r[1].toFixed(1)}</span>`}</span></div>`;}).join("")
-   + (L.bench.length?`<h3 class="eyebrow" style="margin:14px 0 6px">Bench</h3>`+L.bench.slice(0,8).map(p=>
-      `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span><span class="meta">${p.bye===w?"BYE":wkPts(p,w).toFixed(1)}</span></div>`).join(""):"");
+      const badge=s.slot!==p.pos?`<span class="pos ${p.pos}">${p.pos}</span>`:"";
+      return `<div class="lu-row"><span class="lu-slot">${slotLabel(s.slot)}</span>
+        <span class="lu-name">${badge}${p.name}${injChip(p)}</span>
+        <span class="lu-pts">${bye?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b><span class="meta">${r[0].toFixed(1)}–${r[1].toFixed(1)}</span>`}</span></div>`;}).join("")
+   + `</div>`
+   + (L.bench.length?`<div class="eyebrow" style="margin:16px 0 7px">Bench</div><div class="lu-list bench">`+L.bench.slice(0,8).map(p=>
+      `<div class="lu-row"><span class="pos ${p.pos}" style="justify-self:center">${p.pos}</span><span class="lu-name">${p.name}${injChip(p)}</span><span class="lu-pts">${p.bye===w?'<span class="chip crit">BYE</span>':`<b>${wkPts(p,w).toFixed(1)}</b>`}</span></div>`).join("")+`</div>`:"");
   /* This used to compare the highest-projected bench player against the lowest-projected starter
      and suggest swapping them, with no check that the swap was legal. The lowest-projected starter
      is essentially always the kicker and the best bench player is essentially always a backup
