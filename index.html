@@ -2656,6 +2656,10 @@ function aiWaiverContext(week){
     const t=WW_TREND.filter(x=>x.pl&&!rostered.has(x.pl.id)).slice(0,5);
     if(t.length) L.push(`Trending adds across Sleeper (popularity, NOT value — weigh against the numbers above): ${t.map(x=>x.pl.name).join("; ")}.`);
   } }catch(e){}
+  try{ if(TRADE.transactions&&TRADE.transactions.length){ const won=TRADE.transactions.filter(t=>t.bid>0).map(t=>t.bid).sort((a,b)=>a-b);
+    if(won.length){ const med=won[Math.floor(won.length/2)];
+      L.push(`Your league's ACTUAL winning FAAB bids so far (the real market — a bid only needs to clear this, don't overpay): median $${med}, high $${won[won.length-1]}, recent: ${TRADE.transactions.filter(t=>t.bid>0).slice(0,6).map(t=>"$"+t.bid).join(", ")}.`); } }
+  }catch(e){}
   return L.join("\n");
 }
 async function aiWaiverBrief(){
@@ -2663,7 +2667,7 @@ async function aiWaiverBrief(){
   out.innerHTML=`<span class="aithinking">reading your wire…</span>`; if(btn)btn.disabled=true;
   try{
     const ans=await askAI(aiWaiverContext(),
-      `Give me this week's waiver plan as 3-4 tight bullets: the best 1-2 adds and exactly how much FAAB to bid, who to drop to make room, cover for any injured starter, and the best streamer. Use the numbers; call out when a top add's edge is within noise. Be decisive.`);
+      `Give me this week's waiver plan as 3-4 tight bullets: the best 1-2 adds and exactly how much FAAB to bid — priced against my league's real winning bids, so I clear the market without overpaying — who to drop to make room, cover for any injured starter, and the best streamer. Use the numbers; call out when a top add's edge is within noise. Be decisive.`);
     out.innerHTML=aiFmt(ans);
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
@@ -6226,7 +6230,34 @@ function evalTrade(){
       ${!realMove?'<span class="meta">(within the simulation\'s noise — treat as unchanged)</span>':''}<br>${willThey}</div>
     ${(()=>{const gp=give.filter(p=>!p.isPick).length, tp=get.filter(p=>!p.isPick).length;   // picks take no roster spot
       return `<div class="note" style="margin-top:8px">Roster spots: you ${gp>tp?`free up ${gp-tp}`:tp>gp?`use ${tp-gp} more`:"stay even"}.
-      ${gp>tp?"Consolidating talent into fewer, better starters is usually good — just make sure your bench can cover byes.":""}</div>`;})()}</div>`;
+      ${gp>tp?"Consolidating talent into fewer, better starters is usually good — just make sure your bench can cover byes.":""}</div>`;})()}
+    ${aiConfigured()?`<button class="ghost sm" id="tradePitchBtn" style="margin-top:10px">🤖 Draft the pitch to send</button><div id="tradePitchOut" class="aiwhyout" style="margin-top:8px"></div>`:""}</div>`;
+  TRADE.lastEval={give,get,myGain,theirGain,base,after,dTitleRaw,realMove,oppIdx:oi,oppName:(opp&&opp.name)||teamLabel(oi),accept:acc};
+  { const pb=$("#tradePitchBtn"); if(pb)pb.onclick=aiTradePitch; }
+}
+/* Trade negotiator: turn the evaluated deal into a message you can actually send.
+   The pitch is framed for THEM (their need / their value), the honest read is for you (your sim swing). */
+function aiTradeContext(){
+  const e=TRADE.lastEval; if(!e) return "No trade has been evaluated yet.";
+  const s=state.settings, rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard", dyn=s.format==="dynasty";
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}.`);
+  L.push(`Proposed deal: YOU give ${e.give.map(p=>p.name).join(" + ")}; YOU get ${e.get.map(p=>p.name).join(" + ")} from ${e.oppName}.`);
+  L.push(`Simulation (common random numbers — the delta IS the trade, not sim noise): your title odds ${e.base}% → ${e.after}% (${e.dTitleRaw>=0?"+":""}${(e.dTitleRaw*100).toFixed(1)}pp${e.realMove?"":", within noise, treat as unchanged"}); your starting-lineup value change ${e.myGain>=0?"+":""}${Math.round(e.myGain)} ${dyn?"dynasty value":"pts"}.`);
+  L.push(`For ${e.oppName}: their value change ${e.theirGain>=0?"+":""}${Math.round(e.theirGain)}. Model read: ${e.accept&&e.accept.ok?"they would likely accept.":"they would likely decline"+(e.accept&&e.accept.why?" — "+e.accept.why:"")+"."}`);
+  try{ const opp=TRADE.teams[e.oppIdx]; if(opp){ const {need}=positionalNeed((opp.players||[]).filter(p=>p&&!p.isPick));
+    const holes=["QB","RB","WR","TE"].filter(k=>need[k]>0); if(holes.length)L.push(`${e.oppName}'s roster holes (why this could help them): ${holes.join(", ")}.`); } }catch(e2){}
+  return L.join("\n");
+}
+async function aiTradePitch(){
+  const out=$("#tradePitchOut"), btn=$("#tradePitchBtn"); if(!out)return;
+  if(!TRADE.lastEval){ out.innerHTML=`<span class="meta">Evaluate a trade first.</span>`; return; }
+  out.innerHTML=`<span class="aithinking">drafting your pitch…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiTradeContext(),
+      `Write the trade pitch I should send to ${TRADE.lastEval.oppName}. Two labelled parts: "**Message to send:**" — a short, natural message I can paste to them (3-4 sentences), framed around why it helps THEIR team (their need, their side of the value); friendly, not salesy, and do NOT mention my simulation or title-odds numbers. Then "**My read:**" — one honest line for me on whether it's worth doing, citing my title-odds swing.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; }
 }
 // All packages of size 1..maxN from a pool. Packages of 3+ are drawn only from the top `deepN`
 // assets — a 3-player package built out of a manager's 14th-best asset isn't a real trade, and
