@@ -4199,6 +4199,22 @@ function aiDraftContext(){
     const goneNames=[...pn.gone.keys()].map(id=>state.players[id]).filter(Boolean).map(p=>lastName(p.name));
     if(goneNames.length)L.push(`Predicted GONE before your next pick: ${goneNames.slice(0,10).join(", ")}.`);
   }catch(e){}
+  // On the clock: hand the coach BOTH engines' verdicts + the roster each pick builds, so it can
+  // reconcile them and narrate the finished team — not just name a player.
+  if(onClock){
+    let fast=[]; try{ fast=recommendations().list.slice(0,3); }catch(e){}
+    if(fast.length)L.push(`FAST engine's top picks (value + roster need): ${fast.map((r,i)=>`${i+1}. ${lastName(r.pl.name)}(${r.pl.pos})`).join("; ")}.`);
+    try{ if(typeof SIMCACHE!=="undefined"&&SIMCACHE&&SIMCACHE.results&&SIMCACHE.results.length){
+      const sim=SIMCACHE.results.slice(0,3);
+      L.push(`SIMULATE engine's top picks (championship equity, ${SIMCACHE.sims} seasons each): ${sim.map((r,i)=>{const p=state.players[r.id];return `${i+1}. ${lastName(p.name)}(${p.pos}) ${(r.title*100).toFixed(0)}% to win it all`;}).join("; ")}.`);
+      if(fast.length){ const s0=state.players[sim[0].id];
+        L.push(fast[0].pl.id===sim[0].id?`Both engines lead with ${lastName(s0.name)}.`
+          :`The engines SPLIT: Fast prefers ${lastName(fast[0].pl.name)}, Simulate prefers ${lastName(s0.name)} — say which to trust here and why (Simulate weighs the finished roster, Fast weighs value-vs-need now).`); }
+    } }catch(e){}
+    try{ const fin=fast.slice(0,2).map(r=>{const ros=draftForwardRoster(r.pl.id);const {slots}=fillLineup(ros);
+        const proj=slots.reduce((s,x)=>s+(x.pl?pts(x.pl):0),0); return `${lastName(r.pl.name)} → a finished starting lineup projecting ~${fmt(proj)} pts`;});
+      if(fin.length)L.push(`Draft-forward (rolling the rest of the draft out): ${fin.join("; ")}.`); }catch(e){}
+  }
   return L.join("\n");
 }
 let AI_COACH={lastPick:-1,busy:false};
@@ -4209,7 +4225,7 @@ async function aiDraftCoach(question){
   const onClock=teamForPick(currentPick())===myIdx();
   out.innerHTML=`<span class="aithinking">reading the board…</span>`;
   try{
-    const q=question||(onClock?"I'm on the clock — what's the pick, and why (weigh the tier cliff, the run, and who else wants it)?"
+    const q=question||(onClock?"I'm on the clock — give me the pick in one line, then two short lines of why. Weigh the tier cliff, any run, and who else wants him. If the Fast and Simulate engines split, tell me which to trust here. If it helps, name the finished lineup a pick builds (draft-forward)."
                               :"Quick read: what's happening, which of my targets are at risk before my next pick, and do I wait or plan to pivot?");
     const ans=await askAI(aiDraftContext(), q, AI_DRAFT_SYSTEM);
     out.innerHTML=aiFmt(ans); AI_COACH.lastPick=currentPick();
