@@ -5001,6 +5001,17 @@ function selfTest(){
       const SSg=simSeason(400), gap=SSg[0].playoff-SSg[11].playoff;
       add("A dominant roster clearly out-qualifies a gutted one (season error persists)",gap>0.4,
           `stacked ${Math.round(SSg[0].playoff*100)}% vs gutted ${Math.round(SSg[11].playoff*100)}% to make the playoffs`);
+      /* Week leverage: winning this week can only help your playoff odds and losing can only hurt them,
+         so win >= now >= lose must hold — it's shown as three numbers on the Matchups tab. The old code
+         ran three INDEPENDENT sims and could report "if you lose" odds ABOVE "right now"; the CRN rewrite
+         makes the ordering exact. (Uses the same stacked-vs-gutted league still loaded above.) */
+      (()=>{ const meL=0; let ok=true, sample=null;
+        try{ const lev=weekLeverage(meL,1,300);
+          ok=(lev.win>=lev.cur-1e-9)&&(lev.cur>=lev.lose-1e-9);
+          sample=`win ${Math.round(lev.win*100)}% ≥ now ${Math.round(lev.cur*100)}% ≥ lose ${Math.round(lev.lose*100)}%`;
+        }catch(e){ ok=false; sample="threw: "+e.message; }
+        add("Week leverage is ordered: win ≥ now ≥ lose (common random numbers)",ok,sample);
+      })();
       state.picks=sv.picks; TRADE.schedule=sv.sched; state.ui.seasonWeek=sv.wk; state.settings.format=sv.fmt;
       state.league=sv.league; state.settings.teams=sv.teams; SEASONSIM={key:null};
     })();
@@ -7723,13 +7734,15 @@ function renderTeamTab(){
     stacks.map(([t,ps])=>`<div class="kv"><span><span class="chip good">stack</span> <b>${t}</b> — ${ps.map(p=>`${p.name} (${p.pos})`).join(' + ')}</span><span class="chip info">correlated ceiling</span></div>`).join("")
     : `<div class="note">No QB + pass-catcher stacks yet. Stacking your QB with his WR/TE raises your weekly ceiling — when the offense pops, you win twice.</div>`;
 
-  // all teams board
-  const T=state.settings.teams;
+  // all teams board — bridge-aware: a synced league fills TRADE.teams (not state.picks), so read
+  // liveRosters()/myTeamIdx() like the rest of the tab. Using teamRoster(i)/myIdx() here left every
+  // opponent card blank in-season and marked the wrong team "★ You".
+  const rosters=liveRosters(), meT=myTeamIdx(), T=rosters.length;
   let board="";
   for(let i=0;i<T;i++){
-    const r=teamRoster(i);
-    board+=`<div class="teamcard ${i===myIdx()?'me':''}">
-      <h4>${i===myIdx()?'★ You':teamLabel(i)} <span class="num meta">${r.length}</span></h4>
+    const r=(rosters[i]||[]).filter(p=>p&&!p.isPick);
+    board+=`<div class="teamcard ${i===meT?'me':''}">
+      <h4>${i===meT?'★ You':teamLabel(i)} <span class="num meta">${r.length}</span></h4>
       ${r.length?r.map(p=>`<div class="pl"><span class="pos ${p.pos}" style="min-width:26px;font-size:9px">${p.pos}</span>${p.name}</div>`).join(''):'<div class="pl">—</div>'}
     </div>`;
   }
@@ -8090,38 +8103,49 @@ function needCurve(unitsB,mine,iters){
    is the context every matchup screen leaves out — they show you the game or the standings, never
    the bridge between them. */
 function weekLeverage(me,week,iters){
-  const S=simSeason(iters||300);
-  const cur=S[me]?S[me].playoff:0;
-  const forced=res=>{
-    const SC=seasonSchedule(), N=iters||300;
-    const rosters=liveRosters(), T=rosters.length;
-    const U={}; SC.weeks.forEach(w=>{U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters);});
-    const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
-    let made=0;
-    for(let it=0;it<N;it++){
-      const w=new Array(T).fill(0), pf=new Array(T).fill(0);
-      SC.weeks.forEach(wk=>wk.pairs.forEach(([a,b])=>{
-        let sa,sb;
-        if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){sa=wk.done[a];sb=wk.done[b];}
-        else {sa=drawScore(U[wk.week][a]||[]);sb=drawScore(U[wk.week][b]||[]);}
-        /* The week in question is pinned to the result being tested; every other week plays out
-           normally. Pin by SWAPPING the two drawn scores when the outcome doesn't match, rather
-           than by inflating the winner — points-for is the standings tiebreak, so manufacturing
-           an extra-large score would quietly improve my seeding on top of the win being tested,
-           and the whole point is to isolate the win. */
-        if(wk.week===week&&(a===me||b===me)){
-          const iAmA=(a===me), meWon=iAmA?(sa>sb):(sb>sa);
-          if(meWon!==(res==="W")){ const t=sa; sa=sb; sb=t; }
-          if(sa===sb){ if((res==="W")===iAmA)sa+=0.1; else sb+=0.1; }
-        }
-        pf[a]+=sa;pf[b]+=sb;
-        if(sa>sb)w[a]++;else if(sb>sa)w[b]++;else{w[a]+=.5;w[b]+=.5;}
-      }));
-      if([...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])).slice(0,nSeeds).includes(me))made++;
-    }
-    return made/N;
-  };
-  return {cur,win:forced("W"),lose:forced("L")};
+  /* cur / win / lose are computed in ONE loop under COMMON RANDOM NUMBERS: each simulated season is
+     identical across the three, and only THIS week's outcome for my pair is changed. That makes them
+     exactly comparable — forcing a win can only help my seeding and forcing a loss can only hurt it
+     relative to the same season, so win >= cur >= lose holds by construction instead of jittering
+     across the seed-noise boundary (the old code ran three independent sims, which could report "if
+     you lose" odds ABOVE your current odds). It also carries the persistent season-long error per
+     player (like simSeason) rather than re-drawing it every week, which the old forced() loop did.
+     Pin the week by SWAPPING the two drawn scores, never inflating one — points-for is the tiebreak. */
+  const SC=seasonSchedule(), N=iters||400;
+  const rosters=liveRosters(), T=rosters.length;
+  const U={}; SC.weeks.forEach(w=>{U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters);});
+  const teamSd=rosters.map((r,ti)=>{const m={};SC.weeks.forEach(w=>U[w.week][ti].forEach(u=>{if(m[u.pl.id]==null)m[u.pl.id]=u.sd;}));return m;});
+  const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
+  let madeCur=0, madeWin=0, madeLose=0;
+  for(let it=0;it<N;it++){
+    const sf=teamSd.map(m=>{const o={};for(const id in m)o[id]=seasonFactor(m[id]);return o;});
+    const scoreOf=(ti,units)=>units.reduce((s,u)=>s+u.base*u.mult*(sf[ti][u.pl.id]||1)*weekFactor(u.cv),0);
+    // every week EXCEPT my pair's game this week (that one is deferred and set per scenario)
+    const w0=new Array(T).fill(0), pf0=new Array(T).fill(0);
+    let pa=null,pb=null,sa0=0,sb0=0;
+    SC.weeks.forEach(wk=>wk.pairs.forEach(([a,b])=>{
+      let sa,sb;
+      if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){sa=wk.done[a];sb=wk.done[b];}
+      else {sa=scoreOf(a,U[wk.week][a]||[]);sb=scoreOf(b,U[wk.week][b]||[]);}
+      if(wk.week===week&&(a===me||b===me)){ pa=a;pb=b;sa0=sa;sb0=sb; return; }
+      pf0[a]+=sa;pf0[b]+=sb;
+      if(sa>sb)w0[a]++;else if(sb>sa)w0[b]++;else{w0[a]+=.5;w0[b]+=.5;}
+    }));
+    const made=(saA,sbA)=>{
+      const w=w0.slice(), pf=pf0.slice();
+      if(pa!=null){ pf[pa]+=saA;pf[pb]+=sbA;
+        if(saA>sbA)w[pa]++;else if(sbA>saA)w[pb]++;else{w[pa]+=.5;w[pb]+=.5;} }
+      return [...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])).slice(0,nSeeds).includes(me);
+    };
+    if(pa==null){ const m=made(0,0); if(m){madeCur++;madeWin++;madeLose++;} continue; }  // I have a bye this week
+    const iAmA=(pa===me);
+    if(made(sa0,sb0))madeCur++;
+    // forced win: my score is the higher one; forced loss: my score is the lower one
+    const hi=Math.max(sa0,sb0), lo=Math.min(sa0,sb0), tie=(sa0===sb0)?0.1:0;
+    if(made(iAmA?hi+tie:lo, iAmA?lo:hi+tie))madeWin++;
+    if(made(iAmA?lo:hi+tie, iAmA?hi+tie:lo))madeLose++;
+  }
+  return {cur:madeCur/N, win:madeWin/N, lose:madeLose/N};
 }
 function kickoffOf(team,week){
   const D=window.__FFDATA__, k=D&&D.KICK&&D.KICK[team];
