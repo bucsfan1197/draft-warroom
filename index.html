@@ -2866,9 +2866,17 @@ function recommendations(){
     if(mustStart)score+=urgency*6;
     if(v<=0&&!isNeed)score-=40; // don't chase below-replacement depth you don't need
     if(hardFull)score=-900-satPen; // a 2nd K / 4th TE can never crack your lineup — never recommend it
-    // K/DST: park them until skill-position starters are filled (real draft behavior)
-    // K/DST: park them while you still have picks to spare, but urgency above forces them in at the end
-    if((pl.pos==="K"||pl.pos==="DST")&&need[pl.pos]>0&&slack>2){score=v*0.15-60;needMult=0.15;needTag="wait";}
+    /* K/DST come off the board in the LAST few rounds, and never before your skill starters — that's how
+       real drafts go and it's what the CPU opponents do. Park a kicker/defense while you STILL have any
+       skill-starter need, OR while you have more picks left than the K/DST slots themselves plus a small
+       buffer (those picks belong to skill depth, then a kicker/defense at the very end).
+       The old gate was `slack>2` where slack = picksLeft − emptyReq, and emptyReq INCLUDES your unfilled
+       skill needs — so the more starters you still needed, the SMALLER slack got, which UN-parked K/DST
+       exactly when you were behind on real players. In a shallow-bench league that surfaced a defense in
+       round 4-8 (its inflated cross-positional VORP then scored it into the top picks). This gates on the
+       right thing: skill starters first, K/DST only in the final handful of picks. */
+    const kdstDefer = coreNeed>0 || picksLeft > (need.K||0)+(need.DST||0)+2;
+    if((pl.pos==="K"||pl.pos==="DST")&&need[pl.pos]>0&&kdstDefer){score=v*0.15-60;needMult=0.15;needTag="wait";}
     const adp=adpOf(pl), adpDelta=adp-(currentPick()+1); // >0 = ADP later than now (value); <0 = reach
     return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,pLast,myRank,adp,adpDelta,usg:URANK?usageSignal(pl,URANK):null};
   });
@@ -4506,6 +4514,25 @@ function selfTest(){
           noQB&&!!topRec&&topRec.pl.pos==="QB",
           topRec?`no QB + 1 pick left → recommends ${lastName(topRec.pl.name)}(${topRec.pl.pos})`:"no recommendation");
       state.settings.teams=sv.teams;state.settings.slot=sv.slot;state.settings.snake=sv.snake;state.settings.format=sv.fmt;state.settings.auction=sv.auc;state.picks=sv.picks;
+    })();
+    /* K/DST are LAST-few-rounds picks. With skill starters filled but a full bench still to draft, a
+       kicker/defense must NOT be a live (positive-score) recommendation — the old `slack>2` gate
+       un-parked them mid-draft in shallow leagues, surfacing a defense in round 6-8. */
+    (()=>{
+      const sv={teams:state.settings.teams,slot:state.settings.slot,snake:state.settings.snake,picks:state.picks.slice(),fmt:state.settings.format,auc:state.settings.auction,roster:JSON.parse(JSON.stringify(state.settings.roster))};
+      state.settings.teams=12;state.settings.slot=6;state.settings.snake=1;state.settings.format="redraft";state.settings.auction=false;
+      state.settings.roster={QB:1,RB:2,WR:2,TE:1,FLEX:1,SUPERFLEX:0,K:1,DST:1,DL:0,LB:0,DB:0,IDP_FLEX:0,BENCH:6};
+      const me=myIdx(), bp={};
+      state.players.filter(p=>inLeague(p)).forEach(p=>(bp[p.pos]=bp[p.pos]||[]).push(p));
+      ["QB","RB","WR","TE"].forEach(p=>bp[p]&&bp[p].sort((a,b)=>pts(b)-pts(a)));
+      // balanced starters + one bench body, 7 picks made, ~8 picks left (mid-draft): K/DST must stay parked
+      state.picks=[[["RB",2],["RB",8],["WR",5],["WR",12],["QB",4],["TE",3],["RB",18]]][0].map(([pos,r])=>({playerId:bp[pos][r].id,teamIdx:me}));
+      const rec=state.settings.format?recommendations().list:[];
+      const kdstLive=rec.slice(0,12).some(r=>(r.pl.pos==="K"||r.pl.pos==="DST")&&r.score>0);
+      const dst=rec.find(r=>r.pl.pos==="DST");
+      add("K/DST aren't offered mid-draft (parked until the last few picks)", !kdstLive,
+          kdstLive?"a kicker/defense surfaced as a live pick with skill depth still to draft":`DST parked (score ${dst?Math.round(dst.score):"—"}, tag ${dst?dst.needTag:"—"})`);
+      state.settings.teams=sv.teams;state.settings.slot=sv.slot;state.settings.snake=sv.snake;state.settings.format=sv.fmt;state.settings.auction=sv.auc;state.settings.roster=sv.roster;state.picks=sv.picks;
     })();
     /* Live draft intelligence, on a mid-draft board. The prediction must never spend one of YOUR
        picks (it forecasts opponents), must not predict more players gone than there are picks in
