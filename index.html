@@ -803,6 +803,14 @@
   .ros-val b{font-size:14px;font-family:var(--display)}
   .ros-val .meta{margin-left:4px;font-size:10.5px}
 
+  /* ── League buzz (most added/dropped + roster alerts) rows ── */
+  .buzz-row{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;
+    gap:9px;padding:7px 8px;border-radius:9px;transition:background .12s ease}
+  .buzz-row:hover{background:var(--panel-2)}
+  .buzz-nm{display:flex;align-items:center;gap:6px;min-width:0}
+  .buzz-nm .nmtxt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:13px}
+  .buzz-nm .meta{flex:none}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -7883,8 +7891,9 @@ async function renderBuzz(roster){
   const box=$("#buzzBox"); if(!box)return;
   const hurt=roster.filter(p=>p.inj);
   const alerts=hurt.length?`<h3 class="eyebrow" style="margin-bottom:6px">⚠ Your roster</h3>`
-    +hurt.map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)}</span>
-       <span class="meta">${rosPts(p,state.ui.seasonWeek||1).toFixed(0)} pts left</span></div>`).join(""):"";
+    +hurt.map(p=>`<div class="buzz-row"><span class="pos ${p.pos}">${p.pos}</span>`
+       +`<span class="buzz-nm"><span class="nmtxt">${p.name}</span>${injChip(p)}</span>`
+       +`<span class="meta">${rosPts(p,state.ui.seasonWeek||1).toFixed(0)} pts left</span></div>`).join(""):"";
   if(BUZZ.cache){box.innerHTML=alerts+BUZZ.cache;return;}
   box.innerHTML=alerts+`<div class="note">Loading league-wide adds/drops…</div>`;
   try{
@@ -7893,8 +7902,9 @@ async function renderBuzz(roster){
       SJ("https://api.sleeper.app/v1/players/nfl/trending/drop?lookback_hours=48&limit=6")]);
     const bySid={};state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
     const row=(x,cls,label)=>{const p=bySid[String(x.player_id)];if(!p)return"";
-      return `<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}${injChip(p)} <span class="meta">${p.team}</span></span>
-        <span class="chip ${cls}">${label} ${(x.count/1000).toFixed(1)}k</span></div>`;};
+      return `<div class="buzz-row"><span class="pos ${p.pos}">${p.pos}</span>`
+        +`<span class="buzz-nm"><span class="nmtxt">${p.name}</span>${injChip(p)}<span class="meta">${p.team||""}</span></span>`
+        +`<span class="chip ${cls}">${label} ${(x.count/1000).toFixed(1)}k</span></div>`;};
     BUZZ.cache=`<h3 class="eyebrow" style="margin:12px 0 6px">🔥 Most added (48h)</h3>`
       +add.map(x=>row(x,"good","+")).join("")
       +`<h3 class="eyebrow" style="margin:12px 0 6px">📉 Most dropped</h3>`
