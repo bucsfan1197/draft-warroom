@@ -780,6 +780,18 @@
     border-bottom:1px solid var(--line);padding-bottom:7px;margin-bottom:7px}
   .teamcard .pl{font-size:11.5px;padding:2.5px 0;color:var(--ink)}
 
+  /* ── Trade value board: a ranked value list with comparison bars ── */
+  .tv-list{display:flex;flex-direction:column;gap:1px}
+  .tv-row{display:grid;grid-template-columns:16px 32px minmax(0,1fr) 72px auto;align-items:center;
+    gap:9px;padding:6px 8px;border-radius:9px;transition:background .12s ease}
+  .tv-row:hover{background:var(--panel-2)}
+  .tv-rank{font-size:11px;font-weight:800;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
+  .tv-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:13px}
+  .tv-bar{height:6px;border-radius:4px;background:var(--panel-2);overflow:hidden}
+  .tv-bar i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+  .tv-val{text-align:right;font-weight:800;font-size:13.5px;font-family:var(--display);
+    font-variant-numeric:tabular-nums;min-width:34px}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -7823,10 +7835,15 @@ function renderInSeason(){
   renderROS(w,roster,rostered);
   renderBuzz(roster);
   renderLeagueMoves(wbFrom,wbTo);
+  const tvMax=Math.max(1,val(mine[0]),avail.length?val(avail[0]):1);
+  const tvRow=(p,i)=>`<div class="tv-row"><span class="tv-rank">${i+1}</span><span class="pos ${p.pos}">${p.pos}</span>`
+    +`<span class="tv-name">${p.name}${injChip(p)}</span>`
+    +`<span class="tv-bar"><i style="width:${Math.max(4,Math.round(val(p)/tvMax*100))}%"></i></span>`
+    +`<span class="tv-val num">${Math.round(val(p))}</span></div>`;
   $("#tradeBox").innerHTML=`<h3 class="eyebrow" style="margin-bottom:6px">Your roster${dyn?" (dynasty value)":""}</h3>`
-    +mine.slice(0,10).map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
-    +`<h3 class="eyebrow" style="margin:12px 0 6px">Best available</h3>`
-    +avail.map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name}</span><span class="num">${Math.round(val(p))}</span></div>`).join("")
+    +`<div class="tv-list">`+mine.slice(0,10).map((p,i)=>tvRow(p,i)).join("")+`</div>`
+    +`<h3 class="eyebrow" style="margin:14px 0 6px">Best available</h3>`
+    +`<div class="tv-list">`+avail.map((p,i)=>tvRow(p,i)).join("")+`</div>`
     +`<div class="note" style="margin-top:10px">Compare the numbers on both sides of a trade. ${dyn?"Dynasty values are age-adjusted over a 4-year window.":"Redraft values are this season's projected points."}</div>`;
 }
 
