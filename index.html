@@ -845,6 +845,9 @@
   .bt-big{font-family:var(--display);font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.15}
   .bt-body{font-size:12.5px;color:var(--ink-2);line-height:1.5}
 
+  /* ── AI brief jump-to-execute buttons ── */
+  .brief-jump{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid var(--line)}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -1420,6 +1423,12 @@
   <section id="tab-season" class="hide">
     <div class="panel" style="margin-bottom:14px" id="seasonSyncPanel">
       <div class="bd" style="padding:12px 16px"><div id="seasonSync" class="syncrow" style="align-items:center"></div></div>
+    </div>
+    <div class="panel hide" style="margin-bottom:14px" id="seasonBriefPanel">
+      <div class="hd"><h2>🤖 Plan my week</h2>
+        <button class="ghost sm" id="seasonBriefBtn" style="margin-left:auto">Generate plan</button></div>
+      <div class="bd"><div id="seasonBrief"><div class="meta">One tap turns this whole tab into a plan — the start/sit swap that matters most, the waiver add worth your FAAB and who to drop, and the trade angle to explore. Grounded in your win-probability and playoff-leverage numbers, under your scoring.</div></div>
+        <div id="seasonBriefJump" class="brief-jump hide"></div></div>
     </div>
     <div class="panel">
       <div class="hd"><h2>Start / Sit</h2><span id="seasonCtx" class="pickcounter" style="margin-left:auto"></span></div>
@@ -2656,6 +2665,54 @@ async function aiWaiverBrief(){
     const ans=await askAI(aiWaiverContext(),
       `Give me this week's waiver plan as 3-4 tight bullets: the best 1-2 adds and exactly how much FAAB to bid, who to drop to make room, cover for any injured starter, and the best streamer. Use the numbers; call out when a top add's edge is within noise. Be decisive.`);
     out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
+}
+/* ---- Weekly command brief: the whole In-Season tab distilled to 3 actions.
+   Synthesises this week's optimal lineup + the best start/sit swap for the matchup,
+   the top FAAB add, and a trade angle — grounded in the leverage/win-prob sim. */
+function aiSeasonContext(){
+  const s=state.settings, w=state.ui.seasonWeek||1;
+  const roster=(myLiveRoster()||[]).filter(p=>p&&!p.isPick);
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. It is week ${w}. ${leagueSynced()?"Synced to the live league.":"Not synced (using the draft roster)."}`);
+  if(!roster.length){ L.push("Roster is empty — nothing to plan yet."); return L.join("\n"); }
+  try{
+    try{ const S=simSeason(250), meT0=myTeamIdx(), mine=S[meT0];
+      if(mine) L.push(`Season outlook: ~${Math.round(mine.playoff*100)}% to make the playoffs, projected ${mine.wins.toFixed(1)} wins.`); }catch(e){}
+    const LW=weeklyLineup(roster,w);
+    const total=LW.slots.reduce((a,x)=>a+(x.pl?wkPts(x.pl,w):0),0);
+    L.push(`Your best week-${w} lineup projects ~${fmt(total)} pts: ${LW.slots.filter(x=>x.pl).map(x=>`${slotLabel(x.slot)} ${lastName(x.pl.name)} ${wkPts(x.pl,w).toFixed(1)}`).join("; ")}.`);
+    const empty=LW.slots.filter(x=>!x.pl).map(x=>slotLabel(x.slot)); if(empty.length)L.push(`Empty starting slot(s) this week: ${empty.join(", ")} — must be filled from bench or waivers.`);
+    const SC=seasonSchedule(), wkObj=SC.weeks.find(x=>x.week===w), meT=myTeamIdx();
+    const pair=wkObj&&wkObj.pairs.find(p=>p.includes(meT));
+    const opp=(pair!=null)?(pair[0]===meT?pair[1]:pair[0]):null;
+    if(opp!=null) L.push(`This week you play ${teamLabel(opp)}.`);
+    const A=weekUnits(roster,w), B=opp!=null?(weekUnits(liveRosters()[opp]||[],w).starters):null;
+    if(A.starters.length&&A.bench.length&&B&&B.length){
+      const res=startSitAdvice(A,B,600), best=res.moves.filter(m=>m.gain>2*m.se)[0];
+      L.push(best?`Best start/sit for the matchup: start ${best.inPl.name} over ${best.outPl.name} at ${slotLabel(best.slot)} — +${(best.gain*100).toFixed(1)}% to win.`
+                 :`No bench swap beats your current lineup for this matchup — it's already your best play.`);
+    }
+    const wb=waiverBoard(roster,w,18,6);
+    if(wb&&wb.rows&&wb.rows.length) L.push(`Top waiver adds (starting-lineup value, FAAB out of $${wb.remaining}): ${wb.rows.slice(0,5).map(r=>`${r.p.name} (${r.p.pos}) +${fmt(r.gain)}pts, bid~$${r.bid}${r.drop?", drop "+lastName(r.drop.name):""}`).join("; ")}.`);
+    const hurt=roster.filter(p=>p.inj); if(hurt.length) L.push(`Injury flags on your roster: ${hurt.map(p=>p.name+" "+p.inj).join("; ")}.`);
+    const {levels}=replacementLevels(); const F=fillLineup(roster);
+    const sc=F.slots.filter(x=>x.pl).map(x=>({slot:x.slot,pl:x.pl,edge:Math.round(vorp(x.pl,levels))})).sort((a,b)=>a.edge-b.edge);
+    if(sc.length) L.push(`Weakest starting slot (trade-up target): ${slotLabel(sc[0].slot)} ${sc[0].pl.name} (${sc[0].edge>=0?"+":""}${sc[0].edge} vs a free agent). Deepest / sell-high spot: ${sc[sc.length-1].pl.name}.`);
+  }catch(e){ L.push("(some week detail unavailable this render)"); }
+  return L.join("\n");
+}
+async function aiSeasonBrief(){
+  const out=$("#seasonBrief"), btn=$("#seasonBriefBtn"), jump=$("#seasonBriefJump"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">planning your week…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiSeasonContext(),
+      `Give me my plan for this week as exactly 3 tight, decisive bullets, in this order: (1) **Start/sit** — the single lineup change that most improves my chance to WIN this week, or confirm my lineup is already optimal; (2) **Waivers** — the one add most worth my FAAB, the bid amount, and who to drop; (3) **Trade** — one angle to explore (buy my weakest slot, or sell from my strength). Cite the numbers. If a category isn't worth acting on this week, say so in one line. No preamble.`);
+    out.innerHTML=aiFmt(ans);
+    if(jump){ jump.classList.remove("hide");
+      jump.innerHTML=`<button class="ghost sm" data-jump="waivers">Waiver Wire →</button><button class="ghost sm" data-jump="trade">Trades →</button><button class="ghost sm" data-jump="injuries">Injuries →</button>`;
+      jump.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>showTab(b.dataset.jump)); }
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
 }
@@ -7715,6 +7772,7 @@ function renderInSeason(){
     sel.onchange=()=>{state.ui.seasonWeek=+sel.value;renderInSeason();save();};
   }
   renderSeasonSync();
+  if($("#seasonBriefPanel"))$("#seasonBriefPanel").classList.toggle("hide",!aiConfigured());
   const w=+sel.value||1;
   const roster=myLiveRoster();
   const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=leagueSynced()
@@ -10498,6 +10556,7 @@ function init(){
     e.preventDefault(); const card=b.closest(".rec"), out=card&&card.querySelector(".aiwhyout"); if(!out)return;
     b.disabled=true; b.textContent="🤖 …"; aiWhyRun(+b.dataset.aiwhy,out,b); });
   if($("#wwBriefBtn"))$("#wwBriefBtn").onclick=aiWaiverBrief;
+  if($("#seasonBriefBtn"))$("#seasonBriefBtn").onclick=aiSeasonBrief;
   if($("#teamReportBtn"))$("#teamReportBtn").onclick=aiRosterReport;
   // AI scouting take on the Player Grades detail card (delegated — the card re-renders on every selection)
   if($("#gDetail"))$("#gDetail").addEventListener("click",e=>{ const b=e.target.closest("[data-aiscout]"); if(!b)return;
