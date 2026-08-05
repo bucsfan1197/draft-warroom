@@ -9993,10 +9993,14 @@ function renderDynasty(){
         <div class="bar"><i style="width:${Math.round(Math.min(1,m)*100)}%;background:var(${cvar[pos]})"></i></div>
         <span class="num" style="width:70px;text-align:right">${fmt(avg)} yrs</span></div>`;
     }).join('');
-    box.innerHTML=`<div style="display:flex;gap:22px;align-items:baseline;margin-bottom:14px">
-        <div><div class="eyebrow">Youth rating</div><div style="font-size:32px;font-weight:800;color:${youth>=80?'var(--good)':youth>=60?'var(--warn)':'var(--crit)'}">${youth}<span style="font-size:14px;color:var(--ink-2)">/100</span></div></div>
-        <div><div class="eyebrow">Weighted age</div><div style="font-size:32px;font-weight:800" class="num">${fmt(wAge)}</div></div>
-      </div>${posRows}
+    box.innerHTML=`<div class="levrow" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
+        <div class="levbox ${youth>=80?'win':youth<=45?'lose':''}"><div class="eyebrow">Youth rating</div>
+          <div class="levnum">${youth}<span style="font-size:15px;color:var(--ink-2)">/100</span></div>
+          <div class="meta">${youth>=80?'young core':youth>=55?'balanced':'aging core'}</div></div>
+        <div class="levbox"><div class="eyebrow">Weighted age</div>
+          <div class="levnum">${fmt(wAge)}</div><div class="meta">value-weighted</div></div>
+      </div>
+      <div class="eyebrow" style="margin-bottom:7px">Average age by position</div>${posRows}
       <div class="note" style="margin-top:12px">${ageVerdict(wAge,youth)}</div>`;
   }
   $("#curveBox").innerHTML=curveSVG();
