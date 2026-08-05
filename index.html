@@ -530,7 +530,7 @@
   .mini.dr{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   /* The player board is what you actually work in, so let it use the height it has instead of
      stopping dead at 560px and leaving a void under it. */
-  .scrollbox{max-height:min(70vh,760px);overflow:auto}
+  .scrollbox{max-height:min(86vh,1180px);overflow:auto}
 
   /* roster */
   .slotrow{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line)}
@@ -690,6 +690,9 @@
   /* a hair more breathing room + consistent padding across every card */
   .rec{padding:13px 14px}
   .rec .cardmeta{margin-top:8px}
+  /* compact segmented controls (replaces the old transform:scale hack, which left
+     the control's layout box full-size and threw off the spacing around it) */
+  .seg.segsm button{padding:5px 10px;font-size:12px}
 
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
@@ -918,7 +921,7 @@
         <div id="pickTimer" class="timerbox hide"></div>
         <div class="panel" style="margin-top:14px">
           <div class="hd"><h2>Best pick for you</h2>
-            <div class="seg" id="recMode" style="margin-left:auto;transform:scale(.9);transform-origin:right"><button data-m="heur" class="on">Fast</button><button data-m="sim">Simulate 🎲</button></div>
+            <div class="seg segsm" id="recMode" style="margin-left:auto"><button data-m="heur" class="on">Fast</button><button data-m="sim">Simulate 🎲</button></div>
           </div>
           <div class="bd"><div id="recCtx" class="pickcounter" style="margin-bottom:8px"></div><div id="recList"></div></div>
         </div>
@@ -3658,7 +3661,7 @@ function renderSimRecs(){
   const myR=Math.ceil((currentPick()+1)/state.settings.teams), N=state.ui.simN||600;
   const auto=state.ui.simAuto!==false;
   const note=`<div class="note" style="margin-bottom:10px">🎲 <b>Championship mode.</b> Plays out your draft and full season <b>${N}×</b>, then ranks each pick by your <b>chance to win the title</b>.</div>`;
-  const simSel=`<div class="toolbar" style="margin-bottom:8px"><span class="meta">sims:</span><div class="seg" id="simN" style="transform:scale(.85);transform-origin:left">${[80,250,600].map(n=>`<button data-n="${n}" class="${N===n?'on':''}">${n}</button>`).join("")}</div><button class="fbtn ${auto?'on':''}" id="simAutoBtn" title="Auto-run the instant you're on the clock">Auto ⟳</button></div>`;
+  const simSel=`<div class="toolbar" style="margin-bottom:8px"><span class="meta">sims:</span><div class="seg segsm" id="simN">${[80,250,600].map(n=>`<button data-n="${n}" class="${N===n?'on':''}">${n}</button>`).join("")}</div><button class="fbtn ${auto?'on':''}" id="simAutoBtn" title="Auto-run the instant you're on the clock">Auto ⟳</button></div>`;
   const wire=()=>{$$("#simN button").forEach(b=>b.onclick=()=>{state.ui.simN=+b.dataset.n;SIMCACHE={key:null};renderSimRecs();});const ab=$("#simAutoBtn");if(ab)ab.onclick=()=>{state.ui.simAuto=!(state.ui.simAuto!==false);renderSimRecs();};};
   if(!isMe){
     const np=myNextPick(currentPick());$("#recCtx").textContent=`Simulator · optimizes your pick`;
