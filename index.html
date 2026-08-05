@@ -792,6 +792,17 @@
   .tv-val{text-align:right;font-weight:800;font-size:13.5px;font-family:var(--display);
     font-variant-numeric:tabular-nums;min-width:34px}
 
+  /* ── Rest-of-season value rows: dense but scannable ── */
+  .ros-list{display:flex;flex-direction:column;gap:1px}
+  .ros-row{display:grid;grid-template-columns:16px 32px minmax(0,1fr) auto;align-items:center;
+    gap:9px;padding:7px 8px;border-radius:9px;transition:background .12s ease}
+  .ros-row:hover{background:var(--panel-2)}
+  .ros-nm{display:flex;align-items:center;gap:6px;min-width:0}
+  .ros-nm .nmtxt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:13px}
+  .ros-val{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ros-val b{font-size:14px;font-family:var(--display)}
+  .ros-val .meta{margin-left:4px;font-size:10.5px}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -7860,9 +7871,11 @@ function renderROS(w,roster,drafted){
   const avail=state.players.filter(x=>!drafted.has(x.id)&&["QB","RB","WR","TE"].includes(x.pos))
     .map(p=>({p,v:rosPts(p,w),r:rosRange(p,w),mine:false}));
   const all=mine.concat(avail).sort((a,b)=>b.v-a.v).slice(0,14);
-  box.innerHTML=all.map((x,i)=>`<div class="kv"><span><b class="num">${i+1}</b> <span class="pos ${x.p.pos}">${x.p.pos}</span> ${x.p.name}${injChip(x.p)} ${gradeChip(x.p)}
-      ${x.mine?'<span class="chip good">yours</span>':'<span class="chip">free agent</span>'}</span>
-    <span class="meta"><b>${x.v.toFixed(0)}</b> pts left <span class="meta">${x.r[0].toFixed(0)}–${x.r[1].toFixed(0)}</span></span></div>`).join("")
+  box.innerHTML=`<div class="ros-list">`+all.map((x,i)=>`<div class="ros-row">`
+    +`<span class="tv-rank">${i+1}</span><span class="pos ${x.p.pos}">${x.p.pos}</span>`
+    +`<span class="ros-nm"><span class="nmtxt">${x.p.name}</span>${injChip(x.p)}${gradeChip(x.p)}`
+    +`${x.mine?'<span class="chip good">yours</span>':'<span class="chip">FA</span>'}</span>`
+    +`<span class="ros-val"><b>${x.v.toFixed(0)}</b> <span class="meta">pts · ${x.r[0].toFixed(0)}–${x.r[1].toFixed(0)}</span></span></div>`).join("")+`</div>`
    +`<div class="note" style="margin-top:10px">Ranked by points remaining from week ${w} to 18 — byes already removed and each week adjusted for the opponent. This is the number that matters for trades and waivers mid-season, not full-season totals. The smaller number pair is the realistic low–high range, from 11 seasons of how far actual results land from projections at that position and draft cost.</div>`;
 }
 /* ---- LEAGUE BUZZ: what the market is reacting to right now + alerts on your own roster ---- */
