@@ -6393,6 +6393,13 @@ async function tradeLoadSchedule(leagueId,lg){
     const st=(lg&&lg.settings)||{};
     const playoffStart=Math.max(2,Math.min(18,st.playoff_week_start||15));
     const playoffTeams=Math.max(2,Math.min(TRADE.teams.length,st.playoff_teams||6));
+    // Bracket shape: Sleeper playoff_round_type 0/1 = one week per round, 2 = two weeks per round.
+    // Rounds = ceil(log2 seeds) (6 seeds → 3 rounds: byes for 1-2, quarters, semis, final), so the
+    // real championship week = start + rounds*weeksPerRound - 1, not a hardcoded 3-week window.
+    const roundType=st.playoff_round_type||0;
+    const weeksPerRound=roundType===2?2:1;
+    const nRounds=Math.max(1,Math.ceil(Math.log2(playoffTeams)));
+    const playoffEnd=Math.min(18,playoffStart+nRounds*weeksPerRound-1);
     const regEnd=playoffStart-1;
     const idxOf={}; TRADE.teams.forEach((t,i)=>idxOf[t.rosterId]=i);
     const weeks=await Promise.all(
@@ -6412,7 +6419,7 @@ async function tradeLoadSchedule(leagueId,lg){
       sched[w]=pairs.length?pairs:null;
       if(Object.keys(scored).length>=2)done[w]=scored;      // a week with real points is in the books
     });
-    if(sched.some(Boolean)) TRADE.schedule={sched,done,regEnd,playoffStart,playoffTeams};
+    if(sched.some(Boolean)) TRADE.schedule={sched,done,regEnd,playoffStart,playoffTeams,roundType,weeksPerRound,nRounds,playoffEnd};
   }catch(e){ TRADE.schedule=null; }
 }
 // ---- Manual evaluator: judge a specific offer, any package size ----
@@ -7656,26 +7663,30 @@ function renderTrades(list,base,slots,V,baseline){
         ${c.even!=null&&c.even<0.6?`<span class="meta">(only ${lopsidedPct(c.even)}% of real trades were this lopsided — expect pushback)</span>`:""}</div>
     </div>`;}).join("")
     +`<div class="note"><b>Ranked by what each deal does to your season, not by trade value.</b> Every shortlisted package is run through
-      the championship simulator ${TRADE.schedule?`on <b>your league's real schedule</b> (top ${TRADE.schedule.playoffTeams} make the playoffs, bracket from week ${TRADE.schedule.playoffStart}, weeks already played counted as fact)`:"on a generated schedule (couldn't reach your league's fixtures)"}
+      the championship simulator ${TRADE.schedule?`on <b>your league's real schedule</b> (top ${TRADE.schedule.playoffTeams} make the playoffs, a ${TRADE.schedule.nRounds||3}-round bracket from week ${TRADE.schedule.playoffStart} to ${TRADE.schedule.playoffEnd||TRADE.schedule.playoffStart+2}${TRADE.schedule.weeksPerRound===2?", two weeks per round":""}, weeks already played counted as fact)`:"on a generated schedule (couldn't reach your league's fixtures)"}
       twice — with the trade and without — under the <b>same simulated seasons</b>, so the odds change you see is the trade's effect and not noise.
       That is the number every other tool leaves out: a deal can add value and move your season nothing, if it upgrades a spot you were already winning.
       Both sides are valued on your actual starting slots (${slots.join("/")}) and only deals the other manager plausibly accepts are shown.${TRADE.lastSearch?`
       <span class="meta">Searched ${TRADE.lastSearch.considered.toLocaleString()} viable packages, simulated the top ${TRADE.lastSearch.simmed||0}, in ${TRADE.lastSearch.ms}ms.</span>`:""}</div>`;
 }
 // Standard fantasy seeding: pad to a power of two, top seeds get the byes, re-seed each round.
-function playBracket(seeds,wk,startW){
+function playBracket(seeds,wk,startW,wpr){
+  wpr=wpr||1;   // weeks per round: 1 for a normal bracket, 2 for two-week playoff rounds
   let alive=seeds.slice(), w=startW, guard=0;
   const rank=new Map(seeds.map((s,i)=>[s,i]));
+  // A round's score is the sum over its weeks — a two-week round is decided by the two-week total,
+  // exactly as Sleeper resolves playoff_round_type 2.
+  const roundPts=(t)=>{ let s=0; for(let k=0;k<wpr;k++)s+=(wk[t][w+k]||0); return s; };
   while(alive.length>1&&guard++<6){
     const n=alive.length, p=1<<Math.floor(Math.log2(n));
     const nGames=(p===n)?n/2:(n-p);
     const byes=alive.slice(0,n-2*nGames), rest=alive.slice(n-2*nGames), winners=[];
     for(let i=0;i<rest.length/2;i++){
       const a=rest[i], b=rest[rest.length-1-i];
-      winners.push((wk[a][w]||0)>=(wk[b][w]||0)?a:b);
+      winners.push(roundPts(a)>=roundPts(b)?a:b);
     }
     alive=byes.concat(winners).sort((x,y)=>rank.get(x)-rank.get(y));
-    w++;
+    w+=wpr;
   }
   return alive[0];
 }
@@ -7690,7 +7701,8 @@ function simOdds(rosters,slots,iters){
   const regEnd=S?S.regEnd:14, pStart=S?S.playoffStart:15;
   const nSeeds=Math.min(T,S?S.playoffTeams:6);
   const from=Math.max(1,Math.min(regEnd+1,state.ui.seasonWeek||1));
-  const lastW=pStart+3;
+  const wpr=S&&S.weeksPerRound?S.weeksPerRound:1;
+  const lastW=Math.min(18,S&&S.playoffEnd?S.playoffEnd:pStart+3);
   // picks are assets, not starters — they never score
   const lineups=rosters.map(r=>lineupOnSlots((r||[]).filter(p=>p&&!p.isPick),slots,p=>pts(p)*availROS(p)).chosen.map(p=>{
     const d=p.dist;
@@ -7736,7 +7748,7 @@ function simOdds(rosters,slots,iters){
     const seeds=[...Array(T).keys()].sort((x,y)=>(rec[y]-rec[x])||(pf[y]-pf[x])).slice(0,nSeeds);
     if(seeds.includes(TRADE.me))playoffs++;
     if(seeds.length<2){ if(seeds[0]===TRADE.me)titles++; continue; }
-    if(playBracket(seeds,wk,pStart)===TRADE.me)titles++;
+    if(playBracket(seeds,wk,pStart,wpr)===TRADE.me)titles++;
   }
   return {title:Math.round(titles/N*100), playoff:Math.round(playoffs/N*100),
           titleRaw:titles/N, playoffRaw:playoffs/N};
@@ -7875,8 +7887,9 @@ function renderWaivers(){
   }
   const w=state.ui.seasonWeek||1;
   const poW=(TRADE.schedule&&TRADE.schedule.playoffStart)||15;
+  const poEnd=(TRADE.schedule&&TRADE.schedule.playoffEnd)||poW+2;
   const poMode=state.ui.wWindow==="po";
-  const from=poMode?Math.max(w,poW):w, to=poMode?poW+2:18;
+  const from=poMode?Math.max(w,poW):w, to=poMode?poEnd:18;
   const posF=state.ui.wwPos||"ALL";
   buildWwPosFilter();
 
@@ -8151,8 +8164,9 @@ function renderInSeason(){
      you're chasing a title the only weeks that count are the fantasy playoffs, and a player who
      is quietly excellent in 15-17 is worth more than one who front-loads. */
   const poW=(TRADE.schedule&&TRADE.schedule.playoffStart)||15;
+  const poEnd=(TRADE.schedule&&TRADE.schedule.playoffEnd)||poW+2;
   const poMode=state.ui.wWindow==="po";
-  const wbFrom=poMode?Math.max(w,poW):w, wbTo=poMode?poW+2:18;
+  const wbFrom=poMode?Math.max(w,poW):w, wbTo=poMode?poEnd:18;
   const wb=waiverBoard(roster,wbFrom,wbTo,10);
   const holes=L.slots.filter(s=>!s.pl||s.pl.bye===w);
   const holeNote=holes.length
