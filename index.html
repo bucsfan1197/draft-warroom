@@ -755,6 +755,18 @@
   .lu-list.bench .lu-row{opacity:.92}
   .lu-list.bench .lu-pts b{font-size:13px}
 
+  /* ── Waiver Wire pickups: a ranked, scannable board ── */
+  .ww-add{display:grid;grid-template-columns:20px 34px 1fr auto;align-items:center;gap:11px;
+    padding:9px 8px;border-bottom:none;border-radius:10px;transition:background .12s ease}
+  .ww-add:not(:last-of-type){box-shadow:inset 0 -1px 0 var(--line)}
+  .ww-add:hover{background:var(--panel-2)}
+  .ww-rank{font-size:12px;font-weight:800;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
+  .ww-nl1{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ww-nl1 .meta{margin-left:0}
+  .ww-gain{color:var(--good-ink);font-weight:700}
+  .ww-bid b{font-size:16px}
+  .ww-bid .meta{font-size:10px}
+
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
 
@@ -7423,12 +7435,13 @@ function renderWaivers(){
   const wb=waiverBoard(roster,from,to,14);
   let rows=wb.rows;
   if(posF!=="ALL")rows=rows.filter(r=>posF==="FLEX"?FLEX_POS.includes(r.p.pos):r.p.pos===posF);
-  $("#wwAdds").innerHTML=(rows.length?rows.map(r=>`
+  $("#wwAdds").innerHTML=(rows.length?rows.map((r,i)=>`
     <div class="ww-add${r.noise?" faded":""}">
+      <span class="ww-rank">${i+1}</span>
       <span class="pos ${r.p.pos}">${r.p.pos}</span>
-      <div class="ww-name"><b>${r.p.name}</b> ${injChip(r.p)} ${gradeChip(r.p)}<span class="meta">${r.p.team||""}</span>
-        <span class="needline">+${r.gain.toFixed(1)} pts to your starting lineup${r.drop?` · costs you ${lastName(r.drop.name)}`:""}${r.noise?" · too close to call":""}</span></div>
-      <span class="ww-bid"><b>$${r.bid}</b><span class="meta">${r.bidPct}% of budget</span></span>
+      <div class="ww-name"><div class="ww-nl1"><b>${r.p.name}</b>${injChip(r.p)} ${gradeChip(r.p)}<span class="meta">${r.p.team||""}</span></div>
+        <span class="needline"><b class="ww-gain">+${r.gain.toFixed(1)} pts</b> to your lineup${r.drop?` · drop ${lastName(r.drop.name)}`:""}${r.noise?" · too close to call":""}</span></div>
+      <span class="ww-bid"><b>$${r.bid}</b><span class="meta">${r.bidPct}% FAAB</span></span>
     </div>`).join("")
     :`<div class="emptystate">Nothing on the wire would crack your starting lineup right now.</div>`)
     +(rows.length?`<div class="note" style="margin-top:10px"><b>Ranked by points added to your lineup, not player value.</b> A star at a position you're already deep at is worth little; a fill for a hole is worth a lot. Bids are a share of your <b>remaining</b> $${wb.remaining}, priced off the next-best option — if the name below does nearly the same job, don't overpay.${TRADE.transactions&&TRADE.transactions.some(t=>t.bid>0)?` Your league's recent winning bids: ${TRADE.transactions.filter(t=>t.bid>0).slice(0,5).map(t=>"$"+t.bid).join(", ")}.`:""}</div>`:"");
