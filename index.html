@@ -9681,7 +9681,7 @@ function gTradeValue(pl){
     :{t:"Fairly valued versus the market",c:"warn"};
   return {v:Math.round(v),mrank,ourRank,read};
 }
-function aiScoutBtn(id){ return aiConfigured()?`<button class="aiwhy" data-aiscout="${id}" style="margin-top:12px">🤖 AI scouting take</button><div class="aiwhyout" id="gScoutOut"></div>`:""; }
+function aiScoutBtn(id){ return aiConfigured()?`<button class="aiwhy" data-aiscout="${id}" style="margin-top:12px">🤖 AI scouting take</button><div class="aiwhyout aiscout-out"></div>`:""; }
 function aiScoutContext(pl){
   const g=playerGrades(pl), L=[];
   L.push(`Player: ${pl.name}, ${pl.pos} ${pl.team||"FA"}, age ${pl.age||"?"}, bye ${pl.bye||"?"}${pl.inj?", injury "+pl.inj:""}${pl.depth>1?", depth-chart #"+pl.depth:""}.`);
@@ -9694,8 +9694,8 @@ function aiScoutContext(pl){
   const tv=gTradeValue(pl); if(tv)L.push(`Trade read: ${tv.read.t}.`);
   return L.join("\n");
 }
-async function aiScoutRun(id){
-  const out=$("#gScoutOut"), btn=document.querySelector(`[data-aiscout="${id}"]`), pl=state.players[id];
+async function aiScoutRun(btn){
+  const pl=state.players[+btn.dataset.aiscout], out=btn.nextElementSibling;
   if(!pl||!out)return; out.innerHTML=`<span class="aithinking">scouting…</span>`; if(btn)btn.disabled=true;
   try{ const ans=await askAI(aiScoutContext(pl),`Give me a 3-4 sentence scouting take on ${pl.name} for a fantasy draft or trade: what his grades say about his profile (safe floor vs boom/bust, opportunity, schedule), whether he's a value at his ADP, and the kind of team he fits. Use the grades. Be decisive.`);
     out.innerHTML=aiFmt(ans); }
@@ -10044,6 +10044,7 @@ function detailRow(pl,span){
       ${wk?`<div class="eyebrow" style="margin-top:12px">Week by week</div>
         <div class="spark">${wk.map((v,i)=>`<span class="sb${v<=0?" bye":""}" style="height:${mx?Math.max(3,v/mx*100):3}%" title="Week ${i+1}: ${v>0?fmt(v)+" pts":"bye"}"></span>`).join("")}</div>
         <div class="meta" style="display:flex;justify-content:space-between"><span>Wk 1</span><span>Wk ${wk.length}</span></div>`:""}
+      ${aiScoutBtn(pl.id)}
     </div>
   </div></td></tr>`;
 }
@@ -10683,8 +10684,8 @@ function init(){
   if($("#seasonBriefBtn"))$("#seasonBriefBtn").onclick=aiSeasonBrief;
   if($("#teamReportBtn"))$("#teamReportBtn").onclick=aiRosterReport;
   // AI scouting take on the Player Grades detail card (delegated — the card re-renders on every selection)
-  if($("#gDetail"))$("#gDetail").addEventListener("click",e=>{ const b=e.target.closest("[data-aiscout]"); if(!b)return;
-    e.preventDefault(); aiScoutRun(+b.dataset.aiscout); });
+  document.addEventListener("click",e=>{ const b=e.target.closest("[data-aiscout]"); if(!b)return;
+    e.preventDefault(); aiScoutRun(b); });
   // AI Draft Coach controls
   if($("#coachBtn"))$("#coachBtn").onclick=()=>aiDraftCoach();
   if($("#coachAsk"))$("#coachAsk").onclick=()=>{ const v=$("#coachInput").value.trim(); if(v){aiDraftCoach(v);$("#coachInput").value="";} };
