@@ -1766,10 +1766,11 @@
         <div class="note" style="margin-bottom:12px">A general manager in your pocket that <b>explains this tool's own numbers in plain English</b> — why a pick, whether a trade is worth it, who to stream — grounded in the live simulation, and told <b>never to invent a stat</b>. It's <b>free</b>: a Google <b>Gemini</b> key has a no-credit-card free tier that easily covers a season. Your key is stored <b>only in this browser</b> and used only to call the AI directly — it never touches any server of ours.</div>
         <div class="form-grid">
           <div class="field"><label>Provider</label>
-            <div class="seg" id="ai_provider"><button data-v="gemini" class="on">Gemini · free</button><button data-v="anthropic">Claude</button><button data-v="openai">OpenAI</button></div>
+            <div class="seg" id="ai_provider"><button data-v="gemini" class="on">Gemini · free</button><button data-v="anthropic">Claude</button><button data-v="openai">OpenAI</button><button data-v="proxy">Shared link</button></div>
           </div>
           <div class="field" style="grid-column:1/-1"><label>API key <span class="meta" id="aiKeyHint">— grab a free one at <b>aistudio.google.com/apikey</b> (sign in, “Create API key”, paste it here)</span></label>
             <div class="syncrow">
+              <a class="ghost" id="aiGetKey" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">Get a free key ↗</a>
               <input type="password" id="ai_key" placeholder="Paste your API key — stored only on this device" autocomplete="off">
               <button class="draftbtn" id="aiSaveKey">Save</button>
               <button class="ghost" id="aiClearKey">Clear</button>
@@ -2510,6 +2511,16 @@ async function askAI(context, question, sysOverride){
   if(!aiConfigured()) throw new Error("Add a free API key in League Setup first.");
   const prov=AI.provider, model=aiModel(), SYS=sysOverride||AI_SYSTEM;
   const user=`CONTEXT (the app's computed numbers — reason only from this):\n${context}\n\nQUESTION: ${question}`;
+  if(prov==="proxy"){
+    // Keyless shared path: AI.key holds a Worker URL (deployed by whoever runs the league) that keeps
+    // the real API key server-side. The app just posts the same grounded prompt and reads {text}.
+    const r=await fetch(AI.key,{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({system:SYS,context,question})});
+    let d; try{ d=await r.json(); }catch(e){ throw new Error("The shared AI link didn't return valid data — check the URL."); }
+    if(!r.ok) throw new Error((d&&d.error)||("HTTP "+r.status+" from the shared link"));
+    if(!d||!d.text) throw new Error("The shared AI link returned no answer.");
+    return d.text;
+  }
   if(prov==="gemini"){
     // Model names and free-tier quotas shift and vary by account, so ask THIS key which models it can
     // actually call (ListModels), try the cheap "flash" ones first, and skip past any that are quota-0 or
@@ -2634,8 +2645,13 @@ function aiRefreshFab(){ const fab=$("#aiFab"); if(!fab)return;
 function aiRefreshSetup(){
   const chip=$("#aiStatusChip"); if(chip){ chip.textContent=aiConfigured()?"connected ✓":"not connected"; chip.className="pickcounter"; }
   const hint=$("#aiKeyHint"); if(hint){ const u=AI_KEYURL[AI.provider];
-    hint.innerHTML=AI.provider==="gemini"?`— grab a free one at <b>aistudio.google.com/apikey</b> (sign in → “Create API key” → paste here)`
-      :`— from <b>${u.replace(/^https?:\/\//,"")}</b>`; }
+    hint.innerHTML=AI.provider==="proxy"?`— paste the <b>shared AI link</b> your league set up (no key needed on this device)`
+      :AI.provider==="gemini"?`— tap <b>Get a free key</b> (sign in → “Create API key” → paste here). No credit card.`
+      :`— tap <b>Get a free key</b> to open ${u.replace(/^https?:\/\//,"")}`; }
+  const gk=$("#aiGetKey"); if(gk){ const proxy=AI.provider==="proxy"; gk.classList.toggle("hide",proxy);
+    gk.href=AI_KEYURL[AI.provider]||AI_KEYURL.gemini;
+    gk.textContent=AI.provider==="gemini"?"Get a free key ↗":"Get a key ↗"; }
+  const ki=$("#ai_key"); if(ki)ki.placeholder=AI.provider==="proxy"?"Paste the shared AI link (https://…workers.dev)":"Paste your API key — stored only on this device";
   $$("#ai_provider button").forEach(b=>b.classList.toggle("on",b.dataset.v===AI.provider));
   const k=$("#ai_key"); if(k&&document.activeElement!==k)k.value=AI.key||"";
   aiRefreshFab();
