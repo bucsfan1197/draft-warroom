@@ -3451,7 +3451,7 @@ function flash(msg){const f=$("#flash");f.textContent=msg;f.classList.add("show"
    rest dirty, and showTab draws a dirty tab the moment you open it. The pick clock and header
    stay global because the timer can auto-draft while you're reading another tab. */
 const TAB_RENDER={
-  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderTiers();renderDraftIntel();},
+  draft:   ()=>{renderRecs();renderAvail();renderPickLog();renderMyRoster();renderNeed();renderDraftTiers();renderDraftIntel();},
   team:    ()=>renderTeamTab(),
   matchups:()=>renderMatchups(),
   backtest:()=>renderBacktest(),
@@ -4109,7 +4109,10 @@ function renderNeed(){
   if(R.SUPERFLEX>0)extra+=`<div class="kv"><span><span class="pos SUPERFLEX">SF</span></span><span class="chip ${superNeed?'warn':'good'}">${superNeed?superNeed+' open':'set'}</span></div>`;
   $("#needBox").innerHTML=rows+extra;
 }
-function renderTiers(){
+// NB: named renderDraftTiers, NOT renderTiers — a second global `function renderTiers()` (the Grades-tab
+// tier view) is declared later in the file and would hoist-shadow this one, leaving the draft board's
+// #tierBox silently blank (same collision class as the old slotLabel/kickLabel bug).
+function renderDraftTiers(){
   const el=$("#tierBox"); if(!el)return;
   const rd=runData(), lv=replacementLevels().levels, info={};
   ["QB","RB","WR","TE"].forEach(pos=>{
@@ -4119,7 +4122,7 @@ function renderTiers(){
     const nextTier=t.find(x=>x.tier===top+1);
     // how much you lose by waiting until the tier breaks
     const drop=nextTier?Math.max(0,valueOf(inTier[inTier.length-1].p)-valueOf(nextTier.p)):0;
-    info[pos]={n:inTier.length,tier:top,drop,names:inTier.slice(0,3).map(x=>x.p.name.split(" ").slice(-1)[0])};
+    info[pos]={n:inTier.length,tier:top,drop,names:inTier.slice(0,3).map(x=>lastName(x.p.name))};
   });
   el.innerHTML=["QB","RB","WR","TE"].map(pos=>{
     const d=info[pos];
@@ -4255,6 +4258,20 @@ function selfTest(){
       const v=[...document.querySelectorAll('section[id^="tab-"]')].filter(x=>!x.classList.contains("hide"));
       if(v.length!==1||v[0].innerText.replace(/\s+/g,' ').trim().length<40) badTab=t.textContent.trim(); });
     add("Every tab opens with content",!badTab,badTab?`"${badTab}" is blank`:`${tabs.length} tabs`);
+    /* The draft-board tier panel has its OWN renderer (renderDraftTiers). A second global
+       `function renderTiers()` (the Grades tab) is declared later and hoist-shadows any function of
+       that name, so the draft panel must NOT be wired to `renderTiers` or its #tierBox goes blank.
+       Guard both: the draft renderer exists and actually fills #tierBox. */
+    (()=>{
+      const svPicks=state.picks.slice();
+      state.settings.teams=12;state.settings.snake=1;state.picks=[];
+      for(let i=0;i<8;i++){const tm=teamForPick(currentPick());const id=cpuPickFor(tm);if(id>=0)state.picks.push({playerId:id,teamIdx:tm});}
+      let filled=false;
+      try{ if(typeof renderDraftTiers==="function"){ showTab("draft"); renderDraftTiers(); filled=(($("#tierBox")||{}).innerHTML||"").length>40; } }catch(e){}
+      add("Draft-board tier panel renders (not shadowed by the Grades renderTiers)",filled,
+          filled?"#tierBox filled by renderDraftTiers":"#tierBox blank — name collision with the Grades tier renderer");
+      state.picks=svPicks;
+    })();
     // 2b. LAYOUT: does every tab actually fit on screen, with no control clipped or collapsed?
     const lay=[];
     tabs.forEach(t=>{ t.click(); layoutProbe().forEach(i=>lay.push(`${t.textContent.trim()}: ${i}`)); });
