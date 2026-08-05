@@ -31,8 +31,12 @@ def gj(u,t=40):
 YARD={"player_pass_yds":0.04,"player_rush_yds":0.1,"player_reception_yds":0.1,"player_receptions":1.0}
 TDLINE={"player_pass_tds":4.0}                       # line-based (e.g. 1.5 pass TDs)
 PROB6={"player_anytime_td":6.0}                       # odds-based: P(scores) * 6
-NEG={"player_pass_interceptions":-2.0}               # line-based, negative
-MARKETS=list(YARD)+list(TDLINE)+list(PROB6)+list(NEG)
+NEG={"player_pass_interceptions":-2.0}               # recognized if present, but not requested (budget)
+# the-odds-api charges [markets x regions] PER EVENT. Budget math on the free 500 req/mo tier:
+#   6 markets x 1 region x ~14 games = ~84 credits per pull; gated to ONE pull per NFL week (below) =
+#   ~84 x at most 5 game-weeks/month = ~420/month worst case, well under 500. Interceptions dropped to
+#   stay safe; validate() uses only free Sleeper/nflverse and costs nothing.
+MARKETS=list(YARD)+list(TDLINE)+list(PROB6)          # 6 markets requested (INT omitted on purpose)
 
 def american_to_prob(odds):
     try: o=float(odds)
@@ -105,10 +109,22 @@ def archive_props(pts, season, week):
         for who,p in sorted(pts.items()):
             w.writerow([season,week,who,p])
 
+def _week_already_archived(season,week):
+    if not os.path.exists(ARCHIVE): return False
+    for r in csv.DictReader(open(ARCHIVE,encoding="utf-8")):
+        try:
+            if int(r["season"])==season and int(r["week"])==week: return True
+        except Exception: continue
+    return False
+
 def pull_and_archive(api_key):
     season,week,stype=_cur_season_week()
     if stype!="regular" or not week:
         return {"status":"idle","note":"no regular-season week active"}
+    # ONE pull per NFL week — the refresh runs 4x/day, but props for a week are stable and each pull
+    # costs ~84 credits, so re-pulling every 6h would burn the free tier in a day. Snapshot once/week.
+    if _week_already_archived(season,week):
+        return {"status":"skip","note":f"week {week} already archived (1 pull/week to stay in free tier)"}
     pts=pull_props(api_key)
     if not pts: return {"status":"idle","note":"no props posted yet"}
     archive_props(pts,season,week)
