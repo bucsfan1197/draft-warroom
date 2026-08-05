@@ -679,6 +679,17 @@
   .rec .nm{font-size:15.5px;letter-spacing:-.015em}
   .rank-badge{font-size:10.5px;font-weight:800;opacity:.75}
   .rec.top .rank-badge{color:var(--accent);opacity:1}
+  /* ---- Rec-card header rework: one clean, uniform line so cards align.
+       The rank badge was absolutely positioned over the same corner as the grade
+       chip, and the name had no truncation, so long names wrapped and collided.
+       Now r1 is [pos] [name→ellipsis] [rank], and grade+injury get their own row. */
+  .rec .r1{flex-wrap:nowrap;gap:7px}
+  .rec .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rec .rank-badge{position:static;margin-left:auto;flex:none;align-self:center}
+  .rec .cardsub{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+  /* a hair more breathing room + consistent padding across every card */
+  .rec{padding:13px 14px}
+  .rec .cardmeta{margin-top:8px}
 
   /* ---- The clock is the thing you glance at mid-draft: let it be big ---- */
   .clock .big{letter-spacing:-.02em;font-weight:800}
@@ -3681,8 +3692,9 @@ function renderSimRecs(){
                        :`Best shot at the championship of any pick right now.`)
         :(within?`Statistically level with the top pick — take whichever you prefer.`
                 :`Clearly behind the top pick on title odds.`);
-      return `<div class="rec ${pl.pos}${i===0?' top':''}"><div class="rank-badge">#${i+1}</div>
-        <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span>${injChip(pl)}${gradeChip(pl)}</div>
+      return `<div class="rec ${pl.pos}${i===0?' top':''}">
+        <div class="r1"><span class="pos ${pl.pos}">${pl.pos}</span><span class="nm">${pl.name}</span><span class="rank-badge">#${i+1}</span></div>
+        ${(gradeChip(pl)||injChip(pl))?`<div class="cardsub">${gradeChip(pl)}${injChip(pl)}</div>`:""}
         <div class="cardmeta">${pl.team} · bye ${pl.bye||"—"} · <b>${Math.round(pts(pl))}</b> proj pts · <b>${(r.title*100).toFixed(0)}%</b> <span class="meta">±${(simSE(r.title)*196).toFixed(1)}</span> to win title · ${Math.round(r.playoff*100)}% make playoffs</div>
         <div class="why">${line}</div>
         <button class="draftbtn" data-draft="${r.id}">Draft to my team</button>${aiWhyBtn(r.id)}</div>`;
@@ -3750,8 +3762,8 @@ function renderHeurRecs(){
     if(r.usg&&r.usg.t)warn.push(`<span class="chip ${r.usg.cls}">${r.usg.t}</span>`);
     const metaExtra=auct?` · <b>$${actx.val(r.pl)}</b> value`:"";
     return `<div class="rec ${pos}${i===0?" top":""}">
-      <div class="rank-badge">#${i+1}</div>
-      <div class="r1"><span class="pos ${pos}">${pos}</span><span class="nm">${r.pl.name}</span>${injChip(r.pl)}${gradeChip(r.pl)}</div>
+      <div class="r1"><span class="pos ${pos}">${pos}</span><span class="nm">${r.pl.name}</span><span class="rank-badge">#${i+1}</span></div>
+      ${(gradeChip(r.pl)||injChip(r.pl))?`<div class="cardsub">${gradeChip(r.pl)}${injChip(r.pl)}</div>`:""}
       <div class="cardmeta">${r.pl.team} · bye ${r.pl.bye||"—"} · <b>${Math.round(pts(r.pl))}</b> proj pts${metaExtra} · <span class="tier ${tier.cls}">${tier.label}</span></div>
       <div class="why">${line}</div>
       ${warn.length?`<div class="r2" style="margin-top:7px">${warn.join("")}</div>`:""}
