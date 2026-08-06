@@ -6057,6 +6057,19 @@ function selfTest(){
       add(`${label}: legal roster, no over-cap`, legal&&!over.length&&teamRoster(myIdx()).length===size,
           Object.entries(comp).map(([k,v])=>k+v).join(" ")+(over.length?` — OVER: ${over.join(",")}`:""));
     });
+    // 3b. import guard — the "my league has a kicker but the tool doesn't show it" class of bug.
+    // A league whose roster_positions include K/DEF/SUPER_FLEX must import those exact slots.
+    try{
+      const _save=JSON.parse(JSON.stringify(state.settings));
+      const fakeLg={roster_positions:["QB","RB","RB","WR","WR","TE","FLEX","SUPER_FLEX","K","DEF","BN","BN"],
+                    scoring_settings:{}, total_rosters:10, settings:{}};
+      applyLeagueSettings(fakeLg);
+      const R=state.settings.roster, iss=verifyImportedRoster(fakeLg);
+      add("A league with a kicker & defense imports them",
+          R.K===1&&R.DST===1&&R.SUPERFLEX===1&&iss.length===0,
+          `imported K:${R.K} DST:${R.DST} SF:${R.SUPERFLEX}${iss.length?" — "+iss.join("; "):""}`);
+      state.settings=_save;
+    }catch(e){ add("A league with a kicker & defense imports them",false,String(e)); }
     // 4. simulator
     let simOk=true; try{ runSim(60); }catch(e){ simOk=false; }
     add("Championship simulator runs",simOk,"");
@@ -6118,6 +6131,20 @@ function applyLeagueSettings(lg){
   return applied;
 }
 /* ---- import your league's real scoring + roster from Sleeper ---- */
+/* Guardrail: what Sleeper says the league starts vs what we actually imported. Any divergence — a
+   league WITH a kicker/defense/superflex that ended up without the slot, or vice versa — is a
+   silent-wrong-settings bug, the exact class that makes a mock or the draft board miss a position.
+   Surfacing it at import time (with the league name) means a wrong or stale import can't hide. */
+function verifyImportedRoster(lg){
+  const rp=lg.roster_positions||[], R=state.settings.roster, issues=[];
+  const wantK=rp.includes("K"), wantD=rp.includes("DEF")||rp.includes("DST"), wantSF=rp.includes("SUPER_FLEX");
+  if(wantK&&!R.K)  issues.push("league starts a Kicker but none was imported");
+  if(!wantK&&R.K)  issues.push("no Kicker in this league, but a K slot is set");
+  if(wantD&&!R.DST)issues.push("league starts a Defense but none was imported");
+  if(!wantD&&R.DST)issues.push("no Defense in this league, but a DST slot is set");
+  if(wantSF&&!R.SUPERFLEX)issues.push("superflex league but no SUPERFLEX slot imported");
+  return issues;
+}
 async function importLeagueScoring(){
   const id=$("#leagueSelect").value||TRADE.leagueId;
   if(!id){leagueStatus("Pick a league first (Find my leagues).","var(--warn)");return;}
@@ -6126,7 +6153,16 @@ async function importLeagueScoring(){
     applySleeperRoster(lg.settings);
     const applied=applyLeagueSettings(lg);
     loadSetupInputs(); renderAll(); save();
-    leagueStatus(`⚙ Imported <b>${lg.name}</b>: ${applied} scoring rules, ${state.settings.teams} teams, roster ${Object.entries(state.settings.roster).filter(([k,v])=>v).map(([k,v])=>k+":"+v).join(" ")}.`,"var(--good)");
+    const R=state.settings.roster;
+    const rosterStr=Object.entries(R).filter(([k,v])=>v).map(([k,v])=>k+":"+v).join(" ");
+    const issues=verifyImportedRoster(lg);
+    if(issues.length){
+      leagueStatus(`⚠ Imported <b>${lg.name}</b> but the roster looks wrong: ${issues.join("; ")}. Now: ${rosterStr}. Re-check you picked the right league.`,"var(--crit)");
+    }else{
+      // Explicitly confirm K/DST so it's obvious at a glance which positions came through.
+      const flags=[R.SUPERFLEX?"superflex":"", R.K?"✓kicker":"no kicker", R.DST?"✓defense":"no defense"].filter(Boolean).join(", ");
+      leagueStatus(`⚙ Now using <b>${lg.name}</b> (${flags}): ${applied} scoring rules, ${state.settings.teams} teams, roster ${rosterStr}.`,"var(--good)");
+    }
   }catch(e){leagueStatus("Couldn't import league settings.","var(--crit)");}
 }
 
