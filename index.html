@@ -1060,6 +1060,7 @@
       <button class="tab" data-tab="trade">Trades</button>
       <button class="tab" data-tab="players">Projections</button>
       <button class="tab" data-tab="grades">Grades</button>
+      <button class="tab" data-tab="grader">Team Grader</button>
       <button class="tab" data-tab="setup">League Setup</button>
     </nav>
     <div class="spacer"></div>
@@ -1609,6 +1610,41 @@
         <th>#</th><th>Player</th><th class="r">Overall</th><th class="r">Value vs ADP</th>
         <th class="r">Opp</th><th class="r">Sched</th><th class="r">Floor</th><th class="r">Upside</th><th class="r" id="gProjTh">Proj</th>
       </tr></thead><tbody id="gBody"></tbody></table></div><div id="gTiers" class="hide" style="padding:12px 16px"></div></div>
+    </div>
+  </section>
+
+  <!-- TEAM GRADER TAB -->
+  <section id="tab-grader" class="hide">
+    <div class="panel" style="margin-bottom:16px">
+      <div class="hd"><h2>Team grader</h2><span class="pickcounter" style="margin-left:auto" id="grSettings"></span></div>
+      <div class="bd">
+        <div class="note">Build any roster and grade it against our projections — projected weekly points, record, playoff odds, and seed, simulated in a full season against a realistic field. Uses your <b>League Setup</b> scoring, roster and team count — change them there.</div>
+        <div class="form-grid" style="margin-top:12px">
+          <div class="field"><label>Team name</label><input type="text" id="grName" placeholder="My team"></div>
+          <div class="field"><label>Opponents</label>
+            <div class="seg" id="grOppMode"><button data-v="auto" class="on">Typical field</button><button data-v="real">My league's teams</button></div>
+          </div>
+        </div>
+        <div class="field" style="grid-column:1/-1;margin-top:10px"><label>Add players — search or paste</label>
+          <div class="syncrow">
+            <input type="text" id="grSearch" placeholder="Type a player name…" autocomplete="off">
+            <button class="ghost" id="grPasteToggle">＋ Paste</button>
+            <button class="ghost" id="grClear">Clear team</button>
+          </div>
+          <div id="grSearchOut" class="hide" style="margin-top:4px;max-height:230px;overflow:auto"></div>
+          <div id="grPasteBox" class="hide" style="margin-top:8px">
+            <textarea id="grPasteText" placeholder="One player per line — position/rank prefixes are ignored, e.g.&#10;QB Josh Allen&#10;Bijan Robinson&#10;Nico Collins" style="width:100%;height:120px;font-family:var(--mono);font-size:12px;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink);border-radius:8px;padding:8px"></textarea>
+            <button class="draftbtn" id="grPasteApply" style="width:auto;padding:8px 16px;margin-top:6px">Add these</button>
+          </div>
+        </div>
+        <div id="grRoster" style="margin-top:12px"></div>
+        <div id="grOppBox" class="hide" style="margin-top:12px"></div>
+        <button class="draftbtn" id="grGrade" style="margin-top:14px">Grade this team →</button>
+      </div>
+    </div>
+    <div class="panel hide" id="grResultPanel">
+      <div class="hd"><h2>Grade</h2><span class="pickcounter" style="margin-left:auto" id="grResultCtx"></span></div>
+      <div class="bd" id="grResults"></div>
     </div>
   </section>
 
@@ -4116,6 +4152,7 @@ const TAB_RENDER={
   cap:     ()=>renderCapSheet(),
   players: ()=>renderPlayersTab(),
   grades:  ()=>renderGrades(),
+  grader:  ()=>renderGraderTeam(),
   setup:   ()=>renderReplBox(),
   trade:   ()=>labCompute()             // the finder/evaluator below it build on demand
 };
@@ -9681,6 +9718,116 @@ function renderLedger(){
   box.innerHTML=st.wks.map(row).join("")
     +(sum.length?`<div class="note" style="margin-top:10px">${sum.join(" ")}</div>`:"");
 }
+/* ===================== TEAM GRADER =====================
+   Build any roster under your Setup scoring/roster, then grade it: drop the team into a full season
+   against a realistic auto-drafted field (or your real league's teams) and report projected record,
+   playoff odds, seed and title odds from the same simulator the rest of the app runs on. */
+const GRADER={team:[], name:"", oppMode:"auto"};
+function grPool(){ return state.players.filter(p=>p&&inLeague(p)&&!p.isPick); }
+function grSize(){ return Object.values(state.settings.roster).reduce((a,b)=>a+b,0); }
+function grStartSlots(){ const R=state.settings.roster,out=[];
+  ["QB","RB","WR","TE","FLEX","SUPERFLEX","K","DST","DL","LB","DB","IDP_FLEX"].forEach(k=>{for(let i=0;i<(R[k]||0);i++)out.push(k);}); return out; }
+function grAdd(id){ const p=state.players[id]; if(p&&!GRADER.team.some(x=>x.id===id)){GRADER.team.push(p);renderGraderTeam();} }
+function grRemove(id){ GRADER.team=GRADER.team.filter(p=>p.id!==id); renderGraderTeam(); }
+function grSearchRun(q){
+  const out=$("#grSearchOut"); if(!out)return; q=nrm(q||"");
+  if(q.length<2){out.classList.add("hide");out.innerHTML="";return;}
+  const have=new Set(GRADER.team.map(p=>p.id));
+  const hits=grPool().filter(p=>!have.has(p.id)&&nrm(p.name).includes(q)).sort((a,b)=>valueOf(b)-valueOf(a)).slice(0,10);
+  out.classList.remove("hide");
+  out.innerHTML=hits.length?hits.map(p=>`<div class="kv"><span><span class="pos ${p.pos}">${p.pos}</span> ${p.name} <span class="meta">${p.team||""} · ${fmt(pts(p))}pt</span></span><button class="mini dr" data-gradd="${p.id}">Add</button></div>`).join(""):`<div class="meta">No match — check the spelling.</div>`;
+  out.querySelectorAll("[data-gradd]").forEach(b=>b.onclick=()=>{grAdd(+b.dataset.gradd);const s=$("#grSearch");if(s){s.value="";s.focus();}grSearchRun("");});
+}
+function grPasteApply(){
+  const t=$("#grPasteText"); if(!t)return;
+  const lines=(t.value||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const have=new Set(GRADER.team.map(p=>p.id)); let added=0,miss=0;
+  lines.forEach(line=>{
+    const k=nrm(line.replace(/^\s*\d+[.)]?\s*/,"").replace(/\b(QB|RB|WR|TE|K|PK|DEF|DST|FLEX|SUPERFLEX|BN|BE|IR|TAXI)\b/gi,""));
+    if(k.length<3)return;
+    const p=grPool().find(x=>!have.has(x.id)&&nrm(x.name)===k)||grPool().find(x=>!have.has(x.id)&&nrm(x.name).includes(k));
+    if(p){GRADER.team.push(p);have.add(p.id);added++;}else miss++;
+  });
+  t.value=""; renderGraderTeam(); flash(`Added ${added}${miss?`, ${miss} not found`:""}`);
+}
+const GR_POS=["QB","RB","WR","TE","K","DST","DL","LB","DB"];
+function renderGraderTeam(){
+  const box=$("#grRoster"); if(!box)return;
+  const R=state.settings.roster, size=grSize();
+  const cnt={}; GRADER.team.forEach(p=>cnt[p.pos]=(cnt[p.pos]||0)+1);
+  const posLine=GR_POS.filter(pz=>R[pz]||cnt[pz]).map(pz=>`${pz} <b>${cnt[pz]||0}</b>`).join(" · ");
+  const chips=GRADER.team.slice().sort((a,b)=>valueOf(b)-valueOf(a)).map(p=>`<span class="chip"><span class="pos ${p.pos}" style="margin-right:4px">${p.pos}</span>${lastName(p.name)} <b data-grrm="${p.id}" style="cursor:pointer;opacity:.6">×</b></span>`).join("");
+  box.innerHTML=`<div class="eyebrow" style="margin-bottom:6px">Roster — ${GRADER.team.length} of ${size} slots</div>`
+    +(GRADER.team.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${chips}</div>`:`<div class="emptystate">No players yet — search a name or paste a list above.</div>`)
+    +`<div class="meta">${posLine}</div>`;
+  box.querySelectorAll("[data-grrm]").forEach(b=>b.onclick=()=>grRemove(+b.dataset.grrm));
+  const s=$("#grSettings"); if(s){const rec=+state.settings.scoring.rec; s.textContent=`${state.settings.teams} teams · ${rec>=1?"PPR":rec>0?"half-PPR":"standard"} · ${size}-man roster`;}
+  const ob=$("#grOppBox"); if(ob){ if(GRADER.oppMode==="real"&&!leagueSynced()){ ob.classList.remove("hide"); ob.innerHTML=`<div class="note warn-note">"My league's teams" needs a connected league (Waivers/Trades → Connect). Falling back to a typical field.</div>`; } else ob.classList.add("hide"); }
+}
+function graderField(realOpps){
+  const T=Math.max(2,state.settings.teams||12), size=grSize();
+  const mine=GRADER.team.slice(), have=new Set(mine.map(p=>p.id));
+  if(realOpps&&realOpps.length){ return [{players:mine,name:GRADER.name||"Your team"}].concat(realOpps.map((r,i)=>({players:r,name:"Opp "+(i+1)}))); }
+  const pool=grPool().filter(p=>!have.has(p.id)).sort((a,b)=>valueOf(b)-valueOf(a));
+  const nOpp=T-1, opps=Array.from({length:nOpp},()=>[]); let pi=0;
+  for(let round=0;round<size&&pi<pool.length;round++){
+    const order=(round%2)?[...Array(nOpp).keys()].reverse():[...Array(nOpp).keys()];
+    for(const oi of order){ if(pi>=pool.length)break; opps[oi].push(pool[pi++]); }
+  }
+  return [{players:mine,name:GRADER.name||"Your team"}].concat(opps.map((r,i)=>({players:r,name:"Opp "+(i+1)})));
+}
+function grLetter(pct){ return pct>=70?"A":pct>=55?"B":pct>=40?"C":pct>=25?"D":"F"; }
+function runGrader(){
+  const need=grStartSlots().length;
+  if(GRADER.team.length<need){ flash(`Add at least ${need} players (a full starting lineup) to grade.`); return; }
+  const sv={teams:TRADE.teams,me:TRADE.me,schedule:TRADE.schedule,slots:TRADE.slots,leagueId:TRADE.leagueId,name:TRADE.leagueName};
+  const savedSeason=SEASONSIM, savedSim=SIMCACHE;
+  const realOpps=(GRADER.oppMode==="real"&&sv.teams&&sv.teams.length>1)
+    ? sv.teams.filter((_,i)=>i!==(sv.me||0)).map(t=>(t.players||[]).filter(p=>p&&!p.isPick)) : null;
+  let res=null;
+  try{
+    const field=graderField(realOpps), slots=grStartSlots();
+    TRADE.teams=field; TRADE.me=0; TRADE.schedule=null; TRADE.slots=slots; TRADE.leagueId=null;
+    SEASONSIM={key:null,val:null}; SIMCACHE={key:null};
+    const S=simSeason(500), me=S[0];
+    const order=[...S.keys()].sort((a,b)=>(S[b].wins-S[a].wins)||(S[b].pf-S[a].pf));
+    const seed=order.indexOf(0)+1;
+    const odds=oddsForRosters(field.map(t=>t.players),slots,500);
+    const A=weekUnits(field[0].players,1);
+    const startPts=A.starters.reduce((s,u)=>s+u.base*u.mult,0);
+    const fieldPts=field.map(t=>{const w=weekUnits(t.players,1);return w.starters.reduce((s,u)=>s+u.base*u.mult,0);});
+    const pct=Math.round(fieldPts.filter(v=>v<startPts).length/(field.length-1||1)*100);
+    res={wins:me.wins,games:me.games,playoff:odds.playoff,title:odds.title,seed,teams:field.length,
+         startPts,pct,starters:A.starters,real:!!realOpps};
+  }catch(e){ res={err:String(e)}; }
+  finally{
+    TRADE.teams=sv.teams;TRADE.me=sv.me;TRADE.schedule=sv.schedule;TRADE.slots=sv.slots;TRADE.leagueId=sv.leagueId;TRADE.leagueName=sv.name;
+    SEASONSIM=savedSeason;SIMCACHE=savedSim;
+  }
+  renderGraderResults(res);
+}
+function renderGraderResults(r){
+  const box=$("#grResults"), panel=$("#grResultPanel"); if(!box)return;
+  panel.classList.remove("hide");
+  if(r.err){box.innerHTML=`<div class="emptystate">Couldn't grade this team: ${r.err}</div>`;return;}
+  const losses=Math.max(0,r.games-r.wins), grade=grLetter(r.playoff);
+  const ctx=$("#grResultCtx"); if(ctx)ctx.textContent=`${GRADER.name||"Your team"} · vs a ${r.teams}-team ${r.real?"real":"typical"} field`;
+  const posStr={}; r.starters.forEach(u=>{posStr[u.pl.pos]=(posStr[u.pl.pos]||0)+u.base*u.mult;});
+  box.innerHTML=`
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:14px">
+      <div class="tier ${gradeCls(r.playoff/100)}" style="font-size:32px;font-weight:800;padding:8px 18px;border-radius:14px;min-width:56px;text-align:center">${grade}</div>
+      <div><div class="eyebrow">Projected record</div><div style="font-size:26px;font-weight:700">${r.wins.toFixed(1)}–${losses.toFixed(1)}</div><div class="meta">over ${r.games} games</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:14px">
+      <div class="levbox"><div class="eyebrow">Playoff odds</div><div class="levnum">${r.playoff}%</div></div>
+      <div class="levbox"><div class="eyebrow">Proj. seed</div><div class="levnum">#${r.seed}</div><div class="meta">of ${r.teams}</div></div>
+      <div class="levbox"><div class="eyebrow">Title odds</div><div class="levnum">${r.title}%</div></div>
+      <div class="levbox"><div class="eyebrow">Weekly pts</div><div class="levnum">${fmt(r.startPts)}</div><div class="meta">${r.pct}th pctile</div></div>
+    </div>
+    <div class="eyebrow" style="margin-bottom:6px">Where the points come from — starting lineup</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${Object.entries(posStr).sort((a,b)=>b[1]-a[1]).map(([pz,v])=>`<span class="chip"><span class="pos ${pz}" style="margin-right:4px">${pz}</span>${fmt(v)} pts/wk</span>`).join("")}</div>
+    <div class="note" style="margin-top:12px">Simulated 500 seasons ${r.real?"against your league's real rosters":"against a field auto-drafted from the best available players at your settings"} (${r.teams} teams). Seed is your rank by record then points; the letter grade tracks playoff odds. Change scoring/roster in League Setup to re-grade under different rules.</div>`;
+}
 function renderMatchups(){
   // bridge-aware: a synced league fills TRADE.teams, not state.picks, so use liveRosters()/myTeamIdx() —
   // the same source the season sim and playoff push use. Draft mode is unchanged (the bridge falls through
@@ -10935,6 +11082,16 @@ function wireSetup(){
   $$("#logMode button").forEach(b=>b.onclick=()=>{state.ui.logMode=b.dataset.v;renderPickLog();save();});
   wireTradeLab(); wireKeepers(); wireCap();
   $("#scoringImportBtn").onclick=()=>importLeagueScoring();
+  // Team grader
+  if($("#grSearch")){
+    $("#grSearch").oninput=e=>grSearchRun(e.target.value);
+    $("#grName").oninput=e=>{GRADER.name=e.target.value.trim();};
+    $("#grPasteToggle").onclick=()=>$("#grPasteBox").classList.toggle("hide");
+    $("#grPasteApply").onclick=()=>grPasteApply();
+    $("#grClear").onclick=()=>{GRADER.team=[];renderGraderTeam();$("#grResultPanel").classList.add("hide");};
+    $("#grGrade").onclick=()=>runGrader();
+    $$("#grOppMode button").forEach(b=>b.onclick=()=>{$$("#grOppMode button").forEach(x=>x.classList.toggle("on",x===b));GRADER.oppMode=b.dataset.v;renderGraderTeam();});
+  }
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
   // Prefill the username if it's already known, and let Enter load — small things, but this is the
   // one gate between the user and the whole feature.
