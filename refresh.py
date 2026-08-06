@@ -951,7 +951,11 @@ def git_push():
         # is the whole point of the accuracy work — next year's walk-forward test is fit against it —
         # so it has to leave this machine. It was accumulating locally and never pushed, one disk
         # failure from gone. Both are backed up now. Trigger on either changing.
-        tracked=["data.js","proj_archive.csv","props_archive.csv","props.json"]
+        # Only stage files that actually exist — props_archive.csv/props.json are absent until the
+        # optional odds key is set, and `git add` on a missing path aborts the WHOLE commit (exit 128),
+        # which silently stalled every data push. Filtering keeps a dormant feature from blocking data.
+        tracked=[f for f in ["data.js","proj_archive.csv","props_archive.csv","props.json"]
+                 if os.path.exists(os.path.join(HERE,f))]
         st=subprocess.run(["git","-C",HERE,"status","--porcelain",*tracked],capture_output=True,text=True)
         if not st.stdout.strip():
             log("git: no change, nothing to push"); return
