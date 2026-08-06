@@ -1625,7 +1625,15 @@
             <div class="seg" id="grOppMode"><button data-v="auto" class="on">Typical field</button><button data-v="real">My league's teams</button></div>
           </div>
         </div>
-        <div class="field" style="grid-column:1/-1;margin-top:10px"><label>Add players — search or paste</label>
+        <div class="field" style="grid-column:1/-1;margin-top:10px" id="grLeagueRow">
+          <label>Pull a drafted team from your connected league</label>
+          <div class="syncrow" id="grLeagueControls">
+            <select id="grLeagueTeam" style="flex:1;min-width:200px"></select>
+            <button class="ghost" id="grLoadTeam">Load team</button>
+          </div>
+          <div id="grLeagueHint" class="meta" style="margin-top:4px"></div>
+        </div>
+        <div class="field" style="grid-column:1/-1;margin-top:10px"><label>Add players — or search / paste your own</label>
           <div class="syncrow">
             <input type="text" id="grSearch" placeholder="Type a player name…" autocomplete="off">
             <button class="ghost" id="grPasteToggle">＋ Paste</button>
@@ -9722,7 +9730,7 @@ function renderLedger(){
    Build any roster under your Setup scoring/roster, then grade it: drop the team into a full season
    against a realistic auto-drafted field (or your real league's teams) and report projected record,
    playoff odds, seed and title odds from the same simulator the rest of the app runs on. */
-const GRADER={team:[], name:"", oppMode:"auto"};
+const GRADER={team:[], name:"", oppMode:"auto", leagueIdx:null};
 function grPool(){ return state.players.filter(p=>p&&inLeague(p)&&!p.isPick); }
 function grSize(){ return Object.values(state.settings.roster).reduce((a,b)=>a+b,0); }
 function grStartSlots(){ const R=state.settings.roster,out=[];
@@ -9763,6 +9771,33 @@ function renderGraderTeam(){
   box.querySelectorAll("[data-grrm]").forEach(b=>b.onclick=()=>grRemove(+b.dataset.grrm));
   const s=$("#grSettings"); if(s){const rec=+state.settings.scoring.rec; s.textContent=`${state.settings.teams} teams · ${rec>=1?"PPR":rec>0?"half-PPR":"standard"} · ${size}-man roster`;}
   const ob=$("#grOppBox"); if(ob){ if(GRADER.oppMode==="real"&&!leagueSynced()){ ob.classList.remove("hide"); ob.innerHTML=`<div class="note warn-note">"My league's teams" needs a connected league (Waivers/Trades → Connect). Falling back to a typical field.</div>`; } else ob.classList.add("hide"); }
+  // connected-league team picker: pull any already-drafted roster straight in
+  const sel=$("#grLeagueTeam"), hint=$("#grLeagueHint"), ctrls=$("#grLeagueControls");
+  if(sel){
+    if(leagueSynced()){
+      if(ctrls)ctrls.classList.remove("hide");
+      const cur=sel.value;
+      sel.innerHTML=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name||("Team "+(i+1))}</option>`).join("");
+      if(cur&&[...sel.options].some(o=>o.value===cur))sel.value=cur;
+      else if(TRADE.me!=null&&TRADE.teams[TRADE.me])sel.value=String(TRADE.me);
+      if(hint)hint.innerHTML=`${TRADE.teams.length} teams loaded from <b>${TRADE.leagueName||"your league"}</b> — pick one and hit Load to grade its drafted roster against the real league.`;
+    }else{
+      if(ctrls)ctrls.classList.add("hide");
+      if(hint)hint.innerHTML=`No league connected yet. Connect one in <b>Waiver Wire</b> or <b>Trades</b> → "Connect my league", then every drafted team shows up here.`;
+    }
+  }
+}
+function grLoadFromLeague(){
+  if(!leagueSynced()){ flash("Connect a league first (Waivers/Trades)."); return; }
+  const idx=+(($("#grLeagueTeam")||{}).value||0), t=TRADE.teams[idx]; if(!t)return;
+  GRADER.team=(t.players||[]).filter(p=>p&&!p.isPick).slice();
+  GRADER.name=t.name||("Team "+(idx+1));
+  GRADER.leagueIdx=idx;                 // so the "real field" excludes THIS team, not your own
+  GRADER.oppMode="real";                // grade a drafted team against its real league by default
+  const nm=$("#grName"); if(nm)nm.value=GRADER.name;
+  $$("#grOppMode button").forEach(x=>x.classList.toggle("on",x.dataset.v==="real"));
+  renderGraderTeam();
+  flash(`Loaded ${GRADER.name} — ${GRADER.team.length} players`);
 }
 function graderField(realOpps){
   const T=Math.max(2,state.settings.teams||12), size=grSize();
@@ -9782,8 +9817,11 @@ function runGrader(){
   if(GRADER.team.length<need){ flash(`Add at least ${need} players (a full starting lineup) to grade.`); return; }
   const sv={teams:TRADE.teams,me:TRADE.me,schedule:TRADE.schedule,slots:TRADE.slots,leagueId:TRADE.leagueId,name:TRADE.leagueName};
   const savedSeason=SEASONSIM, savedSim=SIMCACHE;
+  // when a real drafted team was pulled in, its opponents are the OTHER real teams (exclude itself);
+  // for a hand-built hypothetical, exclude your own slot instead.
+  const excludeIdx=(GRADER.leagueIdx!=null)?GRADER.leagueIdx:(sv.me||0);
   const realOpps=(GRADER.oppMode==="real"&&sv.teams&&sv.teams.length>1)
-    ? sv.teams.filter((_,i)=>i!==(sv.me||0)).map(t=>(t.players||[]).filter(p=>p&&!p.isPick)) : null;
+    ? sv.teams.filter((_,i)=>i!==excludeIdx).map(t=>(t.players||[]).filter(p=>p&&!p.isPick)) : null;
   let res=null;
   try{
     const field=graderField(realOpps), slots=grStartSlots();
@@ -11118,9 +11156,10 @@ function wireSetup(){
     $("#grName").oninput=e=>{GRADER.name=e.target.value.trim();};
     $("#grPasteToggle").onclick=()=>$("#grPasteBox").classList.toggle("hide");
     $("#grPasteApply").onclick=()=>grPasteApply();
-    $("#grClear").onclick=()=>{GRADER.team=[];renderGraderTeam();$("#grResultPanel").classList.add("hide");};
+    $("#grClear").onclick=()=>{GRADER.team=[];GRADER.leagueIdx=null;renderGraderTeam();$("#grResultPanel").classList.add("hide");};
     $("#grGrade").onclick=()=>runGrader();
     $("#grAiBtn").onclick=()=>aiGraderBrief();
+    $("#grLoadTeam").onclick=()=>grLoadFromLeague();
     $$("#grOppMode button").forEach(b=>b.onclick=()=>{$$("#grOppMode button").forEach(x=>x.classList.toggle("on",x===b));GRADER.oppMode=b.dataset.v;renderGraderTeam();});
   }
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
