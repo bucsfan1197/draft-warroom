@@ -1643,8 +1643,8 @@
       </div>
     </div>
     <div class="panel hide" id="grResultPanel">
-      <div class="hd"><h2>Grade</h2><span class="pickcounter" style="margin-left:auto" id="grResultCtx"></span></div>
-      <div class="bd" id="grResults"></div>
+      <div class="hd"><h2>Grade</h2><span class="pickcounter" style="margin-left:auto" id="grResultCtx"></span><button class="ghost sm hide" id="grAiBtn" style="margin-left:10px">🤖 Strengths &amp; weaknesses</button></div>
+      <div class="bd"><div id="grResults"></div><div id="grAiOut" class="aiwhyout"></div></div>
     </div>
   </section>
 
@@ -9804,11 +9804,14 @@ function runGrader(){
     TRADE.teams=sv.teams;TRADE.me=sv.me;TRADE.schedule=sv.schedule;TRADE.slots=sv.slots;TRADE.leagueId=sv.leagueId;TRADE.leagueName=sv.name;
     SEASONSIM=savedSeason;SIMCACHE=savedSim;
   }
+  GRADER.lastResult=res;
   renderGraderResults(res);
 }
 function renderGraderResults(r){
   const box=$("#grResults"), panel=$("#grResultPanel"); if(!box)return;
   panel.classList.remove("hide");
+  if($("#grAiOut"))$("#grAiOut").innerHTML="";                          // fresh grade → clear old write-up
+  if($("#grAiBtn")){ $("#grAiBtn").classList.toggle("hide",!aiConfigured()); $("#grAiBtn").textContent="🤖 Strengths & weaknesses"; }
   if(r.err){box.innerHTML=`<div class="emptystate">Couldn't grade this team: ${r.err}</div>`;return;}
   const losses=Math.max(0,r.games-r.wins), grade=grLetter(r.playoff);
   const ctx=$("#grResultCtx"); if(ctx)ctx.textContent=`${GRADER.name||"Your team"} · vs a ${r.teams}-team ${r.real?"real":"typical"} field`;
@@ -9827,6 +9830,33 @@ function renderGraderResults(r){
     <div class="eyebrow" style="margin-bottom:6px">Where the points come from — starting lineup</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">${Object.entries(posStr).sort((a,b)=>b[1]-a[1]).map(([pz,v])=>`<span class="chip"><span class="pos ${pz}" style="margin-right:4px">${pz}</span>${fmt(v)} pts/wk</span>`).join("")}</div>
     <div class="note" style="margin-top:12px">Simulated 500 seasons ${r.real?"against your league's real rosters":"against a field auto-drafted from the best available players at your settings"} (${r.teams} teams). Seed is your rank by record then points; the letter grade tracks playoff odds. Change scoring/roster in League Setup to re-grade under different rules.</div>`;
+}
+/* AI write-up of the graded team — grounded ONLY in the numbers the grade just produced. */
+function aiGraderContext(){
+  const s=state.settings, r=GRADER.lastResult, team=GRADER.team;
+  const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
+  const L=[]; L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. Starting lineup: ${grStartSlots().join("/")}.`);
+  if(!r||r.err||!team.length){ L.push("No graded team yet."); return L.join("\n"); }
+  L.push(`Grade: projected record ${r.wins.toFixed(1)}-${(r.games-r.wins).toFixed(1)}, ${r.playoff}% to make the playoffs, projected #${r.seed} seed of ${r.teams}, ${r.title}% to win it all. Starting lineup projects ${fmt(r.startPts)} pts/week (${r.pct}th percentile in the field). Opponents: ${r.real?"the real league's rosters":"auto-drafted from best available"}.`);
+  const posStr={}; r.starters.forEach(u=>{posStr[u.pl.pos]=(posStr[u.pl.pos]||0)+u.base*u.mult;});
+  L.push(`Points by starting position (pts/week, higher is a strength): ${Object.entries(posStr).sort((a,b)=>b[1]-a[1]).map(([p,v])=>p+" "+fmt(v)).join(", ")}.`);
+  L.push(`Starters: ${r.starters.map(u=>`${u.pl.name} (${u.pl.pos}${u.pl.team?" "+u.pl.team:""}, ${fmt(pts(u.pl))}pt${u.pl.bye?", bye "+u.pl.bye:""}${u.pl.inj?", "+u.pl.inj:""})`).join("; ")}.`);
+  const startIds=new Set(r.starters.map(u=>u.pl.id)), bench=team.filter(p=>!startIds.has(p.id));
+  if(bench.length)L.push(`Bench depth: ${bench.map(p=>`${p.name} (${p.pos}, ${fmt(pts(p))}pt)`).join("; ")}.`);
+  const byes={}; r.starters.forEach(u=>{if(u.pl.bye)byes[u.pl.bye]=(byes[u.pl.bye]||0)+1;});
+  const pile=Object.entries(byes).filter(([w,n])=>n>=3);
+  if(pile.length)L.push(`Bye-week pileups (3+ starters idle same week): ${pile.map(([w,n])=>`week ${w}: ${n} out`).join(", ")}.`);
+  return L.join("\n");
+}
+async function aiGraderBrief(){
+  const out=$("#grAiOut"), btn=$("#grAiBtn"); if(!out)return;
+  out.innerHTML=`<span class="aithinking">reading your team…</span>`; if(btn)btn.disabled=true;
+  try{
+    const ans=await askAI(aiGraderContext(),
+      `Analyze this team in 4-6 tight lines. Lead with a one-line verdict (contender / bubble / rebuild). Then its 1-2 biggest STRENGTHS and 1-2 biggest WEAKNESSES — name the position and cite the number (points/week, a thin spot, a bye pileup, an injury). Finish with one concrete move that would help most. Reason only from the numbers given; be specific and decisive.`);
+    out.innerHTML=aiFmt(ans);
+  }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
+  if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
 }
 function renderMatchups(){
   // bridge-aware: a synced league fills TRADE.teams, not state.picks, so use liveRosters()/myTeamIdx() —
@@ -11090,6 +11120,7 @@ function wireSetup(){
     $("#grPasteApply").onclick=()=>grPasteApply();
     $("#grClear").onclick=()=>{GRADER.team=[];renderGraderTeam();$("#grResultPanel").classList.add("hide");};
     $("#grGrade").onclick=()=>runGrader();
+    $("#grAiBtn").onclick=()=>aiGraderBrief();
     $$("#grOppMode button").forEach(b=>b.onclick=()=>{$$("#grOppMode button").forEach(x=>x.classList.toggle("on",x===b));GRADER.oppMode=b.dataset.v;renderGraderTeam();});
   }
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
