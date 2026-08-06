@@ -3706,11 +3706,12 @@ async function loadMyLeagues(){
 
 async function learnLeague(leagueId){
   leagueStatus("Reading your league's draft history…");
-  const tally={}, sources=[]; let lid=leagueId, hops=0, names={};
+  const tally={}, sources=[]; let lid=leagueId, hops=0, names={}, curLg=null;
   try{
     while(lid&&hops<4){
       const lg=await SJ(`https://api.sleeper.app/v1/league/${lid}`);
       if(!lg||!lg.league_id)break;
+      if(hops===0)curLg=lg;   // the current league — Learn imports its scoring & roster too
       try{ (await SJ(`https://api.sleeper.app/v1/league/${lid}/users`)||[])
              .forEach(u=>{names[u.user_id]=u.display_name||u.username||("Manager "+u.user_id.slice(-4));}); }catch(e){}
       const drafts=await SJ(`https://api.sleeper.app/v1/league/${lid}/drafts`)||[];
@@ -3754,8 +3755,23 @@ async function learnLeague(leagueId){
   state.league={bias,names,tally,sources:[...new Set(sources)],slotToUser:null,leagueId};
   await mapLeagueSlots();
   renderLeagueTendencies();
+  // Hitting Learn means "this is my league" — so bring in its scoring & roster too, not just the
+  // opponent tendencies. Otherwise you learn a league's draft habits while the roster still shows a
+  // DIFFERENT league's settings — the "my league has a kicker but the tool doesn't show it" trap.
+  let setupMsg="";
+  if(curLg){
+    try{
+      applySleeperRoster(curLg.settings); applyLeagueSettings(curLg);
+      if(curLg.name)TRADE.leagueName=curLg.name;
+      const R=state.settings.roster, iss=verifyImportedRoster(curLg);
+      setupMsg=iss.length
+        ? ` <b style="color:var(--crit)">⚠ roster may be off: ${iss.join("; ")}</b>`
+        : ` · imported settings (${R.SUPERFLEX?"superflex, ":""}${R.K?"✓kicker":"no kicker"}, ${R.DST?"✓defense":"no defense"}).`;
+    }catch(e){}
+    loadSetupInputs();
+  }
   save();
-  leagueStatus(`🧠 Learned <b>${mgrs.length} managers</b> from ${state.league.sources.length} draft(s): ${state.league.sources.join(", ")}. The mock CPU and simulator now draft like them.`,"var(--good)");
+  leagueStatus(`🧠 Learned <b>${mgrs.length} managers</b> from ${state.league.sources.length} draft(s): ${state.league.sources.join(", ")}. Mock CPU + simulator now draft like them.${setupMsg}`,"var(--good)");
   $("#leagueClearBtn").classList.remove("hide");
 }
 
