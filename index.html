@@ -1647,8 +1647,15 @@
         </div>
         <div id="grRoster" style="margin-top:12px"></div>
         <div id="grOppBox" class="hide" style="margin-top:12px"></div>
-        <button class="draftbtn" id="grGrade" style="margin-top:14px">Grade this team →</button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+          <button class="draftbtn" id="grGrade" style="width:auto;padding:10px 20px">Grade this team →</button>
+          <button class="ghost hide" id="grPowerBtn">🏆 League power rankings</button>
+        </div>
       </div>
+    </div>
+    <div class="panel hide" id="grPowerPanel">
+      <div class="hd"><h2>League power rankings</h2><span class="pickcounter" style="margin-left:auto">every team, simulated</span></div>
+      <div class="bd" id="grPowerBox"></div>
     </div>
     <div class="panel hide" id="grResultPanel">
       <div class="hd"><h2>Grade</h2><span class="pickcounter" style="margin-left:auto" id="grResultCtx"></span><button class="ghost sm hide" id="grAiBtn" style="margin-left:10px">🤖 Strengths &amp; weaknesses</button></div>
@@ -8893,7 +8900,8 @@ function seasonSchedule(){
 /* "Makes the playoffs" as a frequency over simulated seasons rather than a verdict read off one
    projection. Weeks already played are fact and are carried through unchanged. */
 let SEASONSIM={key:null,val:null};
-function simSeason(iters,override){
+let SEASONSIM_DIST=null;   // side channel: when captureIdx is passed, holds that team's per-season win counts
+function simSeason(iters,override,captureIdx){
   const SC=seasonSchedule(), N=iters||400;
   // Live league when synced, mock draft otherwise — same engine either way.
   const baseRosters=liveRosters();
@@ -8901,7 +8909,8 @@ function simSeason(iters,override){
   const rosters=baseRosters.map((r,i)=>(override&&override.teamIdx===i)?override.roster:r);
   const key=JSON.stringify([T,leagueSynced()?TRADE.leagueId:0,rosters.map(r=>r.length),
     state.settings.format,state.settings.bestball,SC.real,state.ui.seasonWeek,Object.values(state.settings.roster)]);
-  if(!override&&SEASONSIM.key===key)return SEASONSIM.val;   // a hypothetical must never be cached
+  if(!override&&captureIdx==null&&SEASONSIM.key===key)return SEASONSIM.val;   // a hypothetical must never be cached
+  const capDist=captureIdx!=null?[]:null;
   const U={};
   SC.weeks.forEach(w=>{ U[w.week]=rosters.map(r=>weekUnits(r,w.week).starters); });
   /* Season-long error is ONE draw per player for the WHOLE season — being wrong about a player
@@ -8933,7 +8942,9 @@ function simSeason(iters,override){
     });
     seedTeams([...Array(T).keys()].sort((x,y)=>(w[y]-w[x])||(pf[y]-pf[x])),nSeeds).forEach(i=>made[i]++);
     for(let i=0;i<T;i++){wins[i]+=w[i];pfs[i]+=pf[i];}
+    if(capDist)capDist.push(w[captureIdx]);
   }
+  SEASONSIM_DIST=capDist;
   const val=[...Array(T).keys()].map(i=>({team:i,playoff:made[i]/N,wins:wins[i]/N,pf:pfs[i]/N,
     games:SC.weeks.reduce((n,wk)=>n+(wk.pairs.some(p=>p.includes(i))?1:0),0)}));
   if(!override)SEASONSIM={key,val};
@@ -9795,6 +9806,7 @@ function renderGraderTeam(){
       if(hint)hint.innerHTML=`No league connected yet. Connect one in <b>Waiver Wire</b> or <b>Trades</b> → "Connect my league", then every drafted team shows up here.`;
     }
   }
+  const pb=$("#grPowerBtn"); if(pb)pb.classList.toggle("hide",!leagueSynced());
 }
 function grLoadFromLeague(){
   if(!leagueSynced()){ flash("Connect a league first (Waivers/Trades)."); return; }
@@ -9812,11 +9824,26 @@ function graderField(realOpps){
   const T=Math.max(2,state.settings.teams||12), size=grSize();
   const mine=GRADER.team.slice(), have=new Set(mine.map(p=>p.id));
   if(realOpps&&realOpps.length){ return [{players:mine,name:GRADER.name||"Your team"}].concat(realOpps.map((r,i)=>({players:r,name:"Opp "+(i+1)}))); }
+  // Realistic opponents: a positional-NEED snake draft, not pure best-available. Each team takes the
+  // best player that fills an open STARTING slot (or FLEX/SUPERFLEX), so every opponent ends up with a
+  // legal, sensible roster — a QB, the right RB/WR spread — instead of accidentally stacking one spot.
   const pool=grPool().filter(p=>!have.has(p.id)).sort((a,b)=>valueOf(b)-valueOf(a));
-  const nOpp=T-1, opps=Array.from({length:nOpp},()=>[]); let pi=0;
-  for(let round=0;round<size&&pi<pool.length;round++){
+  const R=state.settings.roster, nOpp=T-1;
+  const opps=Array.from({length:nOpp},()=>[]);
+  const need=Array.from({length:nOpp},()=>({QB:R.QB||0,RB:R.RB||0,WR:R.WR||0,TE:R.TE||0,K:R.K||0,DST:R.DST||0,FLEX:R.FLEX||0,SUPERFLEX:R.SUPERFLEX||0}));
+  const used=new Set();
+  const fills=(p,nd)=> nd[p.pos]>0 ? p.pos
+    : (FLEX_POS.includes(p.pos)&&p.pos!=="QB"&&nd.FLEX>0) ? "FLEX"
+    : (SUPER_POS.includes(p.pos)&&nd.SUPERFLEX>0) ? "SUPERFLEX" : null;
+  for(let round=0;round<size;round++){
     const order=(round%2)?[...Array(nOpp).keys()].reverse():[...Array(nOpp).keys()];
-    for(const oi of order){ if(pi>=pool.length)break; opps[oi].push(pool[pi++]); }
+    for(const oi of order){
+      const nd=need[oi];
+      const pick=pool.find(p=>!used.has(p.id)&&fills(p,nd)) || pool.find(p=>!used.has(p.id));
+      if(!pick)continue;
+      used.add(pick.id); opps[oi].push(pick);
+      const slot=fills(pick,nd); if(slot)nd[slot]--;
+    }
   }
   return [{players:mine,name:GRADER.name||"Your team"}].concat(opps.map((r,i)=>({players:r,name:"Opp "+(i+1)})));
 }
@@ -9836,22 +9863,38 @@ function runGrader(){
     const field=graderField(realOpps), slots=grStartSlots();
     TRADE.teams=field; TRADE.me=0; TRADE.schedule=null; TRADE.slots=slots; TRADE.leagueId=null;
     SEASONSIM={key:null,val:null}; SIMCACHE={key:null};
-    const S=simSeason(500), me=S[0];
+    const S=simSeason(500,null,0), me=S[0];      // captureIdx 0 → SEASONSIM_DIST = my per-season win counts
     const order=[...S.keys()].sort((a,b)=>(S[b].wins-S[a].wins)||(S[b].pf-S[a].pf));
     const seed=order.indexOf(0)+1;
+    // record RANGE from the win distribution (15th–85th) — not just the mean
+    let recLo=me.wins, recHi=me.wins;
+    if(SEASONSIM_DIST&&SEASONSIM_DIST.length){const d=SEASONSIM_DIST.slice().sort((a,b)=>a-b);
+      recLo=d[Math.floor(0.15*(d.length-1))]; recHi=d[Math.ceil(0.85*(d.length-1))];}
     const odds=oddsForRosters(field.map(t=>t.players),slots,500);
     const A=weekUnits(field[0].players,1);
     const startPts=A.starters.reduce((s,u)=>s+u.base*u.mult,0);
-    // per-position starting points — mine vs the field average — so we can name the real weak spots
+    // weekly points FLOOR / CEILING — sample the starting lineup's week (season error + weekly swing)
+    const draws=[]; for(let i=0;i<2000;i++){let t=0;A.starters.forEach(u=>{t+=u.base*u.mult*seasonFactor(u.sd)*weekFactor(u.cv);});draws.push(t);}
+    draws.sort((a,b)=>a-b);
+    const ptsFloor=draws[Math.floor(0.15*draws.length)], ptsCeil=draws[Math.floor(0.85*draws.length)];
+    // per-team per-position starting points → my per-position PERCENTILE (letter) grades + field averages
     const myPos={}; A.starters.forEach(u=>{myPos[u.pl.pos]=(myPos[u.pl.pos]||0)+u.base*u.mult;});
-    const posSum={};
-    const fieldPts=field.map(t=>{const w=weekUnits(t.players,1);
-      w.starters.forEach(u=>{posSum[u.pl.pos]=(posSum[u.pl.pos]||0)+u.base*u.mult;});
-      return w.starters.reduce((s,u)=>s+u.base*u.mult,0);});
+    const posByTeam=field.map(t=>{const w=weekUnits(t.players,1),m={};w.starters.forEach(u=>{m[u.pl.pos]=(m[u.pl.pos]||0)+u.base*u.mult;});return m;});
+    const posSum={}; posByTeam.forEach(m=>Object.keys(m).forEach(pz=>{posSum[pz]=(posSum[pz]||0)+m[pz];}));
     const posField={}; Object.keys(posSum).forEach(pz=>{posField[pz]=posSum[pz]/field.length;});
+    const fieldPts=posByTeam.map(m=>Object.values(m).reduce((a,b)=>a+b,0));
     const pct=Math.round(fieldPts.filter(v=>v<startPts).length/(field.length-1||1)*100);
+    const posGrade={}; Object.keys(myPos).forEach(pz=>{
+      const below=posByTeam.map(m=>m[pz]||0).filter(v=>v<myPos[pz]).length;
+      posGrade[pz]=Math.round(below/(field.length-1||1)*100); });
+    // playoff-weeks (15–17) strength: are you built to win when it matters?
+    const poW=(sv.schedule&&sv.schedule.playoffStart)||15, poEnd=Math.min(18,(sv.schedule&&sv.schedule.playoffEnd)||poW+2), poN=poEnd-poW+1;
+    const teamPo=pl=>{let s=0;for(let w=poW;w<=poEnd;w++)s+=weekUnits(pl,w).starters.reduce((a,u)=>a+u.base*u.mult,0);return s/poN;};
+    const myPoPts=teamPo(field[0].players);
+    const poField=field.reduce((a,t)=>a+teamPo(t.players),0)/field.length;
     res={wins:me.wins,games:me.games,playoff:odds.playoff,title:odds.title,seed,teams:field.length,
-         startPts,pct,starters:A.starters,real:!!realOpps,myPos,posField};
+         startPts,pct,starters:A.starters,real:!!realOpps,myPos,posField,
+         recLo,recHi,ptsFloor,ptsCeil,posGrade,myPoPts,poField,poWeeks:[poW,poEnd]};
   }catch(e){ res={err:String(e)}; }
   finally{
     TRADE.teams=sv.teams;TRADE.me=sv.me;TRADE.schedule=sv.schedule;TRADE.slots=sv.slots;TRADE.leagueId=sv.leagueId;TRADE.leagueName=sv.name;
@@ -9895,6 +9938,21 @@ function graderTargets(r){
     return {pos:pz,gap:g.gap,worst,fa,trade:trade.slice(0,3)};
   }).filter(w=>w.fa.length||w.trade.length);
 }
+/* Roster construction health: the things that decide a season beyond raw starting points — bench
+   depth, bye-week gaps, injury exposure, and any starting spot with no backup behind it. */
+function graderRosterHealth(r){
+  const team=GRADER.team, startIds=new Set(r.starters.map(u=>u.pl.id));
+  const bench=team.filter(p=>!startIds.has(p.id)&&!p.taxi&&!p.onIr);
+  const byes={}; r.starters.forEach(u=>{if(u.pl.bye)byes[u.pl.bye]=(byes[u.pl.bye]||0)+1;});
+  const byeGaps=Object.entries(byes).filter(([w,n])=>n>=3).map(([w,n])=>({week:+w,out:+n})).sort((a,b)=>a.week-b.week);
+  const hurt=r.starters.filter(u=>u.pl.inj);
+  const totPts=r.starters.reduce((s,u)=>s+u.base*u.mult,0)||1;
+  const injPct=Math.round(hurt.reduce((s,u)=>s+u.base*u.mult,0)/totPts*100);
+  const benchByPos={}; bench.forEach(p=>{benchByPos[p.pos]=(benchByPos[p.pos]||0)+1;});
+  const startPos={}; r.starters.forEach(u=>{startPos[u.pl.pos]=(startPos[u.pl.pos]||0)+1;});
+  const thin=Object.keys(startPos).filter(pz=>!(benchByPos[pz]>0)&&pz!=="K"&&pz!=="DST");
+  return {benchCount:bench.length, byeGaps, hurt:hurt.map(u=>u.pl.name), injPct, thin};
+}
 function renderGraderResults(r){
   const box=$("#grResults"), panel=$("#grResultPanel"); if(!box)return;
   panel.classList.remove("hide");
@@ -9904,17 +9962,30 @@ function renderGraderResults(r){
   const losses=Math.max(0,r.games-r.wins), grade=grLetter(r.playoff);
   const ctx=$("#grResultCtx"); if(ctx)ctx.textContent=`${GRADER.name||"Your team"} · vs a ${r.teams}-team ${r.real?"real":"typical"} field`;
   const posStr={}; r.starters.forEach(u=>{posStr[u.pl.pos]=(posStr[u.pl.pos]||0)+u.base*u.mult;});
+  const rlo=r.recLo!=null?Math.round(r.recLo):null, rhi=r.recHi!=null?Math.round(r.recHi):null;
   box.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:14px">
       <div class="tier ${gradeCls(r.playoff/100)}" style="font-size:32px;font-weight:800;padding:8px 18px;border-radius:14px;min-width:56px;text-align:center">${grade}</div>
-      <div><div class="eyebrow">Projected record</div><div style="font-size:26px;font-weight:700">${r.wins.toFixed(1)}–${losses.toFixed(1)}</div><div class="meta">over ${r.games} games</div></div>
+      <div><div class="eyebrow">Projected record</div><div style="font-size:26px;font-weight:700">${r.wins.toFixed(1)}–${losses.toFixed(1)}</div><div class="meta">over ${r.games} games${rlo!=null&&rhi!=null&&rhi>rlo?` · likely ${rlo}–${r.games-rlo} to ${rhi}–${r.games-rhi}`:""}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:14px">
       <div class="levbox"><div class="eyebrow">Playoff odds</div><div class="levnum">${r.playoff}%</div></div>
       <div class="levbox"><div class="eyebrow">Proj. seed</div><div class="levnum">#${r.seed}</div><div class="meta">of ${r.teams}</div></div>
       <div class="levbox"><div class="eyebrow">Title odds</div><div class="levnum">${r.title}%</div></div>
-      <div class="levbox"><div class="eyebrow">Weekly pts</div><div class="levnum">${fmt(r.startPts)}</div><div class="meta">${r.pct}th pctile</div></div>
+      <div class="levbox"><div class="eyebrow">Weekly pts</div><div class="levnum">${fmt(r.startPts)}</div><div class="meta">${r.ptsFloor!=null?`floor ${fmt(r.ptsFloor)} · ceiling ${fmt(r.ptsCeil)}`:`${r.pct}th pctile`}</div></div>
+      ${r.myPoPts!=null?`<div class="levbox"><div class="eyebrow">Playoff wks ${r.poWeeks?r.poWeeks[0]+"–"+r.poWeeks[1]:"15–17"}</div><div class="levnum">${fmt(r.myPoPts)}</div><div class="meta">${r.poField!=null?(r.myPoPts>=r.poField?"+":"")+fmt(r.myPoPts-r.poField)+" vs field":""}</div></div>`:""}
     </div>
+    ${r.posGrade?(()=>{const order=["QB","RB","WR","TE","K","DST"].filter(pz=>r.posGrade[pz]!=null);
+      return `<div class="eyebrow" style="margin-bottom:6px">Position grades <span class="meta">(vs the field)</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${order.map(pz=>{const g=grLetter(r.posGrade[pz]);return `<div class="tier ${gradeCls(r.posGrade[pz]/100)}" style="padding:6px 12px;border-radius:10px;text-align:center;min-width:58px"><div class="eyebrow" style="opacity:.8">${pz}</div><div style="font-size:20px;font-weight:800">${g}</div></div>`;}).join("")}</div>`;})():""}
+    ${(()=>{ let h; try{ h=graderRosterHealth(r); }catch(e){ return ""; }
+      const bits=[];
+      bits.push(`<b>${h.benchCount}</b> bench player${h.benchCount===1?"":"s"}`);
+      if(h.thin.length)bits.push(`<span style="color:var(--crit-ink)">no backup at ${h.thin.join(", ")}</span>`);
+      if(h.byeGaps.length)bits.push(`<span style="color:var(--warn-ink)">bye crunch: ${h.byeGaps.map(b=>`wk ${b.week} (${b.out} out)`).join(", ")}</span>`);
+      if(h.hurt.length)bits.push(`<span style="color:var(--warn-ink)">${h.injPct}% of points on hurt starters (${h.hurt.map(lastName).join(", ")})</span>`);
+      return `<div class="eyebrow" style="margin-bottom:6px">Roster health</div><div class="note" style="margin-bottom:14px">${bits.join(" · ")}${h.thin.length||h.byeGaps.length||h.hurt.length?"":" — clean: real depth, no bye pileups, no hurt starters"}</div>`;
+    })()}
     <div class="eyebrow" style="margin-bottom:6px">Where the points come from — starting lineup</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">${Object.entries(posStr).sort((a,b)=>b[1]-a[1]).map(([pz,v])=>`<span class="chip"><span class="pos ${pz}" style="margin-right:4px">${pz}</span>${fmt(v)} pts/wk</span>`).join("")}</div>
     ${(()=>{ let tg=[]; try{ tg=graderTargets(r); }catch(e){} if(!tg.length)return "";
@@ -9926,7 +9997,38 @@ function renderGraderResults(r){
           </div>`).join("")
         + `<div class="meta" style="margin-top:4px">Gains are points per week the target adds over your current weakest starter there.${leagueSynced()?" Trade targets favor players whose owner is deep at the position — the ones you can actually pry loose.":""}</div>`;
     })()}
+    ${(GRADER.leagueIdx!=null&&leagueSynced())?`<div style="margin-top:14px"><button class="draftbtn" id="grFullTradesBtn" style="width:auto;padding:9px 16px">🔎 Run the full trade finder for ${lastName(GRADER.name||"this team")} →</button><div class="meta" style="margin-top:4px">Opens the Trades tab and searches every mutually-beneficial deal, ranked by what it does to this team's championship odds.</div></div>`:""}
     <div class="note" style="margin-top:12px">Simulated 500 seasons ${r.real?"against your league's real rosters":"against a field auto-drafted from the best available players at your settings"} (${r.teams} teams). Seed is your rank by record then points; the letter grade tracks playoff odds. Change scoring/roster in League Setup to re-grade under different rules.</div>`;
+  const ft=$("#grFullTradesBtn"); if(ft)ft.onclick=grFullTrades;
+}
+function grFullTrades(){
+  if(GRADER.leagueIdx==null||!leagueSynced()){ flash("Load a team from your league first."); return; }
+  TRADE.me=GRADER.leagueIdx;
+  const sel=$("#evalMe"); if(sel){ sel.value=String(TRADE.me); }
+  showTab("trade");
+  flash(`Finding trades for ${GRADER.name}…`);
+  setTimeout(()=>{ try{ findTrades(); }catch(e){} },40);
+}
+/* League power rankings: grade every team at once, ranked by playoff odds — the whole field in one view. */
+function renderGraderPower(){
+  const box=$("#grPowerBox"), panel=$("#grPowerPanel"); if(!box||!panel)return;
+  if(!leagueSynced()){ panel.classList.add("hide"); return; }
+  panel.classList.remove("hide");
+  box.innerHTML=`<div class="meta aithinking">Simulating the whole league…</div>`;
+  setTimeout(()=>{
+    try{
+      const svS=SEASONSIM; SEASONSIM={key:null,val:null};
+      const S=simSeason(400); SEASONSIM=svS;
+      const meI=myTeamIdx();
+      const rows=S.map((s,i)=>({i,name:(TRADE.teams[i]&&TRADE.teams[i].name)||("Team "+(i+1)),
+        playoff:Math.round(s.playoff*100),wins:s.wins,pf:s.pf,games:Math.max(1,s.games)}))
+        .sort((a,b)=>(b.playoff-a.playoff)||(b.wins-a.wins)||(b.pf-a.pf));
+      box.innerHTML=rows.map((r,rank)=>`<div class="kv"${r.i===meI?' style="background:var(--accent-soft);border-radius:8px;padding:6px 8px"':''}>
+          <span><b class="num" style="width:26px;display:inline-block">#${rank+1}</b> ${r.i===meI?"★ ":""}${r.name} <span class="meta">${r.wins.toFixed(1)}–${(r.games-r.wins).toFixed(1)} · ${fmt(r.pf/r.games)} pts/wk</span></span>
+          <span class="chip ${r.playoff>=70?"good":r.playoff>=35?"":"crit"}">${r.playoff}% playoff</span></div>`).join("")
+        +`<div class="meta" style="margin-top:8px">Every team simulated over 400 seasons on your league's real schedule. Your team is highlighted.</div>`;
+    }catch(e){ box.innerHTML=`<div class="emptystate">Couldn't build rankings: ${e}</div>`; }
+  },30);
 }
 /* AI write-up of the graded team — grounded ONLY in the numbers the grade just produced. */
 function aiGraderContext(){
@@ -11221,6 +11323,7 @@ function wireSetup(){
     $("#grGrade").onclick=()=>runGrader();
     $("#grAiBtn").onclick=()=>aiGraderBrief();
     $("#grLoadTeam").onclick=()=>grLoadFromLeague();
+    $("#grPowerBtn").onclick=()=>renderGraderPower();
     $$("#grOppMode button").forEach(b=>b.onclick=()=>{$$("#grOppMode button").forEach(x=>x.classList.toggle("on",x===b));GRADER.oppMode=b.dataset.v;renderGraderTeam();});
   }
   $("#tradeLoadBtn").onclick=()=>tradeLoadLeagues();
