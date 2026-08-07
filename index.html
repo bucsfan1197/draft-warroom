@@ -9833,10 +9833,16 @@ function runGrader(){
     const odds=oddsForRosters(field.map(t=>t.players),slots,500);
     const A=weekUnits(field[0].players,1);
     const startPts=A.starters.reduce((s,u)=>s+u.base*u.mult,0);
-    const fieldPts=field.map(t=>{const w=weekUnits(t.players,1);return w.starters.reduce((s,u)=>s+u.base*u.mult,0);});
+    // per-position starting points — mine vs the field average — so we can name the real weak spots
+    const myPos={}; A.starters.forEach(u=>{myPos[u.pl.pos]=(myPos[u.pl.pos]||0)+u.base*u.mult;});
+    const posSum={};
+    const fieldPts=field.map(t=>{const w=weekUnits(t.players,1);
+      w.starters.forEach(u=>{posSum[u.pl.pos]=(posSum[u.pl.pos]||0)+u.base*u.mult;});
+      return w.starters.reduce((s,u)=>s+u.base*u.mult,0);});
+    const posField={}; Object.keys(posSum).forEach(pz=>{posField[pz]=posSum[pz]/field.length;});
     const pct=Math.round(fieldPts.filter(v=>v<startPts).length/(field.length-1||1)*100);
     res={wins:me.wins,games:me.games,playoff:odds.playoff,title:odds.title,seed,teams:field.length,
-         startPts,pct,starters:A.starters,real:!!realOpps};
+         startPts,pct,starters:A.starters,real:!!realOpps,myPos,posField};
   }catch(e){ res={err:String(e)}; }
   finally{
     TRADE.teams=sv.teams;TRADE.me=sv.me;TRADE.schedule=sv.schedule;TRADE.slots=sv.slots;TRADE.leagueId=sv.leagueId;TRADE.leagueName=sv.name;
@@ -9844,6 +9850,41 @@ function runGrader(){
   }
   GRADER.lastResult=res;
   renderGraderResults(res);
+}
+/* Actionable upgrades: name the starting spots most below the field, then the concrete players who'd
+   fix them — free agents to add, and (in a synced league) real players to trade for, preferring ones
+   whose owner is deep at that position, with the weekly point gain over the current worst starter. */
+function graderTargets(r){
+  if(!r||!r.starters||!r.myPos) return [];
+  const onTeam=new Set(GRADER.team.map(p=>p.id));
+  // trades only make sense when the graded team is actually a team IN the connected league; a
+  // hand-built team (no leagueIdx) gets best-available/free-agent targets instead.
+  const canTrade=leagueSynced()&&GRADER.leagueIdx!=null;
+  let rostered; try{ rostered=canTrade?rosteredIds():onTeam; }catch(e){ rostered=onTeam; }
+  const wk=p=>pts(p)/17;                                   // WEEKLY points, so gains read as pts/game
+  const gaps=Object.keys(r.posField).map(pz=>({pos:pz, gap:(r.myPos[pz]||0)-r.posField[pz]})).sort((a,b)=>a.gap-b.gap);
+  const weak=gaps.filter(g=>g.gap<-1.5).slice(0,2);
+  if(!weak.length&&gaps.length)weak.push(gaps[0]);
+  return weak.map(g=>{
+    const pz=g.pos;
+    const worst=r.starters.filter(u=>u.pl.pos===pz).map(u=>u.pl).sort((a,b)=>pts(a)-pts(b))[0];
+    const gainOf=p=>worst?Math.max(0,wk(p)-wk(worst)):wk(p);
+    // free agents / best available that beat your weakest starter here
+    const cand=state.players.filter(p=>p&&p.pos===pz&&inLeague(p)&&!onTeam.has(p.id));
+    const fa=cand.filter(p=>!rostered.has(p.id)&&gainOf(p)>0.4).sort((a,b)=>pts(b)-pts(a)).slice(0,2).map(p=>({p,gain:gainOf(p)}));
+    // realistic trade targets: a rival's SURPLUS at this position (beyond the players they must start),
+    // not their stud — the piece they can actually move — that still upgrades you.
+    const trade=[];
+    if(canTrade){
+      const keep=Math.max(1,state.settings.roster[pz]||1);
+      TRADE.teams.forEach((t,oi)=>{ if(oi===GRADER.leagueIdx)return;
+        const theirs=(t.players||[]).filter(p=>p&&p.pos===pz&&!p.isPick&&!p.taxi&&!p.onIr).sort((a,b)=>pts(b)-pts(a));
+        theirs.slice(keep).forEach(p=>{ if(gainOf(p)>0.6)trade.push({p,gain:gainOf(p),oi}); });   // slice(keep) = their surplus
+      });
+      trade.sort((a,b)=>b.gain-a.gain);
+    }
+    return {pos:pz,gap:g.gap,worst,fa,trade:trade.slice(0,3)};
+  }).filter(w=>w.fa.length||w.trade.length);
 }
 function renderGraderResults(r){
   const box=$("#grResults"), panel=$("#grResultPanel"); if(!box)return;
@@ -9867,6 +9908,15 @@ function renderGraderResults(r){
     </div>
     <div class="eyebrow" style="margin-bottom:6px">Where the points come from — starting lineup</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">${Object.entries(posStr).sort((a,b)=>b[1]-a[1]).map(([pz,v])=>`<span class="chip"><span class="pos ${pz}" style="margin-right:4px">${pz}</span>${fmt(v)} pts/wk</span>`).join("")}</div>
+    ${(()=>{ let tg=[]; try{ tg=graderTargets(r); }catch(e){} if(!tg.length)return "";
+      return `<div class="eyebrow" style="margin:16px 0 6px">How to make this team better</div>`
+        + tg.map(w=>`<div class="kv" style="display:block;padding:8px 0">
+            <div><b class="pos ${w.pos}" style="padding:1px 6px;border-radius:5px">${w.pos}</b> <span class="meta">is your softest starting spot${w.worst?` — weakest starter is ${w.worst.name} at ${fmt(pts(w.worst))} pts/wk`:""}${w.gap<0?`, ${fmt(-w.gap)} below the field`:""}.</span></div>
+            ${w.trade.length?`<div style="margin-top:5px"><b style="color:var(--accent-ink)">Trade for:</b> ${w.trade.map(t=>`${t.p.name} <span class="meta">(+${fmt(t.gain)}/wk${t.oi!=null&&TRADE.teams[t.oi]?` · from ${lastName(TRADE.teams[t.oi].name)}`:""}${t.deep?", who's deep here":""})</span>`).join(" &nbsp;·&nbsp; ")}</div>`:""}
+            ${w.fa.length?`<div style="margin-top:5px"><b style="color:var(--good-ink)">${leagueSynced()?"Free-agent add":"Best available"}:</b> ${w.fa.map(t=>`${t.p.name} <span class="meta">(+${fmt(t.gain)}/wk)</span>`).join(" &nbsp;·&nbsp; ")}</div>`:""}
+          </div>`).join("")
+        + `<div class="meta" style="margin-top:4px">Gains are points per week the target adds over your current weakest starter there.${leagueSynced()?" Trade targets favor players whose owner is deep at the position — the ones you can actually pry loose.":""}</div>`;
+    })()}
     <div class="note" style="margin-top:12px">Simulated 500 seasons ${r.real?"against your league's real rosters":"against a field auto-drafted from the best available players at your settings"} (${r.teams} teams). Seed is your rank by record then points; the letter grade tracks playoff odds. Change scoring/roster in League Setup to re-grade under different rules.</div>`;
 }
 /* AI write-up of the graded team — grounded ONLY in the numbers the grade just produced. */
@@ -9884,6 +9934,8 @@ function aiGraderContext(){
   const byes={}; r.starters.forEach(u=>{if(u.pl.bye)byes[u.pl.bye]=(byes[u.pl.bye]||0)+1;});
   const pile=Object.entries(byes).filter(([w,n])=>n>=3);
   if(pile.length)L.push(`Bye-week pileups (3+ starters idle same week): ${pile.map(([w,n])=>`week ${w}: ${n} out`).join(", ")}.`);
+  let tg=[]; try{ tg=graderTargets(r); }catch(e){}
+  if(tg.length)L.push(`Concrete upgrade targets the app found: ${tg.map(w=>`at ${w.pos} (soft spot) — ${[...w.trade.map(t=>`trade for ${t.p.name} (+${fmt(t.gain)}/wk${t.oi!=null&&TRADE.teams[t.oi]?` from ${TRADE.teams[t.oi].name}`:""})`),...w.fa.map(t=>`add ${t.p.name} (+${fmt(t.gain)}/wk)`)].join(", ")}`).join("; ")}.`);
   return L.join("\n");
 }
 async function aiGraderBrief(){
@@ -9891,7 +9943,7 @@ async function aiGraderBrief(){
   out.innerHTML=`<span class="aithinking">reading your team…</span>`; if(btn)btn.disabled=true;
   try{
     const ans=await askAI(aiGraderContext(),
-      `Analyze this team in 4-6 tight lines. Lead with a one-line verdict (contender / bubble / rebuild). Then its 1-2 biggest STRENGTHS and 1-2 biggest WEAKNESSES — name the position and cite the number (points/week, a thin spot, a bye pileup, an injury). Finish with one concrete move that would help most. Reason only from the numbers given; be specific and decisive.`);
+      `Analyze this team in 5-7 tight lines. Lead with a one-line verdict (contender / bubble / rebuild). Then its 1-2 biggest STRENGTHS and 1-2 biggest WEAKNESSES — name the position and cite the number (points/week, a thin spot, a bye pileup, an injury). Then a PLAN: recommend 1-2 specific moves by name from the "upgrade targets" list — prefer a trade target when one is given, say who to trade for and roughly what it costs, and cite the +pts/week. Reason only from the numbers given; be specific and decisive.`);
     out.innerHTML=aiFmt(ans);
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
