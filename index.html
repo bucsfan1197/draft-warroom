@@ -10036,7 +10036,15 @@ function aiGraderContext(){
   const rec=(+s.scoring.rec||0), ppr=rec>=1?"PPR":rec>0?"half-PPR":"standard";
   const L=[]; L.push(`League: ${s.teams} teams, ${s.format}, ${ppr}. Starting lineup: ${grStartSlots().join("/")}.`);
   if(!r||r.err||!team.length){ L.push("No graded team yet."); return L.join("\n"); }
-  L.push(`Grade: projected record ${r.wins.toFixed(1)}-${(r.games-r.wins).toFixed(1)}, ${r.playoff}% to make the playoffs, projected #${r.seed} seed of ${r.teams}, ${r.title}% to win it all. Starting lineup projects ${fmt(r.startPts)} pts/week (${r.pct}th percentile in the field). Opponents: ${r.real?"the real league's rosters":"auto-drafted from best available"}.`);
+  L.push(`Grade: projected record ${r.wins.toFixed(1)}-${(r.games-r.wins).toFixed(1)}${r.recLo!=null&&r.recHi!=null?` (likely range ${Math.round(r.recLo)}-${Math.round(r.recHi)} wins)`:""}, ${r.playoff}% to make the playoffs, projected #${r.seed} seed of ${r.teams}, ${r.title}% to win it all. Starting lineup projects ${fmt(r.startPts)} pts/week (${r.pct}th percentile in the field${r.ptsFloor!=null?`; floor ${fmt(r.ptsFloor)}, ceiling ${fmt(r.ptsCeil)}`:""}). Opponents: ${r.real?"the real league's rosters":"auto-drafted from best available"}.`);
+  if(r.posGrade)L.push(`Position grades vs field (percentile → letter): ${["QB","RB","WR","TE","K","DST"].filter(pz=>r.posGrade[pz]!=null).map(pz=>`${pz} ${grLetter(r.posGrade[pz])} (${r.posGrade[pz]}th)`).join(", ")}.`);
+  if(r.myPoPts!=null&&r.poField!=null)L.push(`Playoff weeks ${r.poWeeks?r.poWeeks[0]+"-"+r.poWeeks[1]:"15-17"} strength: ${fmt(r.myPoPts)} pts/week vs ${fmt(r.poField)} field average (${r.myPoPts>=r.poField?"+":""}${fmt(r.myPoPts-r.poField)}).`);
+  try{ const h=graderRosterHealth(r); const flags=[];
+    if(h.thin.length)flags.push(`no backup at ${h.thin.join("/")}`);
+    if(h.byeGaps.length)flags.push(`bye crunch weeks ${h.byeGaps.map(b=>b.week).join("/")}`);
+    if(h.hurt.length)flags.push(`${h.injPct}% of points on hurt starters (${h.hurt.map(lastName).join(", ")})`);
+    L.push(`Roster health: ${h.benchCount} bench players${flags.length?"; "+flags.join("; "):"; no depth/bye/injury flags"}.`);
+  }catch(e){}
   const posStr={}; r.starters.forEach(u=>{posStr[u.pl.pos]=(posStr[u.pl.pos]||0)+u.base*u.mult;});
   L.push(`Points by starting position (pts/week, higher is a strength): ${Object.entries(posStr).sort((a,b)=>b[1]-a[1]).map(([p,v])=>p+" "+fmt(v)).join(", ")}.`);
   L.push(`Starters: ${r.starters.map(u=>`${u.pl.name} (${u.pl.pos}${u.pl.team?" "+u.pl.team:""}, ${fmt(pts(u.pl))}pt${u.pl.bye?", bye "+u.pl.bye:""}${u.pl.inj?", "+u.pl.inj:""})`).join("; ")}.`);
