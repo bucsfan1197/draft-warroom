@@ -3841,7 +3841,8 @@ function recommendations(){
     const isNeed=/starter need|premium QB|flex fit|superflex/.test(needTag);
     // scarcity urgency: a player who won't survive the round trip is worth more NOW than one who will
     const urgentBonus = Math.min(posV,60)*0.25*(1-pLast);
-    // opportunity-model nudge (measured: blending usage with the market beat market alone 7/7 years)
+    // opportunity-model nudge (measured: blending usage with the market beat market alone in every
+    // out-of-sample season, 8/8 through 2025 — see USAGE_EVAL / tools_usage_season.py)
     let usageTilt=0;
     if(URANK&&URANK[pl.id]&&URANK[pl.id].u!=null&&URANK[pl.id].c!=null&&v>0)
       usageTilt=Math.max(-25,Math.min(25,URANK[pl.id].c-URANK[pl.id].u))*0.6;
@@ -11373,6 +11374,12 @@ function renderCalib(){
   const cvar={QB:"--qb",RB:"--rb",WR:"--wr",TE:"--te"};
   const posbars=["WR","RB","QB","TE"].map(p=>`<div class="barrow"><span class="lab"><span class="pos ${p}">${p}</span></span><div class="bar"><i style="width:${Math.round(c.pos[p].corr*100)}%;background:var(${cvar[p]})"></i></div><span class="num" style="width:44px;text-align:right">${c.pos[p].corr.toFixed(2)}</span></div>`).join("");
   const dvpImp=(c.dvp.none-c.dvp.tuned)/c.dvp.none*100;
+  // DvP at the tuned shrink lands within a hair of no-adjustment (measured on consensus it's a wash);
+  // phrase the finding robustly whether it nudges error down a touch or is flat, without ever claiming
+  // a "cut" when there isn't one.
+  const dvpPhrase = dvpImp>=0.1
+    ? `it cuts weekly error only <b>${dvpImp.toFixed(1)}%</b> (MAE ${c.dvp.none.toFixed(2)}→${c.dvp.tuned.toFixed(2)})`
+    : `it barely moves weekly error at all (MAE ${c.dvp.none.toFixed(2)}→${c.dvp.tuned.toFixed(2)}, essentially a wash)`;
   box.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
       <div class="rec" style="margin:0"><div class="eyebrow">Season accuracy</div><div style="font-size:30px;font-weight:800">${c.seasonCorr.toFixed(2)}</div><div class="why">correlation of projected vs. actual season points — on par with paid industry projections.</div></div>
@@ -11381,7 +11388,7 @@ function renderCalib(){
     </div>
     <h3 class="eyebrow" style="margin-bottom:8px">Projection accuracy by position (correlation with actual)</h3>
     ${posbars}
-    <div class="note" style="margin-top:14px"><b>Honest read on matchups:</b> the calibration proves defense-vs-position adjustment is a <b>small</b> signal — it cuts weekly error only <b>${dvpImp.toFixed(1)}%</b> (MAE ${c.dvp.none.toFixed(2)}→${c.dvp.tuned.toFixed(2)}), and at full strength it actually <b>hurts</b> (${c.dvp.full.toFixed(2)}) because prior-year defense is a noisy predictor. So the schedule adjustment is tuned to a gentle <b>${c.dvp.shrink}</b> shrink — a real nudge (it matters most for playoff-week matchups), not the difference-maker many tools sell. The season projections and boom/bust bands carry the weight.</div>
+    <div class="note" style="margin-top:14px"><b>Honest read on matchups:</b> the calibration proves defense-vs-position adjustment is a <b>small</b> signal — ${dvpPhrase}, and at full strength it actually <b>hurts</b> (${c.dvp.full.toFixed(2)}) because prior-year defense is a noisy predictor. So the schedule adjustment is tuned to a gentle <b>${c.dvp.shrink}</b> shrink — a real nudge (it matters most for playoff-week matchups), not the difference-maker many tools sell. The season projections and boom/bust bands carry the weight.</div>
     <div class="note" style="margin-top:10px">Method: walk-forward, <b>out-of-sample</b> — each season is projected by a model fit only on the <i>other</i> years, then compared to what actually happened (nflverse). No peeking at the season it's grading.</div>`;
   const ue=(window.__FFDATA__.META||{}).usageEval;
   if(ue){

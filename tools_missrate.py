@@ -22,7 +22,7 @@ season before he's eligible, so camp bodies and practice-squad churn don't masqu
 import urllib.request, csv, io, json, os, collections, statistics
 
 HERE=os.path.dirname(os.path.abspath(__file__))
-SEASONS=range(2016,2025)          # 2025+ roster files may be incomplete mid-season
+SEASONS=range(2016,2026)          # through 2025 (season complete; 2026+ files may be incomplete mid-season)
 POS=("QB","RB","WR","TE")
 URL="https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_{}.csv"
 
