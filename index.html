@@ -10836,6 +10836,15 @@ function detailRow(pl,span){
         <div class="meta" style="margin-top:6px">Change any stat and the total recomputes under <b>your</b> scoring settings.
         ${pl.so?`<button class="ghost sm" data-resetso="${pl.id}">Back to consensus</button>`:""}</div>`
       :`<div class="meta">${pl.pos} is projected as a flat point total — there is no stat line to break down.</div>`}
+      ${pl.h25?(()=>{const h=pl.h25, g=+h.g||0;
+        const hp=cols.filter(c=>STATDEF[c]).map(c=>({label:STATDEF[c][0], v:+h[c]||0, per:+s[STATDEF[c][1]]||0}));
+        const hpts=hp.reduce((a,x)=>a+x.v*x.per,0)+(pl.pos==="TE"?(+h.rec||0)*(+s.recTe||0):0);
+        const proj=total, cmp=proj&&hpts?(proj>=hpts?`projected ${fmt(proj-hpts)} above`:`projected ${fmt(hpts-proj)} below`)+" last year's line":"";
+        return `<div class="eyebrow" style="margin-top:14px">Last season — 2025 actual${g?` · ${g} game${g===1?"":"s"}`:""}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">${hp.filter(x=>x.v).map(x=>`<span class="chip">${fmt(x.v)} <span class="meta">${x.label}</span></span>`).join("")||`<span class="meta">No 2025 production.</span>`}</div>
+          <div class="kv" style="margin-top:7px"><span>Fantasy points (your scoring)</span><b>${fmt(hpts)}${g?` · ${fmt(hpts/g)}/g`:""}</b></div>
+          <div class="meta">Real 2025 production — ${cmp||"for reference"}.</div>`;
+      })():`<div class="eyebrow" style="margin-top:14px">Last season — 2025 actual</div><div class="meta" style="margin-top:4px">No 2025 game data for ${lastName(pl.name)} — a rookie, or didn't play.</div>`}
       <div class="eyebrow" style="margin-top:12px">Player facts</div>
       <div class="factrow">
         <label>Age <input class="editcell num" type="number" data-age="${pl.id}" value="${pl.age||''}"></label>
