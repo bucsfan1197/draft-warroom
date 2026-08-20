@@ -3524,7 +3524,13 @@ function recommendations(){
        round 4-8 (its inflated cross-positional VORP then scored it into the top picks). This gates on the
        right thing: skill starters first, K/DST only in the final handful of picks. */
     const kdstDefer = coreNeed>0 || picksLeft > (need.K||0)+(need.DST||0)+2;
-    if((pl.pos==="K"||pl.pos==="DST")&&need[pl.pos]>0&&kdstDefer){score=v*0.15-60;needMult=0.15;needTag="wait";}
+    // Park a needed K/DST FAR below every draftable skill player, on any value scale. The old penalty
+    // (v*0.15−60) was tuned for the redraft points scale, so in DYNASTY — where valueOf is dynValue and
+    // depth skill scores run much more negative — a "parked" defense still floated into the top few
+    // suggestions (DST at #5). A flat −500 floor (with a tiny value tilt to keep the best K/DST on top
+    // of each other) sinks them beneath all skill until the final-round un-park (kdstDefer=false) lifts
+    // them back, so they surface only in the last handful of picks, exactly like a real draft.
+    if((pl.pos==="K"||pl.pos==="DST")&&need[pl.pos]>0&&kdstDefer){score=-500+Math.max(-40,Math.min(40,v))*0.1;needMult=0.15;needTag="wait";}
     const adp=adpOf(pl), adpDelta=adp-(currentPick()+1); // >0 = ADP later than now (value); <0 = reach
     return {pl,v,score,needTag,needMult,startableLeft,cliff,runRisk,pLast,myRank,adp,adpDelta,usg:URANK?usageSignal(pl,URANK):null};
   });
