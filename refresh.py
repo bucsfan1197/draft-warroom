@@ -977,7 +977,7 @@ def build_data():
          "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick_fo,"VEGAS":vegas_fo,"USAGE_WK":usage_fo,"INJ_REPORTS":inj_fo,"MONITOR":mon_fo,
          "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
-                 "drafts":ffc_drafts,"hist":"11 seasons (2014-24)","sfShift":sfShift,"health":HEALTH,
+                 "drafts":ffc_drafts,"hist":"12 seasons (2014-25)","sfShift":sfShift,"health":HEALTH,
                  "usageEval":base.get("USAGE_EVAL"),
                  "market":({"picks":market["picks"],
                             "sources":"KeepTradeCut + FantasyCalc + DynastyProcess",

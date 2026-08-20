@@ -1596,7 +1596,7 @@
       <div class="bd" id="accMonitor"></div>
     </div>
     <div class="panel">
-      <div class="hd"><h2>Draft backtest — 11 seasons (2014–2024)</h2>
+      <div class="hd"><h2>Draft backtest — 12 seasons (2014–2025)</h2>
         <button class="ghost sm hide" id="btAiBtn" style="margin-left:auto">🤖 My draft plan</button>
         <span id="btCtx" class="pickcounter"></span></div>
       <div class="bd">
@@ -1606,13 +1606,13 @@
         <h3 class="eyebrow" style="margin-bottom:8px">Startable-season hit rate by round &amp; position</h3>
         <p class="meta" style="margin:0 0 10px">Each cell: the historical probability a player drafted in that round at that position returned a <b>startable</b> season for your league size, with average PPR points below. Colored by hit rate. This is your current league (<b id="btLeague"></b>).</p>
         <div class="tblwrap"><table class="btgrid" id="btTable"></table></div>
-        <div class="legend"><span><i class="sw" style="background:var(--good)"></i>≥70% hit</span><span><i class="sw" style="background:var(--warn)"></i>50–69%</span><span><i class="sw" style="background:var(--crit)"></i>&lt;50%</span><span class="meta">n = sample size across 11 seasons</span></div>
+        <div class="legend"><span><i class="sw" style="background:var(--good)"></i>≥70% hit</span><span><i class="sw" style="background:var(--warn)"></i>50–69%</span><span><i class="sw" style="background:var(--crit)"></i>&lt;50%</span><span class="meta">n = sample size across 12 seasons</span></div>
       </div>
     </div>
     <div class="panel" style="margin-top:16px">
       <div class="hd"><h2>Where the value lives — best position per round</h2></div>
       <div class="bd"><div id="btBest"></div>
-        <div class="note" style="margin-top:12px">Data: <b>Fantasy Football Calculator</b> historical ADP + <b>nflverse</b> actual fantasy finishes, 2014–2024. "Best" = highest startable-hit-rate position available at that round's ADP. Use it as a rough map of which positions pay off in which rounds — for any single pick, what your own board says about that player still wins.</div>
+        <div class="note" style="margin-top:12px">Data: <b>Fantasy Football Calculator</b> historical ADP + <b>nflverse</b> actual fantasy finishes, 2014–2025. "Best" = highest startable-hit-rate position available at that round's ADP. Use it as a rough map of which positions pay off in which rounds — for any single pick, what your own board says about that player still wins.</div>
       </div>
     </div>
     <div class="panel" style="margin-top:16px">
@@ -1827,7 +1827,7 @@
         <div class="hd"><h2>Aging curves — dynasty value vs peak</h2></div>
         <div class="bd">
           <div id="curveBox"></div>
-          <div class="note" style="margin-top:12px">Each line is what a player at that age is worth <b>over your whole window</b>, against the best age at his position — so it moves when you change contend/balanced/rebuild. Measured from 11 seasons (2014–2025): for a startable player at each age, how much of his production he actually delivered in later years, <b>counting players who washed out of the league as zero</b>. Two findings worth knowing, because both contradict the usual advice. <b>QBs age far more gently than anyone</b> — a 30-year-old keeps 96% of a 23-year-old's forward value over five years, where a WR or RB keeps about 43%. And <b>"RBs age fastest" is a myth</b>: RBs and WRs decline at nearly the same <i>rate</i> (0.43 vs 0.44 from 23 to 30). The real RB problem is the <i>level</i> — an RB is worth less than a WR at every single age. Age still costs a QB, but the damage lands in years five through eight, which is exactly where a contender's window has already closed.</div>
+          <div class="note" style="margin-top:12px">Each line is what a player at that age is worth <b>over your whole window</b>, against the best age at his position — so it moves when you change contend/balanced/rebuild. Measured from 12 seasons (2014–2025): for a startable player at each age, how much of his production he actually delivered in later years, <b>counting players who washed out of the league as zero</b>. Two findings worth knowing, because both contradict the usual advice. <b>QBs age far more gently than anyone</b> — a 30-year-old keeps 96% of a 23-year-old's forward value over five years, where a WR or RB keeps about 43%. And <b>"RBs age fastest" is a myth</b>: RBs and WRs decline at nearly the same <i>rate</i> (0.43 vs 0.44 from 23 to 30). The real RB problem is the <i>level</i> — an RB is worth less than a WR at every single age. Age still costs a QB, but the damage lands in years five through eight, which is exactly where a contender's window has already closed.</div>
         </div>
       </div>
     </div>
@@ -2371,7 +2371,7 @@ const AGE={
 };
 // Production as a fraction of positional peak, by integer age. Clamped at the ends.
 /* ---- DYNASTY RETENTION CURVES (derived, not asserted) ----
-   Built by scratchpad/build_retention.py from 11 seasons of nflverse results (2014-2025)
+   Built by scratchpad/build_retention.py from 12 seasons of nflverse results (2014-2025)
    joined to roster birth dates. For a player who is a STARTABLE fantasy asset at age A,
    RETENTION[pos][A][k] is the share of his current production he actually delivers k years
    later — counting players who are out of the league as ZERO.
@@ -3362,18 +3362,18 @@ async function aiCapBrief(){
   }catch(e){ out.innerHTML=`<span class="meta">AI: ${aiFmt(e.message||String(e))}</span>`; }
   if(btn){ btn.disabled=false; btn.textContent="↻ Regenerate"; }
 }
-/* Backtest: 11 seasons of real drafts, turned into a plan for MY exact slot & format. */
+/* Backtest: 12 seasons of real drafts, turned into a plan for MY exact slot & format. */
 function aiBacktestContext(){
   const s=state.settings, D=window.__FFDATA__, bt=(D&&D.BACKTEST||{})[btKey()]||{};
   const L=[]; L.push(`My draft: ${s.teams}-team ${s.format}, ${isSF()?"superflex":"1QB"}, drafting from slot ${s.slot}.`);
-  L.push(`Historical startable-season hit rate by round × position (11 seasons of real drafts at THIS league size), avg PPR pts in parens:`);
+  L.push(`Historical startable-season hit rate by round × position (12 seasons of real drafts at THIS league size), avg PPR pts in parens:`);
   for(let r=1;r<=10;r++){ const row=bt[String(r)]; if(!row)continue;
     L.push(`R${r}: ${["QB","RB","WR","TE"].map(p=>row[p]?`${p} ${Math.round(row[p].hit*100)}% (${Math.round(row[p].avg)})`:`${p} —`).join(", ")}`); }
   return L.join("\n");
 }
 async function aiBacktestBrief(){
   const out=$("#btAiOut"),btn=$("#btAiBtn"); if(!out)return;
-  out.innerHTML=`<span class="aithinking">reading 11 seasons…</span>`; if(btn)btn.disabled=true;
+  out.innerHTML=`<span class="aithinking">reading 12 seasons…</span>`; if(btn)btn.disabled=true;
   try{ const ans=await askAI(aiBacktestContext(),
     `From my exact slot and format, turn this history into a draft plan in 3-4 lines: which position to anchor in round 1, where the best value pockets are in the middle rounds, and which positions to punt until late. Cite the hit rates. Be decisive.`);
     out.innerHTML=aiFmt(ans);
@@ -7712,7 +7712,7 @@ function auctionValueAt(dollars){
   });
   return best;
 }
-// Historical reality check for that round, straight from 11 seasons of drafts.
+// Historical reality check for that round, straight from 12 seasons of drafts.
 function roundHitRate(round){
   const t=(window.__FFDATA__&&window.__FFDATA__.BACKTEST||{})[btKey()];
   const row=t&&t[String(Math.max(1,Math.round(round)))];
@@ -7984,7 +7984,7 @@ function renderKeepers(){
     </tbody></table></div>
     <div class="note" style="margin-top:10px">
       <b>How this works:</b> keeping a player costs you a draft pick, so he's only worth keeping if he's better than whoever that pick would have got you. Both numbers are how many points a player beats a <b>free agent</b> by — counted under your own scoring, so a superflex quarterback or a tight end in a TE-premium league is priced properly. A pick is worth what the best player still on the board at that slot projects for; a salary is worth the best player you could buy at that price.
-      ${good[0]&&good[0].hit!=null?` For context, 11 seasons of real drafts say a round-${good[0].round} pick returns a startable starter <b>${Math.round(good[0].hit*100)}%</b> of the time.`:""}
+      ${good[0]&&good[0].hit!=null?` For context, 12 seasons of real drafts say a round-${good[0].round} pick returns a startable starter <b>${Math.round(good[0].hit*100)}%</b> of the time.`:""}
       ${cfg.years>1?` Later years age each player along the measured retention curves (including the chance he's out of the league) and are discounted 10% a year, with the cost climbing ${cfg.esc} round${cfg.esc===1?"":"s"} per season (or a 20% salary raise in an auction league).`:""}
     </div>`;
   box.querySelectorAll("select.keeppick").forEach(sel=>{
@@ -11315,8 +11315,8 @@ function renderBacktest(){
   const D=window.__FFDATA__; if(!D)return;
   const bt=D.BACKTEST[btKey()]||{}, teams=state.settings.teams, sf=isSF(), POS=["QB","RB","WR","TE"];
   $("#btLeague").textContent=`${teams}-team ${sf?'Superflex':'1QB'}`;
-  $("#btCtx").textContent=`${(D.META.drafts||0).toLocaleString()} live 2026 drafts · ${D.META.hist||"11 seasons (2014-24)"}`;
-  $("#btNote").innerHTML=`Real data, no estimates. For 11 seasons we joined each player's <b>actual ADP</b> (Fantasy Football Calculator${sf?', superflex/2QB board':''}) to their <b>actual end-of-season fantasy points</b> (nflverse), bucketed by the round they'd go in a ${teams}-team draft, and measured how often the pick returned a startable season. Change team count or toggle Superflex in <span class="link" id="btToSetup">League Setup</span> to re-cut it live.`;
+  $("#btCtx").textContent=`${(D.META.drafts||0).toLocaleString()} live 2026 drafts · ${D.META.hist||"12 seasons (2014-25)"}`;
+  $("#btNote").innerHTML=`Real data, no estimates. For 12 seasons we joined each player's <b>actual ADP</b> (Fantasy Football Calculator${sf?', superflex/2QB board':''}) to their <b>actual end-of-season fantasy points</b> (nflverse), bucketed by the round they'd go in a ${teams}-team draft, and measured how often the pick returned a startable season. Change team count or toggle Superflex in <span class="link" id="btToSetup">League Setup</span> to re-cut it live.`;
   const rows=Object.keys(bt).map(Number).sort((a,b)=>a-b), maxR=Math.min(Math.max(...rows,1),14);
   const r1=bt["1"]||{}, ins=[];
   if(r1.WR&&r1.RB)ins.push(btCard("Round 1: WR is the safer anchor",`WR ${pct(r1.WR.hit)} vs RB ${pct(r1.RB.hit)}`,`First-round WRs returned a startable season ${pct(r1.WR.hit)} of the time vs ${pct(r1.RB.hit)} for RBs — WR the steadier anchor, RB the higher-variance swing.`,"⚓"));
@@ -11352,12 +11352,12 @@ function renderBacktest(){
   if(sv){
     const mn=Math.min(...sv),mx=Math.max(...sv),mySlot=Math.min(state.settings.slot,sv.length);
     const spread=((mx-mn)/mn*100).toFixed(1);
-    $("#slotCtx").textContent=`${teams}-team ${sf?'SF':'1QB'} · avg starter pts, 11 seasons`;
+    $("#slotCtx").textContent=`${teams}-team ${sf?'SF':'1QB'} · avg starter pts, 12 seasons`;
     $("#slotChart").innerHTML=sv.map((v,i)=>{const h=(v-mn)/(mx-mn+1e-9),me=i+1===mySlot;
       return `<div class="barrow"><span class="lab" style="width:56px">Slot ${i+1}${me?' ★':''}</span>
         <div class="bar" style="height:13px"><i style="width:${Math.round(25+h*70)}%;background:${me?'var(--accent)':'var(--info)'}"></i></div>
         <span class="num" style="width:48px;text-align:right;${me?'color:var(--accent);font-weight:700':''}">${Math.round(v)}</span></div>`;}).join("");
-    $("#slotNote").innerHTML=`Across 11 seasons of simulated ${teams}-team drafts (everyone drafting by real ADP, scored on actual points), the gap between the best and worst slot was just <b>${spread}%</b> (${Math.round(mn)}–${Math.round(mx)} starter pts). <b>Where you pick barely matters — how you pick does.</b> That's exactly why the Simulate mode optimizes every pick rather than trusting your slot. (Bars are scaled to exaggerate a small real spread.)`;
+    $("#slotNote").innerHTML=`Across 12 seasons of simulated ${teams}-team drafts (everyone drafting by real ADP, scored on actual points), the gap between the best and worst slot was just <b>${spread}%</b> (${Math.round(mn)}–${Math.round(mx)} starter pts). <b>Where you pick barely matters — how you pick does.</b> That's exactly why the Simulate mode optimizes every pick rather than trusting your slot. (Bars are scaled to exaggerate a small real spread.)`;
     const op=D.OPENING&&D.OPENING[btKey()]&&D.OPENING[btKey()][String(mySlot-1)];
     if(op){const bestPos=["RB","WR","QB","TE"].filter(p=>op[p]).reduce((a,b)=>op[b]>op[a]?b:a);
       $("#slotBest").innerHTML=`<div class="eyebrow" style="margin-bottom:6px">Best opening pick from your slot (${mySlot}) — historically</div>`+
