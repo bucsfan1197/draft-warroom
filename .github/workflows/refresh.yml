@@ -1,28 +1,33 @@
 name: refresh-data
 
-# Replaces the every-6h refresh.py loop that used to run on the PC. Runs on GitHub's
-# servers, rebuilds data.js from the live sources, and pushes it back so the site updates.
-# Free: public repos get unlimited Actions minutes. The push keeps the repo "active" so
-# GitHub never auto-pauses this schedule.
+# Rebuilds data.js from the live sources every 6h AND publishes the site in the same run.
+# Publishing has to happen here because GitHub will NOT let a push made by this workflow's token
+# trigger the separate publish workflow — so if the refresh only pushed data, the live site would
+# never redeploy (which is exactly what happened: repo fresh, live site frozen). Deploying inline
+# fixes it. Free: public repos get unlimited Actions minutes.
 
 on:
   schedule:
     - cron: '0 */6 * * *'   # 00:00 / 06:00 / 12:00 / 18:00 UTC
-  workflow_dispatch: {}       # lets you run it on demand from the Actions tab
+  workflow_dispatch: {}       # run on demand from the Actions tab
 
-# The built-in token needs write access to push the rebuilt data.js + proj_archive.csv.
 permissions:
-  contents: write
+  contents: write   # push the rebuilt data.js + proj_archive.csv
+  pages: write      # publish to GitHub Pages
+  id-token: write   # required by deploy-pages
 
-# Never let two refreshes run at once (they'd race on the push).
+# Share the 'pages' group so a refresh deploy and a hand-push deploy (pages.yml) never overlap.
 concurrency:
-  group: refresh-data
+  group: pages
   cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -46,3 +51,14 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}   # optional: enables the player-props forward-experiment
         run: python refresh.py --once
+
+      # Publish the freshly-rebuilt site in this same run (the token's own push can't trigger pages.yml).
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
