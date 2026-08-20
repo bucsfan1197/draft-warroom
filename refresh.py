@@ -490,9 +490,11 @@ def pull_dvp():
     return dict(DVP)
 
 def pull_hist_2025():
-    """Each skill player's ACTUAL 2025 season stat line (production totals) from nflverse — the real
-    numbers behind last year, shown on the player card next to the projection so you can compare. Keyed
-    by norm(name)|pos, using the SAME stat keys as the projected line so the UI can reuse its breakdown."""
+    """Every player's ACTUAL 2025 offensive production from nflverse — the real numbers behind last
+    year, shown on the player card next to the projection. Keyed by norm(name) ONLY, and NOT filtered
+    by position: two-way players (e.g. Travis Hunter, listed CB) and position-label variance would
+    otherwise drop their offensive stats. Defenders contribute ~0 offensive stats and are pruned by the
+    g>0 filter, so a name-only merge is safe. Same stat keys as the projected line for the UI."""
     try:
         raw=get("https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2025.csv").decode("utf8","replace")
     except Exception as ex:
@@ -507,25 +509,25 @@ def pull_hist_2025():
     agg={}
     for r in csv.DictReader(io.StringIO(raw)):
         if (r.get("season_type") or "REG")!="REG": continue
-        pos=r.get("position")
-        if pos not in ("QB","RB","WR","TE"): continue
-        key=norm(r.get("player_display_name") or "")+"|"+pos
-        a=agg.get(key)
+        nm=norm(r.get("player_display_name") or "")
+        if not nm: continue
+        a=agg.get(nm)
         if a is None:
-            a=agg[key]={"g":0,"py":0.,"ptd":0.,"int":0.,"ry":0.,"rtd":0.,"rec":0.,"recy":0.,"rectd":0.,"fl":0.,"team":std(r.get("recent_team") or r.get("team") or "")}
-        played = f(r,"passing_attempts","attempts")+f(r,"carries","rushing_attempts")+f(r,"targets")>0
-        if played: a["g"]+=1
+            a=agg[nm]={"g":0,"py":0.,"ptd":0.,"int":0.,"ry":0.,"rtd":0.,"rec":0.,"recy":0.,"rectd":0.,"fl":0.,"team":std(r.get("recent_team") or r.get("team") or "")}
+        touches = f(r,"passing_attempts","attempts")+f(r,"carries","rushing_attempts")+f(r,"targets")
+        if touches>0: a["g"]+=1; a["team"]=std(r.get("recent_team") or a.get("team") or "")
         a["py"]+=f(r,"passing_yards"); a["ptd"]+=f(r,"passing_tds"); a["int"]+=f(r,"passing_interceptions","interceptions")
         a["ry"]+=f(r,"rushing_yards"); a["rtd"]+=f(r,"rushing_tds")
         a["rec"]+=f(r,"receptions"); a["recy"]+=f(r,"receiving_yards"); a["rectd"]+=f(r,"receiving_tds")
         a["fl"]+=f(r,"rushing_fumbles_lost")+f(r,"receiving_fumbles_lost")+f(r,"sack_fumbles_lost")
-        a["team"]=std(r.get("recent_team") or a.get("team") or "")
-    # round to the same precision the projected line uses
-    for a in agg.values():
-        for k in ("py","ptd","int","ry","rtd","rec","recy","rectd","fl"):
-            a[k]=round(a[k],1)
-    log(f"  2025 actuals: {len(agg)} player-seasons")
-    return agg
+    # keep only players with real offensive production, rounded to the projected line's precision
+    out={}
+    for nm,a in agg.items():
+        if a["g"]<=0: continue
+        for k in ("py","ptd","int","ry","rtd","rec","recy","rectd","fl"): a[k]=round(a[k],1)
+        out[nm]=a
+    log(f"  2025 actuals: {len(out)} players with production")
+    return out
 
 def pull_advanced():
     """Real opportunity per player — the stuff that actually predicts fantasy scoring: target share, air-yards
@@ -947,20 +949,11 @@ def build_data():
             if a: p["adv"]=a; hit+=1
         log(f"  advanced usage matched to pool: {hit}/{len(players)}")
 
-    # attach each player's ACTUAL 2025 season stat line (production). Try name+position first, then fall
-    # back to name-only when it's unambiguous — nflverse's weekly position can differ from our pool's
-    # (WR/RB hybrids, FB, blanks), and requiring an exact pos match dropped ~40% of real matches.
+    # attach each player's ACTUAL 2025 season stat line (production), matched by normalized name.
     if hist25:
-        byname={}
-        for k,v in hist25.items():
-            byname.setdefault(k.rsplit("|",1)[0],[]).append(v)
         hit=0
         for p in players:
-            nm=norm(p["name"])
-            h=hist25.get(nm+"|"+p.get("pos",""))
-            if not h:
-                cand=byname.get(nm)
-                if cand and len(cand)==1: h=cand[0]   # one player, one name -> safe
+            h=hist25.get(norm(p["name"]))
             if h and h.get("g"): p["h25"]=h; hit+=1
         log(f"  2025 actuals matched to pool: {hit}/{len(players)}")
 

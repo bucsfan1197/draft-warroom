@@ -1865,7 +1865,13 @@
   <div class="aifoot meta">Explains the app's own numbers — it won't invent stats. <span id="aiProvLabel"></span></div>
 </div>
 
-<script src="data.js"></script>
+<script>
+/* data.js is rebuilt every 6h; GitHub Pages caches it for 10 minutes, and a stale cached copy can hide
+   a data update (e.g. a player's new 2025 stats). Load it with a 10-minute cache-buster so a normal page
+   load always sees data no more than ~10 min old, without re-downloading it on every quick reload. The
+   document.write keeps the load synchronous, so window.__FFDATA__ is set before the app script runs. */
+document.write('<scr'+'ipt src="data.js?v='+Math.floor(Date.now()/600000)+'"></scr'+'ipt>');
+</script>
 <script>
 /* ============================= DATA ============================= */
 // Bye weeks: editable baseline for the upcoming season — verify vs your league.
