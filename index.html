@@ -425,6 +425,35 @@
   .onbstep{display:flex;flex-direction:column;gap:2px;padding:10px 0;border-top:1px solid var(--line)}
   .onbstep b{font-size:14px}
   .onbstep span{font-size:13px;color:var(--ink-2);line-height:1.5}
+  /* ---- How-to guide (scoped under .howto so nothing here touches the rest of the app) ---- */
+  .howto{max-width:940px;margin:0 auto}
+  .howto .lead{font-size:14.5px;color:var(--ink);line-height:1.65}
+  .howto .lead2{font-size:13px;color:var(--ink-2);line-height:1.6}
+  .howto .htbig{font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--ink);margin:0 0 4px}
+  .htk{display:inline-block;font-family:var(--mono);font-size:.88em;background:var(--panel-2);border:1px solid var(--line-2);border-radius:6px;padding:1px 6px;white-space:nowrap;color:var(--ink);font-weight:600}
+  .htnav{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .htnav a{font-size:12px;text-decoration:none;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:5px 11px;transition:border-color .15s,background .15s}
+  .htnav a:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .howto .hth{font-size:15px;margin:0;color:var(--ink);letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+  .howto .htnum{width:22px;height:22px;flex:none;border-radius:7px;background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+  .htwhy{font-size:12.5px;color:var(--ink-2);line-height:1.6;margin:8px 0 0}
+  .htlabel{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);font-weight:700;margin:14px 0 7px}
+  ol.htsteps{margin:0;padding-left:0;counter-reset:s;list-style:none;display:flex;flex-direction:column;gap:8px}
+  ol.htsteps li{position:relative;padding-left:28px;font-size:13.5px;line-height:1.55;color:var(--ink)}
+  ol.htsteps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:1px;width:19px;height:19px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line-2);color:var(--ink-2);font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .howto ul.htbul{margin:2px 0 0;padding-left:2px;font-size:13.5px;line-height:1.62;color:var(--ink);list-style:none;display:flex;flex-direction:column;gap:6px}
+  .howto ul.htbul li{position:relative;padding-left:18px}
+  .howto ul.htbul li::before{content:"›";position:absolute;left:2px;top:-1px;color:var(--accent);font-weight:800}
+  .htai{margin-top:14px;font-size:12.8px;line-height:1.6;color:var(--ink-2);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);border-radius:11px;padding:10px 13px}
+  .htai b{color:var(--ink)}
+  .htai .robot{font-weight:800;color:var(--ink)}
+  .htpos{display:inline-block;font-size:11px;font-weight:800;color:#fff;border-radius:5px;padding:1px 6px;vertical-align:middle}
+  .htcallout{border-left:3px solid var(--accent);background:var(--panel-2);border-radius:0 11px 11px 0;padding:13px 15px}
+  .htcallout.warn{border-left-color:var(--warn)}
+  .htsplit{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:640px){.htsplit{grid-template-columns:1fr}}
+  .htsplit .htcol{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+  .htsplit .htcol h4{margin:0 0 4px;font-size:14px;color:var(--ink)}
   .onbbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
   .onbbtns .btn{flex:1;min-width:150px}
   /* ---- phone / draft-day-in-your-hand layout ---- */
@@ -1047,7 +1076,8 @@
       <div><b>Draft War Room</b><span>Know exactly who to pick, and why</span></div>
     </div>
     <nav class="tabs" id="tabs">
-      <button class="tab on" data-tab="draft">Draft Room</button>
+      <button class="tab" data-tab="howto">📖 How to</button>
+       <button class="tab on" data-tab="draft">Draft Room</button>
       <button class="tab" data-tab="team">My Team</button>
       <button class="tab" data-tab="matchups">Matchups</button>
       <button class="tab" data-tab="backtest">Backtest</button>
@@ -1075,6 +1105,311 @@
 </header>
 
 <div class="wrap">
+  <!-- HOW-TO TAB -->
+  <section id="tab-howto" class="hide">
+   <div class="howto">
+
+    <div class="panel" style="margin-bottom:16px">
+      <div class="bd">
+        <p class="htbig">How to use Draft War Room</p>
+        <p class="lead">This tool tells you <b>exactly who to draft, who to start, who to add, and which trades make you better</b> — and it shows its work in plain English. You don't need to be a numbers person. If you can read this page, you can run the whole thing in about 5–10 minutes.</p>
+        <p class="lead2" style="margin-top:10px">Read it top to bottom, or tap a section to jump straight there:</p>
+        <div class="htnav">
+          <a href="#ht-quick">⚡ 5-minute quick start</a>
+          <a href="#ht-setup2">⚙ League Setup (the engine)</a>
+          <a href="#ht-livemock">🔴 Live vs 🤖 Mock draft</a>
+          <a href="#ht-ai">🤖 The AI copilot</a>
+          <a href="#ht-draft">Draft Room</a>
+          <a href="#ht-team">My Team</a>
+          <a href="#ht-matchups">Matchups</a>
+          <a href="#ht-backtest">Backtest</a>
+          <a href="#ht-season">In-Season</a>
+          <a href="#ht-waivers">Waiver Wire</a>
+          <a href="#ht-injuries">Injuries</a>
+          <a href="#ht-trade">Trades</a>
+          <a href="#ht-players">Projections</a>
+          <a href="#ht-grades">Grades</a>
+          <a href="#ht-grader">Team Grader</a>
+          <a href="#ht-dynasty">Dynasty / Keepers / Contracts</a>
+          <a href="#ht-topbar">The top-bar buttons</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUICK START -->
+    <div class="panel" style="margin-bottom:16px" id="ht-quick">
+      <div class="hd"><h2>⚡ Start here — the whole thing in 5 minutes</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0">Do these five things in order and you're ready to draft. Everything else on this page is just detail on each step.</p>
+        <ol class="htsteps">
+          <li>Open the <span class="htk">League Setup</span> tab (far right). This is where you tell the tool what <b>your</b> league looks like — how many teams, your pick number, and how points are scored.</li>
+          <li>On Sleeper? Type your Sleeper username, hit <span class="htk">Find my leagues</span>, pick your league, and press <span class="htk">Import this league's scoring &amp; roster</span>. It fills in everything for you automatically. Not on Sleeper? Just type the numbers by hand — it takes a minute.</li>
+          <li>Go to the <span class="htk">Draft Room</span> tab. The big green card at the top-left, <b>“Best pick for you,”</b> is your answer on every pick. It always shows the smartest player to take right now and a one-line reason.</li>
+          <li>As your draft happens, <b>log each pick</b> so the tool knows who's gone: click a player in the “Available players” list to mark them drafted. (If you connected a live Sleeper draft, this happens by itself — see <a href="#ht-livemock">Live vs Mock</a>.)</li>
+          <li>When it's your turn, take the player in the green card — or ask the <b>🤖 copilot</b> (bottom-right robot button) “take A or B?” for a plain-English gut-check. That's it.</li>
+        </ol>
+        <div class="htcallout" style="margin-top:14px"><b>Just want to practice?</b> Press <span class="htk">🤖 Mock draft</span> in the top bar and the computer drafts for everyone else so you can run a full fake draft against realistic opponents. Nothing you do here ever affects your real league — press <span class="htk">⟳ Reset draft</span> to wipe it and start over.</div>
+      </div>
+    </div>
+
+    <!-- LEAGUE SETUP IS THE ENGINE -->
+    <div class="panel" style="margin-bottom:16px" id="ht-setup2">
+      <div class="hd"><h2>⚙ League Setup — the engine everything runs on</h2></div>
+      <div class="bd">
+        <p class="lead" style="margin-top:0">This is the most important idea in the whole tool: <b>every other tab does its math using the settings on the League Setup tab.</b> Get these right and every ranking, recommendation, projection, and grade is built for <i>your</i> league — not a generic one.</p>
+        <p class="htwhy">Here's why it matters. A catch (“reception”) might be worth 1 point in your league and 0 in your friend's. That one setting completely reshuffles who's valuable. So if the board ever looks wrong, the fix is almost always on League Setup — not the board.</p>
+
+        <p class="htlabel">What you set here, and what it changes everywhere else</p>
+        <ul class="htbul">
+          <li><b>Teams &amp; your draft slot</b> — how many managers, and which pick is yours. This drives who's likely gone before your next turn, so the tool knows when to “reach” vs. wait.</li>
+          <li><b>Scoring (PPR / Half / Standard, plus every point value)</b> — the heart of it. Change “Reception” from 1 to 0.5 and every player instantly re-ranks. Tight-end premium, 6-point passing TDs, anything — set it and the whole app updates in real time.</li>
+          <li><b>Starting lineup (QB/RB/WR/TE/FLEX/SUPERFLEX/K/DST…)</b> — how many of each position you start. This is what makes a position scarce or plentiful. Start 2 QBs (superflex) and quarterbacks become gold; the tool knows.</li>
+          <li><b>ADP source</b> — “ADP” means <i>Average Draft Position</i>: where players usually get picked. Match this to the site you draft on (ESPN, Yahoo, Sleeper, or FFC consensus) so the tool predicts your real draft, not someone else's.</li>
+          <li><b>Format toggles</b> — Best ball, Dynasty, Keepers, Auction, Salary cap, IDP (defensive players), Median scoring, FAAB waivers. Flip one on and new tabs and new math appear that fit that format.</li>
+          <li><b>Pick clock</b> — sets a countdown on your pick to match your league's timer, so you can practice deciding under pressure. Runs out of time? Your best available is auto-picked, just like a real draft.</li>
+        </ul>
+
+        <div class="htsplit" style="margin-top:16px">
+          <div class="htcol">
+            <h4>🧠 “Learn your league”</h4>
+            <p class="lead2">Press <span class="htk">Find my leagues</span> → pick one → <span class="htk">Learn</span>. Using your league's past drafts on Sleeper, the tool models <b>how each specific manager actually drafts</b> (who reaches for QBs, who loves their home team). Now the draft predictions match your real leaguemates, not strangers.</p>
+          </div>
+          <div class="htcol">
+            <h4>⚙ “Import scoring &amp; roster”</h4>
+            <p class="lead2">One button that pulls your league's exact scoring rules and lineup from Sleeper so you don't type anything. This is the fastest way to a correct setup. (Different from “Learn,” which studies draft <i>habits</i>; this copies the <i>rules</i>.)</p>
+          </div>
+        </div>
+
+        <div class="htai"><span class="robot">🤖 AI here:</span> the copilot's “Test connection” button lives on this tab — that's where you turn the copilot on (it's free, 30 seconds — see <a href="#ht-ai">the copilot section</a>). You can also paste your league's scoring text into the AI box and it will fill the settings for you.</div>
+      </div>
+    </div>
+
+    <!-- LIVE VS MOCK -->
+    <div class="panel" style="margin-bottom:16px" id="ht-livemock">
+      <div class="hd"><h2>🔴 Live draft vs 🤖 Mock draft — the key difference</h2></div>
+      <div class="bd">
+        <p class="lead" style="margin-top:0">These two things sound similar but do opposite jobs. Here's the plain version:</p>
+        <div class="htsplit" style="margin-top:12px">
+          <div class="htcol">
+            <h4>🔴 Live draft sync <span class="htpos" style="background:var(--crit)">real</span></h4>
+            <p class="lead2">This connects to your <b>actual, real draft happening on Sleeper</b>. On League Setup, paste your Sleeper draft link into the <b>“Live draft sync”</b> box and hit Connect. Now every pick your leaguemates make shows up here <b>automatically, within seconds</b> — you never type anything. You just watch the green “Best pick for you” card and take your guy when it's your turn. Use this on draft night.</p>
+          </div>
+          <div class="htcol">
+            <h4>🤖 Mock draft <span class="htpos" style="background:var(--info)">practice</span></h4>
+            <p class="lead2">This is a <b>fake practice draft against the computer</b>. Press the <span class="htk">🤖 Mock draft</span> button in the top bar and the app drafts for all the <i>other</i> managers, using realistic picks, right up to your turn. Great for rehearsing before the real thing, or testing “what if I go RB early?” Nothing is real and nothing is saved to your league.</p>
+          </div>
+        </div>
+        <div class="htcallout" style="margin-top:14px">
+          <b>The simplest way to remember it:</b> <b>Live</b> = the tool <i>watches your real draft</i> and logs picks for you. <b>Mock</b> = the tool <i>plays a fake draft</i> so you can practice. And a third option: do neither and <b>log picks by hand</b> (click players as they're drafted) — perfect for an in-person or non-Sleeper draft.
+        </div>
+        <p class="htwhy">Bonus: turn on the <b>Pick clock</b> (League Setup) and pair it with Mock draft to rehearse deciding on a real timer. If the clock hits zero, your best available auto-drafts — exactly like a real autopick.</p>
+      </div>
+    </div>
+
+    <!-- AI COPILOT -->
+    <div class="panel" style="margin-bottom:16px" id="ht-ai">
+      <div class="hd"><h2>🤖 The AI GM copilot — what it is and how it works</h2></div>
+      <div class="bd">
+        <p class="lead" style="margin-top:0">The <b>copilot</b> is a general manager in your pocket. It <b>explains the tool's own numbers in plain English</b> — why a pick, whether a trade is fair, who to start — so you never have to guess what a number means. Tap the <b>robot button (🤖) in the bottom-right corner</b> of any screen to open it.</p>
+
+        <p class="htlabel">How it actually works (important)</p>
+        <ul class="htbul">
+          <li>The app first does all the <b>real math itself</b> — a big simulation that plays your season thousands of times, plus your live rosters, projections, odds, and waiver/trade math.</li>
+          <li>Then it hands those finished numbers to the AI and asks it to <b>explain them in words</b>. The AI is told <b>never to invent a stat</b> — it can only talk about numbers the app already computed. So it can't “make things up” about a player.</li>
+          <li>The copilot <b>follows you between tabs</b>. Open it on the Waiver tab and it talks about the wire; open it on Trades and it talks about your trade — it always reads the screen you're on.</li>
+        </ul>
+
+        <p class="htlabel">Turning it on (free, ~30 seconds)</p>
+        <ol class="htsteps">
+          <li>Go to <span class="htk">League Setup</span> → scroll to <b>🤖 AI GM copilot</b>.</li>
+          <li>Leave the provider on <b>“Gemini · free”</b> and click <span class="htk">Get a free key ↗</span>. Sign in with Google, click “Create API key,” and copy it. <b>No credit card</b>, and the free tier easily covers a whole season.</li>
+          <li>Paste the key in the box and press <span class="htk">Save</span>, then <span class="htk">Test connection</span>. When it says connected, the robot button appears on every tab.</li>
+        </ol>
+        <p class="htwhy">Prefer a different brain? You can switch the provider to <b>Claude</b> or <b>OpenAI</b> with your own key, or use a <b>“Shared link”</b> if your league set up one link everyone can use. Your key is stored <b>only in your browser</b> and is used to call the AI directly — it never touches any server of ours.</p>
+        <div class="htcallout warn" style="margin-top:12px"><b>The tool works fully without the AI.</b> The key only adds the plain-English explanations. Every number, ranking, and recommendation is there whether or not you turn the copilot on. In each tab below, the <span class="robot">🤖</span> line tells you what the copilot adds <i>there</i>.</div>
+      </div>
+    </div>
+
+    <!-- ===================== PER-TAB GUIDE ===================== -->
+    <p class="htlabel" style="font-size:12px;margin:22px 4px 10px">Every tab, explained</p>
+
+    <!-- DRAFT ROOM -->
+    <div class="panel" style="margin-bottom:14px" id="ht-draft">
+      <div class="hd"><h2>Draft Room — who to pick, and why</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> this is the main event on draft day. It always shows the single best pick for you right now and keeps a running read of the whole draft.</p>
+        <p class="htlabel">The tools on this tab</p>
+        <ul class="htbul">
+          <li><b>“Best pick for you”</b> (big green card) — your answer on every pick, with a one-line reason. The <span class="htk">Fast</span> / <span class="htk">Simulate 🎲</span> toggle: <b>Fast</b> gives an instant pick; <b>Simulate</b> plays the rest of the draft out thousands of times for a more careful answer (a few seconds).</li>
+          <li><b>Available players</b> — everyone still on the board. <b>Click a player to mark them drafted</b> (that's how you log picks by hand). Sort by any column. <span class="htk">Hide drafted ✓</span> cleans up the list.</li>
+          <li><b>“Better by” column</b> — the tool's secret sauce. It's how many more points a player scores than a <i>free</i> replacement at his position. A high “better by” means he's a real edge, not just a big name. This is why the tool sometimes ranks players differently than your gut.</li>
+          <li><b>Positional need</b> — a live read of which spots your roster still needs.</li>
+          <li><b>Tiers &amp; runs</b> — groups players into quality tiers and warns you when a “run” is happening (everyone's grabbing RBs, so the last good one is about to go).</li>
+          <li><b>🔮 Draft forward</b> — press <span class="htk">Preview my team</span> to play the draft out and see what your finished roster likely looks like if you follow the plan.</li>
+          <li><b>Live draft intel &amp; Picks so far</b> — the running log of what's been taken, as a list or a full board.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> the <b>“Ask: take X or Y?”</b> box right under the pick card. Type two names and it gives you a plain-English verdict grounded in the live draft — who fits your roster, who's likely gone by your next turn, and the move to make.</div>
+      </div>
+    </div>
+
+    <!-- MY TEAM -->
+    <div class="panel" style="margin-bottom:14px" id="ht-team">
+      <div class="hd"><h2>My Team — how good is what I've built?</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> a live health-check on the roster you're drafting or already have.</p>
+        <ul class="htbul">
+          <li><b>How good is my team?</b> — an overall read on your roster's strength.</li>
+          <li><b>Roster construction</b> — are you balanced, or too heavy at one position and thin at another?</li>
+          <li><b>Bye-week coverage</b> — warns you if too many starters are off in the same week (a hidden way to lose a game).</li>
+          <li><b>Stacks &amp; correlation</b> — points out QB + receiver pairs from the same team, which boom together for a higher ceiling.</li>
+          <li><b>Suggestions &amp; trade targets</b> — after the read, it names your weak spots and specific players to target to fix them.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask the copilot “what's my biggest weakness?” or “who should I target?” and it answers from your actual roster and these numbers.</div>
+      </div>
+    </div>
+
+    <!-- MATCHUPS -->
+    <div class="panel" style="margin-bottom:14px" id="ht-matchups">
+      <div class="hd"><h2>Matchups — this week's game, and live scores</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> your head-to-head each week — who you're playing, your projected score, and your odds to win. During games it turns into a <b>live scoreboard</b> with win probability that updates as points come in.</p>
+        <ul class="htbul">
+          <li><b>This week</b> — your matchup, projected points for both teams, and your win odds.</li>
+          <li><b>Live (red dot)</b> — once games kick off, real scores stream in and your live win chance updates play by play.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask “am I likely to win this week?” or “what do I need from my last player?” and it reads the live game state for you.</div>
+      </div>
+    </div>
+
+    <!-- BACKTEST -->
+    <div class="panel" style="margin-bottom:14px" id="ht-backtest">
+      <div class="hd"><h2>Backtest — does the tool's advice actually work?</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> honesty. It checks the tool's own projections against what really happened, so you can trust the numbers instead of taking them on faith.</p>
+        <div class="htai"><span class="robot">🤖 AI here:</span> the copilot can summarize the backtest results — how accurate the projections have been and where they miss — in a sentence or two.</div>
+      </div>
+    </div>
+
+    <!-- IN-SEASON -->
+    <div class="panel" style="margin-bottom:14px" id="ht-season">
+      <div class="hd"><h2>In-Season — who to start and sit each week</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> once the season starts, this is your weekly command center: your best lineup, start/sit calls, and what to do next.</p>
+        <ul class="htbul">
+          <li>Type your Sleeper username to pull your real team, and it lays out your <b>optimal starting lineup</b> and flags any close start/sit decisions.</li>
+          <li>It points you onward with quick jumps to <b>Waiver Wire</b> and <b>Start / Sit</b> when there's a move to make.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask “who should I start at flex?” and it explains the call using each player's projection, matchup, and floor/ceiling.</div>
+      </div>
+    </div>
+
+    <!-- WAIVER WIRE -->
+    <div class="panel" style="margin-bottom:14px" id="ht-waivers">
+      <div class="hd"><h2>Waiver Wire — who to add, and how much to bid</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> the free-agent pickups worth grabbing this week, ranked by how much they'd actually help <b>your</b> roster — not just who's popular.</p>
+        <ul class="htbul">
+          <li>Type your Sleeper username to see targets tailored to your team's holes.</li>
+          <li>If your league uses <b>FAAB</b> (a fake-money bidding budget for pickups), it suggests a sensible bid so you don't overspend.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask “who's the best add for me and what should I bid?” and it explains why a pickup fits and what he's worth to <i>you</i>.</div>
+      </div>
+    </div>
+
+    <!-- INJURIES -->
+    <div class="panel" style="margin-bottom:14px" id="ht-injuries">
+      <div class="hd"><h2>Injuries — who's hurt and what it means</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> the live injury report, filtered to what matters to you. Switch between <b>just my players</b> and the <b>whole league</b> so you can spot both your own risks and other teams' openings.</p>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask “is he going to play?” or “who covers for my hurt starter?” and it reads the report plus your bench.</div>
+      </div>
+    </div>
+
+    <!-- TRADES -->
+    <div class="panel" style="margin-bottom:14px" id="ht-trade">
+      <div class="hd"><h2>Trades — deals that actually make you better</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> it pulls <b>every manager's real roster</b> and finds trades that raise <b>your</b> playoff and championship odds — ranked by that, not by fuzzy “trade value.”</p>
+        <ol class="htsteps">
+          <li>Type your Sleeper username and <b>load your league</b>.</li>
+          <li>Pick your team.</li>
+          <li>Hit <span class="htk">Find trades</span>. It ranks every fair, mutually-helpful deal by how much it lifts your title odds.</li>
+        </ol>
+        <p class="htwhy">You can also build a specific trade by hand and it grades it instantly — including, in a salary-cap league, whether the deal fits under both teams' caps.</p>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask “is this trade good for me?” and it gives a straight verdict with the reason — what you gain, what you give up, and the odds change.</div>
+      </div>
+    </div>
+
+    <!-- PROJECTIONS -->
+    <div class="panel" style="margin-bottom:14px" id="ht-players">
+      <div class="hd"><h2>Projections — the numbers behind every player</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> the full player database. Search anyone to see their projection for the season <b>and</b> their real stats from last year.</p>
+        <ul class="htbul">
+          <li><b>Click any player</b> to expand their card: projected points (low → high range), their role/usage, and a <b>“Last season — 2025 actual”</b> block with their real numbers scored under <i>your</i> league's rules.</li>
+          <li>See a wrong age or number? You can correct it right on the card, and the whole app updates.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask the copilot about any player and it explains the projection using these exact numbers — never invented ones.</div>
+      </div>
+    </div>
+
+    <!-- GRADES -->
+    <div class="panel" style="margin-bottom:14px" id="ht-grades">
+      <div class="hd"><h2>Grades — your draft, graded pick by pick</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> after (or during) your draft, it grades your picks — where you found value, where you reached, and how your roster stacks up. A quick report card on the job you did.</p>
+        <div class="htai"><span class="robot">🤖 AI here:</span> ask “how did my draft go?” for a plain-English summary of your best and worst picks.</div>
+      </div>
+    </div>
+
+    <!-- TEAM GRADER -->
+    <div class="panel" style="margin-bottom:14px" id="ht-grader">
+      <div class="hd"><h2>Team Grader — grade ANY roster, deeply</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0"><b>What it's for:</b> the deepest single-team analysis in the app. Build or pull any roster and it simulates a <b>full season</b> against a realistic field to grade it.</p>
+        <ul class="htbul">
+          <li><b>Opponents toggle</b> — grade against a <span class="htk">Typical field</span> or your league's <span class="htk">actual teams</span>.</li>
+          <li>You get a letter <b>grade</b>, a likely <b>win–loss record range</b>, <b>playoff and championship odds</b>, projected <b>weekly floor and ceiling</b>, and a <b>letter grade at every position</b>.</li>
+          <li><b>Roster health, playoff-week schedule, and upgrade targets</b> — it names your weak spots and specific players to chase.</li>
+          <li>Buttons to open <b>Power Rankings</b> for the whole league and to run the <b>full Trade Finder</b> for this team.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> everything on this card is fair game — ask “what's my ceiling?” or “what's the one move that raises my title odds most?”</div>
+      </div>
+    </div>
+
+    <!-- CONDITIONAL FORMATS -->
+    <div class="panel" style="margin-bottom:14px" id="ht-dynasty">
+      <div class="hd"><h2>Dynasty · Keepers · Contracts (only if your league uses them)</h2></div>
+      <div class="bd">
+        <p class="htwhy" style="margin-top:0">These three tabs stay <b>hidden until you turn the matching format on</b> in League Setup — so you only ever see the tabs your league actually uses.</p>
+        <ul class="htbul">
+          <li><b>Dynasty</b> (turn on Dynasty mode) — for leagues you keep year after year. Player value now blends this season with a multi-year, age-adjusted outlook, and you get rookie-pick values and your roster's age profile. Choose <b>Contend</b> (win now), <b>Rebuild</b> (get younger), or <b>Balanced</b>.</li>
+          <li><b>Keepers</b> (turn on Keepers) — helps you decide which players are worth holding onto for next year versus letting go.</li>
+          <li><b>Contracts</b> (turn on Salary cap) — judges every player's cap hit against what that money could buy on the open market, and makes the trade calculator check that deals fit under both caps.</li>
+        </ul>
+        <div class="htai"><span class="robot">🤖 AI here:</span> each of these tabs has its own copilot answers — e.g. “should I keep him?” or “is this contract a bargain?”</div>
+      </div>
+    </div>
+
+    <!-- TOP BAR -->
+    <div class="panel" style="margin-bottom:16px" id="ht-topbar">
+      <div class="hd"><h2>The top-bar buttons (always visible)</h2></div>
+      <div class="bd">
+        <ul class="htbul">
+          <li><span class="htk">🤖 Mock draft</span> — start/stop a practice draft against the computer (see <a href="#ht-livemock">Live vs Mock</a>).</li>
+          <li><span class="htk">◐ Theme</span> — switch between light and dark.</li>
+          <li><span class="htk">↧ Save</span> — download your current setup and draft to a file, so you can pick up later or move to another device.</li>
+          <li><span class="htk">↥ Load</span> — reload a setup/draft you saved earlier.</li>
+          <li><span class="htk">⟳ Reset draft</span> — wipe the current draft and start fresh. (Your league settings stay put.)</li>
+          <li><b>The little “updated” chip</b> — shows how fresh the player data is. It refreshes automatically about every 6 hours, so you're always on current numbers.</li>
+        </ul>
+        <div class="htcallout" style="margin-top:14px"><b>Stuck?</b> The fastest help is the robot button (🤖). Open it on whatever tab is confusing you and ask your question in plain words — it reads that exact screen and answers straight.</div>
+      </div>
+    </div>
+
+   </div>
+  </section>
+
   <!-- DRAFT TAB -->
   <section id="tab-draft">
     <div class="grid-draft">
