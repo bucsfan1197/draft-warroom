@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-16';
+window.__BUILD__='2026-08-21-17';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -1098,6 +1098,43 @@ window.__BUILD__='2026-08-21-16';
       transition-duration:.001ms!important;scroll-behavior:auto!important}
   }
 
+  /* ---- Mobile navigation: the desktop 16-tab strip is unusable on a phone (only ~7 fit, the rest
+     hide behind a horizontal scroll), so on narrow screens we swap it for a compact header + a
+     tap-to-open menu that lists every tool. Desktop is untouched. ---- */
+  .mnav-title,.mnav-btn{display:none}
+  .mmenu{display:none}
+  @media(max-width:760px){
+    header.top .topin{flex-wrap:nowrap;gap:8px;padding:9px 12px;align-items:center}
+    .brand span{display:none}
+    .brand b{font-size:14.5px}
+    .brand{flex:none;gap:8px}
+    #tabs{display:none}
+    .topin .spacer,#dataAge,#mockBtn,#themeBtn,#exportBtn,#importBtn,#resetBtn{display:none}
+    .mnav-title{display:block;flex:1;min-width:0;font-weight:800;font-size:16px;color:var(--ink);
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+    .mnav-btn{display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);
+      color:var(--accent-ink);border-radius:10px;padding:10px 14px;font-size:15px;font-weight:700;flex:none;cursor:pointer}
+    .mmenu{display:block;position:fixed;inset:0;z-index:200;background:rgba(6,10,16,.55);animation:mfade .14s ease}
+    .mmenu.hide{display:none}
+    .mmenu-panel{position:absolute;top:0;left:0;right:0;max-height:94vh;display:flex;flex-direction:column;
+      background:var(--panel);border-radius:0 0 18px 18px;box-shadow:var(--shadow-lg);animation:mslide .18s ease}
+    .mmenu-head{display:flex;align-items:center;justify-content:space-between;padding:15px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+    .mmenu-head b{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2)}
+    .mmenu-x{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);font-size:16px;line-height:1;padding:8px 11px;border-radius:9px;cursor:pointer}
+    .mmenu-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 10px 10px}
+    .mmenu-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);font-weight:800;padding:14px 8px 4px}
+    .mmenu-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:none;border:none;
+      color:var(--ink);font-size:16px;font-weight:700;padding:13px 12px;border-radius:11px;cursor:pointer}
+    .mmenu-item:active{background:var(--panel-2)}
+    .mmenu-item.on{background:var(--accent-soft)}
+    .mmenu-item.on .mi-ic{transform:scale(1.05)}
+    .mi-ic{width:24px;text-align:center;font-size:18px;flex:none}
+    .mi-desc{font-size:11.5px;font-weight:500;color:var(--ink-2);display:block;margin-top:1px}
+    .mmenu-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 8px 20px;border-top:1px solid var(--line);margin-top:10px}
+    .mmenu-actions button{padding:13px;border-radius:11px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font-size:14px;font-weight:700;cursor:pointer}
+  }
+  @keyframes mfade{from{opacity:0}to{opacity:1}}
+  @keyframes mslide{from{transform:translateY(-12px);opacity:.6}to{transform:translateY(0);opacity:1}}
 </style>
 
 <header class="top">
@@ -1106,6 +1143,8 @@ window.__BUILD__='2026-08-21-16';
       <div class="logo">◈</div>
       <div><b>Draft War Room</b><span>Know exactly who to pick, and why</span></div>
     </div>
+    <div class="mnav-title" id="mNavTitle">Draft Room</div>
+    <button class="mnav-btn" id="mNavBtn" aria-label="Open menu" aria-expanded="false">☰ <span>Menu</span></button>
     <nav class="tabs" id="tabs">
       <button class="tab" data-tab="howto">📖 How to</button>
        <button class="tab on" data-tab="draft">Draft Room</button>
@@ -1134,6 +1173,18 @@ window.__BUILD__='2026-08-21-16';
     <input type="file" id="fileIn" accept="application/json" class="hide">
   </div>
 </header>
+
+<!-- Mobile menu: every tool one tap away, plus the actions from the header. Built from the live tab
+     list so conditional tabs (Dynasty/Keepers/Contracts) and future ones are always included. -->
+<div id="mobileMenu" class="mmenu hide" role="dialog" aria-label="Menu" aria-modal="true">
+  <div class="mmenu-panel">
+    <div class="mmenu-head"><b>All tools</b><button class="mmenu-x" id="mMenuClose" aria-label="Close">✕</button></div>
+    <div class="mmenu-scroll">
+      <div id="mMenuTabs"></div>
+      <div class="mmenu-actions" id="mMenuActions"></div>
+    </div>
+  </div>
+</div>
 
 <div class="wrap">
   <!-- HOW-TO TAB -->
@@ -12172,7 +12223,48 @@ function showTab(name){
   // the copilot follows you: if it's open, re-point its prompts at the new tab
   try{ if(typeof aiRenderQuick==="function"&&$("#aiPanel")&&!$("#aiPanel").classList.contains("hide"))aiRenderQuick(); }catch(e){}
   try{ draftJumpSync(); }catch(e){}   // mobile draft-board jump pill follows the active tab
+  try{ const mt=$("#mNavTitle"); if(mt){ const m=MENU_META[name]; mt.textContent=m?m.label:name; } }catch(e){}
 }
+
+/* ---- Mobile menu: every tool one tap away (the desktop tab strip is hidden on phones) ---- */
+const MENU_META={
+  howto:{ic:"📖",label:"How to",desc:"Start here — how it all works",grp:""},
+  draft:{ic:"🎯",label:"Draft Room",desc:"Who to pick, live",grp:"Draft day"},
+  team:{ic:"🧠",label:"My Team",desc:"How good is my roster",grp:"Draft day"},
+  matchups:{ic:"📊",label:"Matchups",desc:"This week + live scores",grp:"In-season"},
+  season:{ic:"🗓️",label:"In-Season",desc:"Start/sit + your weekly moves",grp:"In-season"},
+  waivers:{ic:"💧",label:"Waiver Wire",desc:"Who to add, what to bid",grp:"In-season"},
+  injuries:{ic:"🚑",label:"Injuries",desc:"Who's hurt right now",grp:"In-season"},
+  trade:{ic:"🔁",label:"Trades",desc:"Deals + league intel",grp:"In-season"},
+  dynasty:{ic:"🏰",label:"Dynasty",desc:"Multi-year value",grp:"In-season"},
+  keepers:{ic:"🔒",label:"Keepers",desc:"Who to keep",grp:"In-season"},
+  cap:{ic:"💵",label:"Contracts",desc:"Cap & contracts",grp:"In-season"},
+  players:{ic:"📋",label:"Projections",desc:"Every player's numbers",grp:"Analysis"},
+  backtest:{ic:"🧪",label:"Backtest",desc:"Our track record, graded",grp:"Analysis"},
+  grades:{ic:"🅰️",label:"Grades",desc:"Grade my draft",grp:"Analysis"},
+  grader:{ic:"🔬",label:"Team Grader",desc:"Grade any roster deeply",grp:"Analysis"},
+  setup:{ic:"⚙️",label:"League Setup",desc:"Teams, scoring, sync",grp:"Setup"}
+};
+const MENU_GRP_ORDER=["","Draft day","In-season","Analysis","Setup"];
+function buildMobileMenu(){
+  const wrap=$("#mMenuTabs"); if(!wrap)return;
+  // sort into coherent groups (the DOM tab order interleaves them — Backtest sits among In-Season tabs)
+  const tabs=$$("#tabs .tab").filter(b=>!b.classList.contains("hide"))
+    .sort((a,b)=>MENU_GRP_ORDER.indexOf((MENU_META[a.dataset.tab]||{}).grp||"")-MENU_GRP_ORDER.indexOf((MENU_META[b.dataset.tab]||{}).grp||""));
+  let html="", lastGrp=null;
+  tabs.forEach(b=>{ const t=b.dataset.tab, m=MENU_META[t]||{ic:"•",label:(b.textContent||"").trim(),desc:"",grp:""};
+    if(m.grp!==lastGrp){ if(m.grp)html+=`<div class="mmenu-group">${m.grp}</div>`; lastGrp=m.grp; }
+    html+=`<button class="mmenu-item${b.classList.contains("on")?" on":""}" data-mtab="${t}">
+      <span class="mi-ic">${m.ic}</span><span>${m.label}${m.desc?`<span class="mi-desc">${m.desc}</span>`:""}</span></button>`; });
+  wrap.innerHTML=html;
+  wrap.querySelectorAll("[data-mtab]").forEach(b=>b.onclick=()=>{ showTab(b.dataset.mtab); closeMobileMenu(); window.scrollTo(0,0); });
+  const act=$("#mMenuActions");
+  if(act){ const A=[["mockBtn","🤖 Mock draft"],["exportBtn","↧ Save"],["importBtn","↥ Load"],["resetBtn","⟳ Reset"],["themeBtn","◐ Theme"]];
+    act.innerHTML=A.map(([id,lbl])=>`<button data-act="${id}">${lbl}</button>`).join("");
+    act.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>{ const el=document.getElementById(b.dataset.act); if(el)el.click(); if(b.dataset.act!=="themeBtn")closeMobileMenu(); }); }
+}
+function openMobileMenu(){ buildMobileMenu(); const m=$("#mobileMenu"); if(m)m.classList.remove("hide"); const b=$("#mNavBtn"); if(b)b.setAttribute("aria-expanded","true"); document.body.style.overflow="hidden"; }
+function closeMobileMenu(){ const m=$("#mobileMenu"); if(m)m.classList.add("hide"); const b=$("#mNavBtn"); if(b)b.setAttribute("aria-expanded","false"); document.body.style.overflow=""; }
 
 /* ---- theme ---- */
 function initTheme(){
@@ -12268,6 +12360,10 @@ function startLivePolling(){
 function init(){
   state=load();
   $$("#tabs .tab").forEach(t=>t.onclick=()=>showTab(t.dataset.tab));
+  if($("#mNavBtn"))$("#mNavBtn").onclick=openMobileMenu;
+  if($("#mMenuClose"))$("#mMenuClose").onclick=closeMobileMenu;
+  if($("#mobileMenu"))$("#mobileMenu").onclick=e=>{ if(e.target.id==="mobileMenu")closeMobileMenu(); };
+  try{ const mt=$("#mNavTitle"),cur=$("#tabs .tab.on"); if(mt&&cur){const m=MENU_META[cur.dataset.tab];mt.textContent=m?m.label:cur.textContent.trim();} }catch(e){}
   $("#search").oninput=e=>{state.ui.search=e.target.value;renderAvail();};
   $("#psearch").oninput=e=>{state.ui.psearch=e.target.value;renderPlayersTab();};
   // Small local helper: these two segs drive view state only, so they don't go through the
