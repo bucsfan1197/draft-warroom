@@ -975,7 +975,7 @@ def build_data():
     out={"PLAYERS":players,"BACKTEST":base["BACKTEST"],"SLOTVAL":base["SLOTVAL"],"OPENING":base["OPENING"],
          "DVP":(dvp_fo or base["DVP"]),"DVP_LIVE":bool(dvp_fo),"ADV_META":({"year":adv["year"],"current":adv["current"]} if adv else None),
          "SCHED":base["SCHED"],"CALIB":base["CALIB"],"KICK":kick_fo,"VEGAS":vegas_fo,"USAGE_WK":usage_fo,"INJ_REPORTS":inj_fo,"MONITOR":mon_fo,
-         "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),
+         "MISSRATE":base.get("MISSRATE"),"WEEKCV":base.get("WEEKCV"),"PROJFIX":base.get("PROJFIX"),"DRAWCV":base.get("DRAWCV"),"DECISIONS":base.get("DECISIONS"),
          "META":{"updated":time.strftime("%Y-%m-%d %H:%M"),"sources":"FFC+ESPN+Sleeper+Yahoo (live) · nflverse (historical)",
                  "drafts":ffc_drafts,"hist":"12 seasons (2014-25)","sfShift":sfShift,"health":HEALTH,
                  "usageEval":base.get("USAGE_EVAL"),

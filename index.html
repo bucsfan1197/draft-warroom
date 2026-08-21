@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-14';
+window.__BUILD__='2026-08-21-15';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -1646,6 +1646,10 @@ window.__BUILD__='2026-08-21-14';
     <div class="panel" style="margin-top:16px">
       <div class="hd"><h2>Model calibration — how accurate are these projections?</h2><span id="calibCtx" class="pickcounter" style="margin-left:auto"></span></div>
       <div class="bd" id="calibBox"></div>
+    </div>
+    <div class="panel" style="margin-top:16px" id="decisionPanel">
+      <div class="hd"><h2>Grading our own advice — are the start/sit calls right?</h2><span id="decCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd" id="decBox"></div>
     </div>
   </section>
 
@@ -11666,9 +11670,34 @@ function renderAccuracyMonitor(){
     <div style="margin-top:8px">${["QB","RB","WR","TE"].map(posRow).join("")}</div>
     <div class="meta" style="margin-top:8px">Scored live against nflverse results. "Bias" is actual-minus-projected this season; if it drifts far from the correction we shipped, the projections need re-tuning — and this is how we'd catch it.</div>`;
 }
+/* Grade the tool's own start/sit ADVICE, not just its projections. DECISIONS is baked from 2021-2025:
+   for every startable same-position pair, did the higher-projected player actually outscore the other?
+   The honest headline is that confident calls are trustworthy and toss-ups are near coin flips — which
+   is exactly what a manager needs to hear before benching a guy on a hunch. */
+function renderDecisions(){
+  const box=$("#decBox"); if(!box)return;
+  const d=(window.__FFDATA__||{}).DECISIONS, ss=d&&d.startSit;
+  if(!ss||ss.overall==null){ box.innerHTML=`<div class="meta">Fills in with the next data refresh.</div>`; return; }
+  if($("#decCtx"))$("#decCtx").textContent=`${ss.n.toLocaleString()} real start/sit calls · ${d.years}`;
+  const pct=x=>x==null?"—":Math.round(x*100)+"%";
+  const cls=x=>x>=0.68?"good":x>=0.58?"":"warn";
+  const card=(label,val,n,why)=>`<div class="rec" style="margin:0"><div class="eyebrow">${label}</div>
+    <div style="font-size:30px;font-weight:800;color:var(--${cls(val)==='good'?'good':cls(val)==='warn'?'warn':'ink'})">${pct(val)}</div>
+    <div class="why">${why} <span class="meta">(${(n||0).toLocaleString()} calls)</span></div></div>`;
+  box.innerHTML=`
+    <div class="note" style="margin-bottom:14px">The real Sunday question isn't "is the number close" — it's <b>"if I start who you say, am I right?"</b> For every past week 2021-2025 we took each pair of startable players at a position, started the higher-projected one, and checked whether he actually outscored the other. Out of sample, no peeking.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${card("Every start/sit call",ss.overall,ss.n,"right this often across all calls — a coin flip is 50%.")}
+      ${card("Clear calls (5+ pt gap)",ss.clear,ss.clearN,"when the projection is confident, trust it.")}
+      ${card("Leans (2–5 pt gap)",ss.lean,ss.leanN,"a real edge, worth following.")}
+      ${card("Toss-ups (&lt;2 pt gap)",ss.toss,ss.tossN,"barely better than a coin flip — because they genuinely are. Don't agonize.")}
+    </div>
+    <div class="note" style="margin-top:14px"><b>How to use it:</b> the bigger the projected gap between two players, the more you should trust the call. A 6-point edge is right about three times in four; a 1-point edge is a near-coin-flip, so decide on matchup, ceiling or your gut and don't lose sleep. That's the honest shape of start/sit — most tools hide it.</div>`;
+}
 function renderBacktest(){
   if($("#btAiBtn"))$("#btAiBtn").classList.toggle("hide",!aiConfigured());
   renderAccuracyMonitor();
+  try{ renderDecisions(); }catch(e){}
   const D=window.__FFDATA__; if(!D)return;
   const bt=D.BACKTEST[btKey()]||{}, teams=state.settings.teams, sf=isSF(), POS=["QB","RB","WR","TE"];
   $("#btLeague").textContent=`${teams}-team ${sf?'Superflex':'1QB'}`;
