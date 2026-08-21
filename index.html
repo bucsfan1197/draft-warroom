@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-5';
+window.__BUILD__='2026-08-21-6';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -1713,6 +1713,10 @@ window.__BUILD__='2026-08-21-5';
         <div id="tradeStatus" class="meta" style="margin-top:6px"><b>Type your Sleeper username, load your league, pick your team, hit Find trades.</b> It pulls every manager's real roster and ranks deals by how much each one raises <b>your</b> playoff and title odds — not by trade value.</div>
         <div id="tradeResults" style="margin-top:12px"></div>
       </div>
+    </div>
+    <div class="panel" style="margin-top:16px" id="leagueIntelPanel">
+      <div class="hd"><h2>🕵️ League intel — where your leaguemates are soft</h2><span id="lgIntelCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd" id="leagueIntelOut"><div class="emptystate">Load your league above and this profiles every manager — who to trade with (their thin spot vs your depth), who can outbid you on waivers (live FAAB left), and which teams are soft to buy from.</div></div>
     </div>
     <div class="panel" style="margin-top:16px">
       <div class="hd"><h2>Evaluate a specific offer</h2><span id="evalCtx" class="pickcounter" style="margin-left:auto"></span></div>
@@ -4551,7 +4555,7 @@ const TAB_RENDER={
   grades:  ()=>renderGrades(),
   grader:  ()=>renderGraderTeam(),
   setup:   ()=>renderReplBox(),
-  trade:   ()=>labCompute()             // the finder/evaluator below it build on demand
+  trade:   ()=>{labCompute(); try{renderLeagueIntel();}catch(e){}}   // finder/evaluator below build on demand
 };
 let TABDIRTY=Object.keys(TAB_RENDER).reduce((a,k)=>(a[k]=1,a),{});
 function activeTab(){
@@ -6910,7 +6914,8 @@ async function tradeLoadRosters(leagueId){
     // guess which team is yours
     const myUser=Object.keys(nameOf).find(id=>nameOf[id].toLowerCase()===(($("#syncUser").value||"").trim().toLowerCase()));
     const mi=TRADE.teams.findIndex(t=>t.owner===myUser); TRADE.me=mi>=0?mi:0; sel.value=String(TRADE.me);
-    sel.onchange=()=>{TRADE.me=+sel.value;};
+    sel.onchange=()=>{TRADE.me=+sel.value; try{renderLeagueIntel();}catch(e){}};
+    try{renderLeagueIntel();}catch(e){}
     TRADE.leagueIsDynasty=!!(lg&&lg.settings&&lg.settings.type===2);
     $("#tradeCtx").innerHTML=`${TRADE.teams.length} teams · ${TRADE.slots.join("/")}`
       +(TRADE.leagueIsDynasty&&state.settings.format!=="dynasty"
@@ -8253,6 +8258,85 @@ function findTrades(){
   tradeStatus("");
   renderTrades(shortlist.slice(0,6),base,slots,V,baseO.title);
 }
+
+/* ---- League intel: profile every manager from their live roster + FAAB, then turn it into edges
+   you can actually use. Public projections are efficient — the whole tool proves it — but YOUR
+   specific leaguemates are not, and their roster holes, FAAB posture and drops are where the real,
+   defensible edge lives. All from data already synced into TRADE.teams / TRADE.transactions. ---- */
+function teamPosStrength(players,req){
+  const by={QB:[],RB:[],WR:[],TE:[]};
+  (players||[]).forEach(p=>{ if(p&&!p.isPick&&by[p.pos]) by[p.pos].push(pts(p)); });
+  const out={};
+  for(const pos in by){ by[pos].sort((a,b)=>b-a);
+    const n=Math.max(1,Math.ceil((req[pos]||0)+1));   // starters at the spot, plus one for depth
+    out[pos]=by[pos].slice(0,n).reduce((a,b)=>a+b,0); }
+  return out;
+}
+function renderLeagueIntel(){
+  const out=$("#leagueIntelOut"); if(!out)return;
+  const ctx=$("#lgIntelCtx");
+  if(!leagueSynced()||!(TRADE.teams&&TRADE.teams.length>1)){
+    if(ctx)ctx.textContent="";
+    out.innerHTML=`<div class="emptystate">Load your league above and this profiles every manager — who to trade with (their thin spot vs your depth), who can outbid you on waivers (live FAAB left), and which teams are soft to buy from.</div>`;
+    return; }
+  const r=state.settings.roster||{}, POS=["QB","RB","WR","TE"];
+  const req={QB:(r.QB||0)+(r.SUPERFLEX||0)*0.5, RB:(r.RB||0)+(r.FLEX||0)*0.4,
+             WR:(r.WR||0)+(r.FLEX||0)*0.4, TE:(r.TE||0)+(r.FLEX||0)*0.2};
+  const faabMax=state.settings.faab||0, faabLeague=(state.settings.waiverType||"faab")==="faab";
+  const teams=TRADE.teams.map((t,i)=>({i,name:lastName(t.name||t.owner||("Team "+(i+1))),
+    full:t.name||t.owner||("Team "+(i+1)),
+    str:teamPosStrength(teamAssets(t),req),
+    faabLeft:Math.max(0,faabMax-(t.faabUsed||0))}));
+  const avg={}; POS.forEach(p=>avg[p]=teams.reduce((a,x)=>a+(x.str[p]||0),0)/(teams.length||1));
+  teams.forEach(x=>{ x.need={}; x.surp={};
+    POS.forEach(p=>{ const d=avg[p]-(x.str[p]||0); x.need[p]=Math.max(0,d); x.surp[p]=Math.max(0,-d); }); });
+  const me=teams[TRADE.me]||teams[0], others=teams.filter(x=>x.i!==me.i);
+  const posName={QB:"QB",RB:"RB",WR:"WR",TE:"TE"};
+
+  // 1) trade fit — complementary: I'm weak where they're deep, they're weak where I'm deep
+  const fits=others.map(o=>{
+    let get=null,give=null,gg=0,gv=0;
+    POS.forEach(p=>{ const a=Math.min(me.need[p],o.surp[p]); if(a>gg){gg=a;get=p;} });
+    POS.forEach(p=>{ const s=Math.min(o.need[p],me.surp[p]); if(s>gv){gv=s;give=p;} });
+    return {o,get,give,score:gg+gv};
+  }).filter(f=>f.get&&f.give&&f.get!==f.give&&f.score>10).sort((a,b)=>b.score-a.score).slice(0,3);
+
+  // 2) waiver competition — who can outbid you
+  const faab=others.slice().sort((a,b)=>b.faabLeft-a.faabLeft);
+  const flush=faab.filter(x=>x.faabLeft>=faabMax*0.5), broke=faab.filter(x=>x.faabLeft<=faabMax*0.15);
+
+  // 3) soft teams — weakest overall starting strength
+  const weak=others.map(o=>({o,tot:POS.reduce((a,p)=>a+(o.str[p]||0),0)})).sort((a,b)=>a.tot-b.tot).slice(0,2);
+
+  if(ctx)ctx.textContent=`${teams.length} managers · you are ${me.name}`;
+  const chip=(txt,cls)=>`<span class="chip ${cls||''}">${txt}</span>`;
+  let h="";
+
+  h+=`<div class="eyebrow" style="margin-bottom:7px">🤝 Best trade partners for you</div>`;
+  if(fits.length){ h+=`<div style="display:flex;flex-direction:column;gap:8px">`+fits.map(f=>
+    `<div class="rec" style="margin:0"><b>${f.o.full}</b> — send your <b>${posName[f.give]}</b> depth, get their <b>${posName[f.get]}</b>.
+      <div class="why">They're deep at ${posName[f.get]} and thin at ${posName[f.give]}; you're the mirror. A ${posName[f.give]}-for-${posName[f.get]} swap fills both holes.</div></div>`).join("")+`</div>`;
+  } else h+=`<div class="meta">No clean positional fit right now — every team's needs overlap yours. The Trade finder above still ranks deals by your title odds.</div>`;
+
+  if(faabLeague){
+    h+=`<div class="eyebrow" style="margin:16px 0 7px">💰 Waiver competition — who can outbid you (FAAB left of $${faabMax})</div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:6px">`+faab.map(x=>
+      chip(`${x.name} $${Math.round(x.faabLeft)}`, x.faabLeft>=faabMax*0.5?'good':x.faabLeft<=faabMax*0.15?'crit':'')).join("")+`</div>`;
+    h+=`<div class="meta" style="margin-top:6px">You have <b>$${Math.round(me.faabLeft)}</b>. ${
+      flush.length?`<b>${flush.map(x=>x.name).join(", ")}</b> ${flush.length===1?'is':'are'} flush and will push bids up — bid to win the ones you truly need.`:''} ${
+      broke.length?`<b>${broke.map(x=>x.name).join(", ")}</b> ${broke.length===1?'is':'are'} nearly out — claims those teams can't contest clear cheap.`:''}</div>`;
+  }
+
+  h+=`<div class="eyebrow" style="margin:16px 0 7px">🎯 Softest rosters — buy-from / sell-high targets</div>`;
+  h+=`<div class="meta">`+weak.map(w=>{
+    const wp=POS.slice().sort((a,b)=>(w.o.str[a]-avg[a])-(w.o.str[b]-avg[b]));
+    return `<b>${w.o.full}</b> is the ${weak.indexOf(w)===0?'weakest':'2nd-weakest'} roster (thinnest at ${posName[wp[0]]}). Good target to sell a surplus ${posName[wp[0]]} to at a premium, or to pry a startable ${posName[wp[wp.length-1]]} from cheaply.`;
+  }).join("<br>")+`</div>`;
+
+  h+=`<div class="note" style="margin-top:14px">Built entirely from your league's live rosters and FAAB — the one place a real edge exists, because your leaguemates aren't an efficient market. Pair it with the Trade finder (ranked by <i>your</i> title odds) and the Waiver Wire tab.</div>`;
+  out.innerHTML=h;
+}
+
 function renderTrades(list,base,slots,V,baseline){
   const box=$("#tradeResults");
   if(!list.length){box.innerHTML=`<div class="emptystate">No trade improves both teams right now — your roster is balanced against theirs.</div>`;return;}
