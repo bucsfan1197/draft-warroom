@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-17';
+window.__BUILD__='2026-08-21-18';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -1103,6 +1103,7 @@ window.__BUILD__='2026-08-21-17';
      tap-to-open menu that lists every tool. Desktop is untouched. ---- */
   .mnav-title,.mnav-btn{display:none}
   .mmenu{display:none}
+  .bottomnav{display:none}
   @media(max-width:760px){
     header.top .topin{flex-wrap:nowrap;gap:8px;padding:9px 12px;align-items:center}
     .brand span{display:none}
@@ -1132,6 +1133,25 @@ window.__BUILD__='2026-08-21-17';
     .mi-desc{font-size:11.5px;font-weight:500;color:var(--ink-2);display:block;margin-top:1px}
     .mmenu-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 8px 20px;border-top:1px solid var(--line);margin-top:10px}
     .mmenu-actions button{padding:13px;border-radius:11px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font-size:14px;font-weight:700;cursor:pointer}
+    /* Notch / home-indicator safety (the viewport is viewport-fit=cover): pad the sticky header below
+       the notch and lift the floating copilot + a bottom nav above the home indicator. */
+    header.top{padding-top:env(safe-area-inset-top,0px)}
+    #aiFab{bottom:calc(74px + env(safe-area-inset-bottom,0px))}
+    .mmenu-panel{padding-top:env(safe-area-inset-top,0px)}
+    /* Readability: raise the smallest caption text off 10.5px so it's legible on a phone. */
+    .meta{font-size:12px}
+    .eyebrow{font-size:11px}
+    .note{font-size:12.5px;line-height:1.55}
+    /* Bottom quick-nav */
+    .bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:150;
+      background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(12px);
+      border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 12px -6px rgba(0,0,0,.25)}
+    .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;
+      color:var(--ink-2);padding:8px 2px 7px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .bn-item.on{color:var(--accent)}
+    .bn-ic{font-size:19px;line-height:1}
+    .bn-lb{font-size:10.5px;letter-spacing:.01em}
+    .wrap{padding-bottom:calc(66px + env(safe-area-inset-bottom,0px))}
   }
   @keyframes mfade{from{opacity:0}to{opacity:1}}
   @keyframes mslide{from{transform:translateY(-12px);opacity:.6}to{transform:translateY(0);opacity:1}}
@@ -1185,6 +1205,10 @@ window.__BUILD__='2026-08-21-17';
     </div>
   </div>
 </div>
+
+<!-- Bottom quick-nav (mobile): the core-loop tools one tap away, so bouncing between them doesn't
+     need the full menu. Built by renderBottomNav(); "More" opens the full menu. -->
+<nav id="bottomNav" class="bottomnav" aria-label="Quick navigation"></nav>
 
 <div class="wrap">
   <!-- HOW-TO TAB -->
@@ -12224,6 +12248,7 @@ function showTab(name){
   try{ if(typeof aiRenderQuick==="function"&&$("#aiPanel")&&!$("#aiPanel").classList.contains("hide"))aiRenderQuick(); }catch(e){}
   try{ draftJumpSync(); }catch(e){}   // mobile draft-board jump pill follows the active tab
   try{ const mt=$("#mNavTitle"); if(mt){ const m=MENU_META[name]; mt.textContent=m?m.label:name; } }catch(e){}
+  try{ renderBottomNav(); }catch(e){}
 }
 
 /* ---- Mobile menu: every tool one tap away (the desktop tab strip is hidden on phones) ---- */
@@ -12265,6 +12290,18 @@ function buildMobileMenu(){
 }
 function openMobileMenu(){ buildMobileMenu(); const m=$("#mobileMenu"); if(m)m.classList.remove("hide"); const b=$("#mNavBtn"); if(b)b.setAttribute("aria-expanded","true"); document.body.style.overflow="hidden"; }
 function closeMobileMenu(){ const m=$("#mobileMenu"); if(m)m.classList.add("hide"); const b=$("#mNavBtn"); if(b)b.setAttribute("aria-expanded","false"); document.body.style.overflow=""; }
+
+/* Bottom quick-nav: the core-loop tools one tap away (draft day + the busiest in-season tools), plus
+   More for everything else. Stable set so it never shifts under you; active tab highlights. */
+const BOTTOM_NAV=[{tab:"draft",ic:"🎯",label:"Draft"},{tab:"season",ic:"🗓️",label:"Season"},
+  {tab:"waivers",ic:"💧",label:"Waivers"},{tab:"trade",ic:"🔁",label:"Trades"},{tab:"MORE",ic:"☰",label:"More"}];
+function renderBottomNav(){
+  const bn=$("#bottomNav"); if(!bn)return;
+  const active=(($$("section[id^='tab-']").find(s=>!s.classList.contains("hide"))||{}).id||"tab-draft").replace("tab-","");
+  bn.innerHTML=BOTTOM_NAV.map(b=>`<button class="bn-item${b.tab===active?" on":""}" data-bn="${b.tab}" aria-label="${b.label}">
+    <span class="bn-ic">${b.ic}</span><span class="bn-lb">${b.label}</span></button>`).join("");
+  bn.querySelectorAll("[data-bn]").forEach(b=>b.onclick=()=>{ if(b.dataset.bn==="MORE"){openMobileMenu();} else {closeMobileMenu();showTab(b.dataset.bn);window.scrollTo(0,0);} });
+}
 
 /* ---- theme ---- */
 function initTheme(){
@@ -12364,6 +12401,7 @@ function init(){
   if($("#mMenuClose"))$("#mMenuClose").onclick=closeMobileMenu;
   if($("#mobileMenu"))$("#mobileMenu").onclick=e=>{ if(e.target.id==="mobileMenu")closeMobileMenu(); };
   try{ const mt=$("#mNavTitle"),cur=$("#tabs .tab.on"); if(mt&&cur){const m=MENU_META[cur.dataset.tab];mt.textContent=m?m.label:cur.textContent.trim();} }catch(e){}
+  try{ renderBottomNav(); }catch(e){}
   $("#search").oninput=e=>{state.ui.search=e.target.value;renderAvail();};
   $("#psearch").oninput=e=>{state.ui.psearch=e.target.value;renderPlayersTab();};
   // Small local helper: these two segs drive view state only, so they don't go through the
