@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-19';
+window.__BUILD__='2026-08-21-20';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -12437,6 +12437,9 @@ function init(){
   if($("#mobileMenu"))$("#mobileMenu").onclick=e=>{ if(e.target.id==="mobileMenu")closeMobileMenu(); };
   try{ const mt=$("#mNavTitle"),cur=$("#tabs .tab.on"); if(mt&&cur){const m=MENU_META[cur.dataset.tab];mt.textContent=m?m.label:cur.textContent.trim();} }catch(e){}
   try{ renderBottomNav(); }catch(e){}
+  // Mobile keyboards: pop the decimal keypad for fractional fields (scoring like 0.04/0.5) and the
+  // plain numeric one for whole-number fields (teams, slot, budget) — type=number alone is inconsistent.
+  try{ $$("input[type=number]").forEach(i=>{ const st=parseFloat(i.step); i.setAttribute("inputmode", (st>0&&st<1)?"decimal":"numeric"); }); }catch(e){}
   $("#search").oninput=e=>{state.ui.search=e.target.value;renderAvail();};
   $("#psearch").oninput=e=>{state.ui.psearch=e.target.value;renderPlayersTab();};
   // Small local helper: these two segs drive view state only, so they don't go through the
