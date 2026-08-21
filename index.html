@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-13';
+window.__BUILD__='2026-08-21-14';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -2926,6 +2926,22 @@ function simMatchupLive(A,B,iters){
   for(let i=0;i<N;i++){ const a=drawScoreLive(A), b=drawScoreLive(B); mg.push(a-b);
     if(Math.abs(a-b)<0.05)tie++; else if(a>b)win++; }
   return {p:(win+tie/2)/N, margin:mg};
+}
+/* Which of YOUR remaining players the game actually hinges on. Pinning a unit to a fixed final (via
+   live:{pts,frac:0} → a deterministic draw) lets us re-sim with him at a good day vs a bad day; the
+   gap in win probability IS his leverage. Turns "you're 55%" into "you're 55%, and it's all riding on
+   this guy tonight" — the thing you actually want to know while the games are on. */
+function liveLeverage(A,B){
+  const rem=A.filter(u=>!u.live||(u.live&&u.live.frac>0));   // your starters with snaps still to come
+  if(!rem.length)return [];
+  const pin=(u,val)=>Object.assign({},u,{live:{pts:val,frac:0,state:"post"}});
+  return rem.map(u=>{
+    const cur=u.live?u.live.pts:0, remProj=Math.max(0,(u.live?u.base*u.mult*u.live.frac:u.base*u.mult));
+    const hi=A.map(x=>x===u?pin(u,cur+remProj*1.6):x);       // a good rest-of-game for him (~p85 of what's left)
+    const lo=A.map(x=>x===u?pin(u,cur+remProj*0.35):x);      // a bad one (~p15)
+    const pHi=simMatchupLive(hi,B,1200).p, pLo=simMatchupLive(lo,B,1200).p;
+    return {u,swing:Math.abs(pHi-pLo),pHi:Math.max(pHi,pLo),pLo:Math.min(pHi,pLo),remProj};
+  }).filter(x=>x.remProj>0.5).sort((a,b)=>b.swing-a.swing);
 }
 // points already banked (final + in-progress) vs the projected final mean, for a lineup
 function liveNow(units){ let t=0; for(const u of units) if(u.live) t+=u.live.pts; return t; }
@@ -10315,6 +10331,16 @@ function renderLiveMatchup(A,B,opp,wk){
         ? `You're <b>ahead of their projected finish</b> — hold serve and this is yours. ${remLine}.`
         : `You need about <b>${fmt(need)}</b> more to reach their projected <b>${fmt(oppMean)}</b>. ${remLine}${remB.length?`; they have ${remB.length} left (${fmt(oppLeft)} to come)`:``}.`}
     </div>
+    ${(()=>{ if(pctL>=97||pctL<=3||!remA.length)return "";
+      const lev=liveLeverage(liveA,liveB); if(!lev.length)return "";
+      const top=lev.slice(0,3).filter(x=>x.swing>=0.04);
+      if(!top.length)return "";
+      const one=top[0];
+      return `<div class="liveNeed" style="border-top:1px dashed var(--line);margin-top:0">
+        🎯 <b>Riding on ${one.u.pl.name}</b> tonight — ${Math.round(one.pHi*100)}% if he goes off, ${Math.round(one.pLo*100)}% if he flops (a <b>${Math.round(one.swing*100)}-point</b> win-prob swing).${
+          top.length>1?` Then ${top.slice(1).map(x=>`${x.u.pl.name} (±${Math.round(x.swing*100)})`).join(", ")}.`:""}
+        <span class="meta"> Root hardest for the top name — that's where your night is decided.</span></div>`;
+    })()}
     <div class="mchartwrap" style="margin-top:6px">${marginChart(sim.margin,p)}
       <div class="meta" style="margin-top:4px">Same simulation as before kickoff, with the clock folded in: finished players are locked, players in-game keep only the swing of the snaps they have left. That's why this moves as the games do.</div></div>
     <div class="grid-draft" style="grid-template-columns:1fr 1fr;margin-top:10px;gap:14px">
