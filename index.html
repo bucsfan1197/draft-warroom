@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-4';
+window.__BUILD__='2026-08-21-5';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -6529,6 +6529,44 @@ function selfTest(){
           `imported K:${R.K} DST:${R.DST} SF:${R.SUPERFLEX}${iss.length?" — "+iss.join("; "):""}`);
       state.settings=_save;
     }catch(e){ add("A league with a kicker & defense imports them",false,String(e)); }
+    // 3c. migration / saved-draft healing — every bug in this class hit a real saved draft while a
+    //     fresh browser looked fine, so it never showed up until a user reported it. These run migrate()
+    //     on synthetic old saves (clones — never the live state) and assert the pool heals correctly.
+    try{
+      const D=window.__FFDATA__;
+      const base=()=>JSON.parse(JSON.stringify({settings:state.settings,players:state.players,picks:[],ui:state.ui}));
+      const ja=st=>st.players.find(p=>p.pos==="QB"&&nrm(p.name)==="josh allen");
+      const pk=p=>p.pos==="DST"?"DST:"+(p.team||nrm(p.name)):p.pos+":"+nrm(p.name);
+
+      const s1=base(); s1.settings._projv=21; s1.players.forEach(p=>delete p.h25);
+      const missingBefore=ja(s1)&&!ja(s1).h25; migrate(s1);
+      add("A data field added after your last save still reaches a saved draft",
+          !!missingBefore && !!(ja(s1)&&ja(s1).h25), missingBefore?"h25 backfilled on load":"scenario invalid");
+
+      const s2=base(); s2.ui.psearch="Josh Allen"; s2.ui.search="Josh Allen"; migrate(s2);
+      add("A search that was live at save time never hides the board on reload",
+          s2.ui.psearch===""&&s2.ui.search==="",`psearch="${s2.ui.psearch}"`);
+
+      const s3=base(); const t3=ja(s3); t3.override=999; t3.age=41; s3.settings._projv=0;
+      migrate(s3); const a3=ja(s3);
+      add("Your manual edits (fixed total, age) survive a data refresh",
+          a3&&a3.override===999&&a3.age===41,`override=${a3&&a3.override} age=${a3&&a3.age}`);
+
+      const s4=base(); const ids=s4.players.slice(0,5).map(p=>p.id);
+      s4.picks=ids.map((id,i)=>({playerId:id,teamIdx:i})); s4.settings._projv=0; migrate(s4);
+      const resolved=s4.picks.length&&s4.picks.every(p=>s4.players.some(q=>q.id===p.playerId));
+      add("Your draft picks survive a data refresh and still point at real players",
+          s4.picks.length===5&&resolved,`${s4.picks.length} picks, all resolve=${!!resolved}`);
+
+      const s5=base(); s5.settings._projv=0; migrate(s5);
+      const keys=s5.players.map(pk), dups=keys.length-new Set(keys).size;
+      add("Migration never loses or duplicates players",
+          s5.players.length>=D.PLAYERS.length&&dups===0,`${s5.players.length} players, ${dups} dups`);
+
+      const s6=base(); delete s6.settings.scoring.idpSolo; migrate(s6);
+      add("Scoring/roster keys added since your save get defaults, not zero",
+          s6.settings.scoring.idpSolo!=null,`idpSolo=${s6.settings.scoring.idpSolo}`);
+    }catch(e){ add("Saved-draft migration heals cleanly",false,String(e)); }
     // 4. simulator
     let simOk=true; try{ runSim(60); }catch(e){ simOk=false; }
     add("Championship simulator runs",simOk,"");
