@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-8';
+window.__BUILD__='2026-08-21-9';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -8323,9 +8323,11 @@ function renderLeagueIntel(){
   } else h+=`<div class="meta">No clean positional fit right now — every team's needs overlap yours. The Trade finder above still ranks deals by your title odds.</div>`;
 
   if(faabLeague){
-    h+=`<div class="eyebrow" style="margin:16px 0 7px">💰 Waiver competition — who can outbid you (FAAB left of $${faabMax})</div>`;
+    h+=`<div class="eyebrow" style="margin:16px 0 7px">💰 Waiver competition — who can outbid you (FAAB budget $${faabMax})</div>`;
     h+=`<div style="display:flex;flex-wrap:wrap;gap:6px">`+faab.map(x=>
-      chip(`${x.name} $${Math.round(x.faabLeft)}`, x.faabLeft>=faabMax*0.5?'good':x.faabLeft<=faabMax*0.15?'crit':'')).join("")+`</div>`;
+      chip(`${x.name} $${Math.round(x.faabLeft)}${x.faabLeft>faabMax?" ⬆":""}`, x.faabLeft>=faabMax*0.5?'good':x.faabLeft<=faabMax*0.15?'crit':'')).join("")+`</div>`;
+    const traded=faab.filter(x=>x.faabLeft>faabMax);
+    if(traded.length)h+=`<div class="meta" style="margin-top:4px">⬆ ${traded.map(x=>x.name).join(", ")} ${traded.length===1?"has":"have"} <b>more than the $${faabMax} budget</b> — they traded for extra FAAB and will dominate the wire. Assume they outbid you on anything they want.</div>`;
     h+=`<div class="meta" style="margin-top:6px">You have <b>$${Math.round(me.faabLeft)}</b>. ${
       flush.length?`<b>${flush.map(x=>x.name).join(", ")}</b> ${flush.length===1?'is':'are'} flush and will push bids up — bid to win the ones you truly need.`:''} ${
       broke.length?`<b>${broke.map(x=>x.name).join(", ")}</b> ${broke.length===1?'is':'are'} nearly out — claims those teams can't contest clear cheap.`:''}</div>`;
@@ -8846,8 +8848,14 @@ function weeklyDigest(roster,w){
   }catch(e){}
   try{ const wb=waiverBoard(roster,w,to,1);
     if(wb&&wb.rows&&wb.rows[0]&&wb.rows[0].gain>0.3){ const r=wb.rows[0];
+      // Don't recommend blowing FAAB on a marginal add — on a thin/deep-league wire the bid engine
+      // concentrates the whole budget on the only qualifier, but a sub-1-pt/week add isn't worth it.
+      const weeksLeft=Math.max(1,18-w+1), perWk=r.gain/weeksLeft;
+      const bidTxt = !r.bid ? "" : perWk<1
+        ? ` It's depth, not a difference-maker — a <b>low/min bid</b> at most, or pass.`
+        : ` Suggested FAAB <b>$${r.bid}</b> (clears the market, no overpay).`;
       acts.push({u:2,icon:"📈",t:`Best waiver add: ${r.p.name} (${r.p.pos})`,
-        d:`+${fmt(r.gain)} pts rest-of-season.${r.bid?` Suggested FAAB <b>$${r.bid}</b> (clears the market, no overpay).`:""}${wb.drop?` Drop ${wb.drop.name}.`:""}`,jump:"waivers"}); }
+        d:`+${fmt(r.gain)} pts rest-of-season.${bidTxt}${wb.drop?` Drop ${wb.drop.name}.`:""}`,jump:"waivers"}); }
   }catch(e){}
   try{ const f=bestTradeFit(); if(f)acts.push({u:1,icon:"🤝",t:`Trade angle: deal with ${lastName(f.name)}`,
       d:`Send your <b>${f.give}</b> depth for their <b>${f.get}</b> — fills both rosters' holes. Open the Trades tab to price it by your title odds.`,jump:"trade"}); }catch(e){}
