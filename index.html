@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-12';
+window.__BUILD__='2026-08-21-13';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -6972,7 +6972,9 @@ async function loadTransactions(leagueId,lg){
   try{
     const bySid={}; state.players.forEach(p=>{if(p.sid)bySid[String(p.sid)]=p;});
     const leg=Math.max(1,Math.min(18,(lg&&lg.settings&&lg.settings.leg)||1));
-    const weeks=[]; for(let w=leg;w>=Math.max(1,leg-3);w--)weeks.push(w);
+    // Pull the FULL season, not just the last 4 weeks — the behavioral read (who churns the wire, who
+    // hoards FAAB, who panic-drops) needs the whole history; a 4-week window can't see a tendency.
+    const weeks=[]; for(let w=leg;w>=1;w--)weeks.push(w);
     const batches=await Promise.all(weeks.map(w=>
       SJ(`https://api.sleeper.app/v1/league/${leagueId}/transactions/${w}`).catch(()=>null)));
     const all=[];
@@ -6985,7 +6987,7 @@ async function loadTransactions(leagueId,lg){
         bid:(t.settings&&t.settings.waiver_bid)||null,when:t.created||0,rosters:t.roster_ids||[]});
     });});
     all.sort((a,b)=>b.when-a.when);
-    TRADE.transactions=all.slice(0,40);
+    TRADE.transactions=all.slice(0,200);   // keep the season, not just 40 — the behavior model reads it all
   }catch(e){ TRADE.transactions=[]; }
 }
 /* The freshest waiver targets: players a leaguemate just cut who are still unclaimed, ranked by
@@ -8276,6 +8278,35 @@ function teamPosStrength(players,req){
     out[pos]=by[pos].slice(0,n).reduce((a,b)=>a+b,0); }
   return out;
 }
+
+/* A player worth rostering — the bar for a drop being "notable" (a manager giving up on an asset)
+   rather than routine roster churn. Season-point floors, deliberately generous. */
+const STARTABLE_FLOOR={QB:220,RB:110,WR:110,TE:85};
+/* Read how each manager BEHAVES from the season's transaction history — not just what they roster.
+   Public markets are efficient; a specific manager who churns the wire, hoards FAAB, or bails on
+   assets after a cold week is not, and that's an edge nothing else surfaces. */
+function leagueBehavior(){
+  if(!leagueSynced()||!(TRADE.teams&&TRADE.teams.length))return null;
+  const txns=TRADE.transactions||[];
+  const byRid={};
+  TRADE.teams.forEach((t,i)=>{ const rid=t.rosterId; if(rid==null)return;
+    byRid[rid]={name:lastName(t.name||t.owner||("Team "+(i+1))), full:t.name||t.owner||("Team "+(i+1)),
+      adds:0, drops:0, faabBids:0, faabSpent:0}; });
+  let totalMoves=0;
+  txns.forEach(tx=>{
+    (tx.adds||[]).forEach(a=>{ const b=byRid[a.rid]; if(b){b.adds++; totalMoves++; if(tx.bid>0){b.faabBids++; b.faabSpent+=tx.bid;}} });
+    (tx.drops||[]).forEach(d=>{ const b=byRid[d.rid]; if(b){b.drops++; totalMoves++;} });
+  });
+  // notable recent drops: startable-projected players someone gave up on (buy-low / wire signal)
+  const rostered=rosteredIds();
+  const seen=new Set(), drops=[];
+  txns.forEach(tx=>(tx.drops||[]).forEach(d=>{ if(!d.pl||seen.has(d.pl.id))return;
+    if(pts(d.pl) >= (STARTABLE_FLOOR[d.pl.pos]||9999)){ seen.add(d.pl.id);
+      drops.push({pl:d.pl, week:tx.week, available:!rostered.has(d.pl.id)}); } }));
+  drops.sort((a,b)=>b.week-a.week);
+  return {byRid, drops, totalMoves, weeksOfData:new Set(txns.map(t=>t.week)).size};
+}
+
 function renderLeagueIntel(){
   const out=$("#leagueIntelOut"); if(!out)return;
   const ctx=$("#lgIntelCtx");
@@ -8339,7 +8370,36 @@ function renderLeagueIntel(){
     return `<b>${w.o.full}</b> is the ${weak.indexOf(w)===0?'weakest':'2nd-weakest'} roster (thinnest at ${posName[wp[0]]}). Good target to sell a surplus ${posName[wp[0]]} to at a premium, or to pry a startable ${posName[wp[wp.length-1]]} from cheaply.`;
   }).join("<br>")+`</div>`;
 
-  h+=`<div class="note" style="margin-top:14px">Built entirely from your league's live rosters and FAAB — the one place a real edge exists, because your leaguemates aren't an efficient market. Pair it with the Trade finder (ranked by <i>your</i> title odds) and the Waiver Wire tab.</div>`;
+  // ---- behavioral read from the season's transaction history ----
+  const beh=leagueBehavior();
+  if(beh){
+    h+=`<div class="eyebrow" style="margin:16px 0 7px">🧠 How your leaguemates behave</div>`;
+    if(beh.totalMoves<4){
+      h+=`<div class="meta">Not enough transaction history yet — this reads the whole season's adds, drops and FAAB spending to flag who churns the wire, who hoards budget, and who bails on good players (your buy-low list). It fills in fast once the waiver moves start.</div>`;
+    } else {
+      const mv=Object.values(beh.byRid).map(b=>({...b,moves:b.adds+b.drops})).sort((a,b)=>b.moves-a.moves);
+      const avgMoves=mv.reduce((a,b)=>a+b.moves,0)/(mv.length||1);
+      const tags=mv.filter(b=>b.full!==me.full).map(b=>{
+        const teamObj=TRADE.teams.find(t=>(t.name||t.owner)===b.full)||{};
+        const faabLeft=faabMax-(teamObj.faabUsed||0);   // REAL budget left, not just bids in this window
+        let tag="", cls="";
+        if(b.moves>=Math.max(4,avgMoves*1.6)){tag="churns the wire";cls="warn";}      // predictable overreactor
+        else if(faabMax>0 && faabLeft>=faabMax*0.85 && b.moves<=2){tag="sitting on FAAB — will strike late";cls="good";}
+        else if(b.moves<=1){tag="passive — set-and-forget";cls="";}                    // won't contest your claims
+        return tag?`<span class="chip ${cls}">${b.name}: ${tag} (${b.moves} move${b.moves===1?"":"s"})</span>`:"";
+      }).filter(Boolean);
+      h+=tags.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${tags.join("")}</div>`
+        :`<div class="meta">Everyone's been about equally active so far — no standout tendencies to exploit yet.</div>`;
+    }
+    if(beh.drops.length){
+      const avail=beh.drops.filter(d=>d.available).slice(0,4), gone=beh.drops.filter(d=>!d.available).slice(0,3);
+      h+=`<div class="eyebrow" style="margin:14px 0 7px">🎣 Buy-low board — startable players your league gave up on</div>`;
+      if(avail.length)h+=`<div class="meta"><b>On the wire now</b> (grab them): `+avail.map(d=>`${d.pl.name} (${d.pl.pos}, dropped wk ${d.week})`).join(" · ")+`</div>`;
+      if(gone.length)h+=`<div class="meta" style="margin-top:4px"><b>Already re-rostered</b> — the manager who dropped them misjudged; worth a buy-low offer: `+gone.map(d=>`${d.pl.name} (${d.pl.pos})`).join(" · ")+`</div>`;
+    }
+  }
+
+  h+=`<div class="note" style="margin-top:14px">Built entirely from your league's live rosters, FAAB and transaction history — the one place a real edge exists, because your leaguemates aren't an efficient market. Pair it with the Trade finder (ranked by <i>your</i> title odds) and the Waiver Wire tab.</div>`;
   out.innerHTML=h;
 }
 
