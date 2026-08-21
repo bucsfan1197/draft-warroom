@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-10';
+window.__BUILD__='2026-08-21-11';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -9946,9 +9946,11 @@ function waiverBoard(roster,from,to,limit){
   const worthFrac=gain=>{ const pw=gain/weeksLeft;
     if(pw<0.5)return 0;                        // less than half a point a week = not worth FAAB
     return CAP*Math.pow(pw,A)/(Math.pow(pw,A)+Math.pow(H,A)); };
-  // the league's real FAAB market, when we have transaction history — "a bid only needs to clear this"
+  // the league's real FAAB market, when we have ENOUGH transaction history to be a signal and not
+  // preseason noise — "a bid only needs to clear this". A couple of early $1-2 claims say nothing
+  // about what a league pays for a real add, so below a handful of bids we trust the value model alone.
   const winBids=(TRADE.transactions||[]).filter(t=>t&&t.bid>0).map(t=>t.bid).sort((a,b)=>a-b);
-  const mkHigh=winBids.length?winBids[winBids.length-1]:null;
+  const mkHigh=winBids.length>=6?winBids[winBids.length-1]:null;
   rows.forEach(r=>{
     const frac=worthFrac(r.gain);
     let bid=remaining*frac;
