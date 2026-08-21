@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-7';
+window.__BUILD__='2026-08-21-8';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -8854,6 +8854,34 @@ function weeklyDigest(roster,w){
   return acts.sort((a,b)=>b.u-a.u).slice(0,5);
 }
 
+/* Decision-first: put a real number on the digest. Convert the biggest available move into an actual
+   change in your championship odds by simulating the rest of the season against your league's real
+   rosters, so "best add: +75 pts" becomes "+2.3% to win it all" — the currency that actually matters. */
+function runDigestEquity(roster,w){
+  const out=$("#digestEquityOut"); if(!out)return;
+  if(!leagueSynced()||!TRADE.slots||!(TRADE.teams&&TRADE.teams[TRADE.me])){
+    out.innerHTML=`<div class="meta">Sync your live league on the Trades tab to weigh these by real title odds.</div>`; return; }
+  out.innerHTML=`<span class="aithinking">simulating the rest of your season…</span>`;
+  setTimeout(()=>{ try{
+    const iters=400, rosters=TRADE.teams.map(t=>t.players);
+    const base=oddsForRosters(rosters,TRADE.slots,iters).titleRaw;   // fraction, unrounded — deltas need the precision
+    const rows=[`<div class="kv"><span>Your title odds right now</span><b>${(base*100).toFixed(1)}%</b></div>`];
+    const wb=waiverBoard(roster,w,18,1);
+    if(wb&&wb.rows&&wb.rows[0]){ const r=wb.rows[0];
+      const mine=TRADE.teams[TRADE.me].players;
+      const newMine=mine.filter(p=>!wb.drop||p.id!==wb.drop.id).concat([r.p]);
+      const after=oddsForRosters(TRADE.teams.map((t,i)=>i===TRADE.me?newMine:t.players),TRADE.slots,iters).titleRaw;
+      const d=(after-base)*100;
+      rows.push(`<div class="kv"><span>Add <b>${r.p.name}</b>${wb.drop?` (drop ${lastName(wb.drop.name)})`:""}</span><b style="color:${d>=0.05?'var(--good)':d<=-0.05?'var(--crit)':'var(--ink-2)'}">${d>=0?'+':''}${d.toFixed(1)}% title odds</b></div>`);
+    }
+    const f=bestTradeFit();
+    if(f)rows.push(`<div class="kv"><span>Trade angle with ${lastName(f.name)} (${f.give}→${f.get})</span><b class="meta">price it on the Trades tab</b></div>`);
+    rows.push(`<div class="meta" style="margin-top:6px">Full-season Monte Carlo (${iters} seasons) from week ${w}, against your league's real rosters. Lineup fixes above are smaller but <b>certain</b> — do those first; a % here is season-long equity.</div>`);
+    out.innerHTML=rows.join("");
+  }catch(e){ out.innerHTML=`<div class="meta">Couldn't weigh this — ${String(e).slice(0,90)}</div>`; }
+  },30);
+}
+
 function renderInSeason(){
   const sel=$("#seasonWeek"); if(!sel)return;
   if(!sel.options.length){
@@ -8880,7 +8908,10 @@ function renderInSeason(){
           ${a.jump?`<button class="ghost sm" data-dgjump="${a.jump}" style="white-space:nowrap">Open →</button>`:""}
         </div>`).join("")+`</div>`
        :`<div class="meta">✅ Nothing urgent this week — your lineup is set, no clear upgrade on the wire, and no clean trade angle. Sit tight.</div>`;
+      if(acts.length&&leagueSynced()&&TRADE.slots)
+        dg.innerHTML+=`<div style="margin-top:12px"><button class="ghost sm" id="digestEquityBtn">⚖️ Weigh these by title odds</button><div id="digestEquityOut" style="margin-top:8px"></div></div>`;
       dg.querySelectorAll("[data-dgjump]").forEach(b=>b.onclick=()=>showTab(b.dataset.dgjump));
+      const eb=$("#digestEquityBtn"); if(eb)eb.onclick=()=>runDigestEquity(roster,w);
     }
   }
   const ss=$("#startSit");
