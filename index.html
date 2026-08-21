@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-6';
+window.__BUILD__='2026-08-21-7';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -1806,6 +1806,10 @@ window.__BUILD__='2026-08-21-6';
   <section id="tab-season" class="hide">
     <div class="panel" style="margin-bottom:14px" id="seasonSyncPanel">
       <div class="bd" style="padding:12px 16px"><div id="seasonSync" class="syncrow" style="align-items:center"></div></div>
+    </div>
+    <div class="panel" style="margin-bottom:14px" id="weekDigestPanel">
+      <div class="hd"><h2>🎯 This week — your highest-leverage moves</h2><span id="digestCtx" class="pickcounter" style="margin-left:auto"></span></div>
+      <div class="bd" id="weekDigest"></div>
     </div>
     <div class="panel hide" style="margin-bottom:14px" id="seasonBriefPanel">
       <div class="hd"><h2>🤖 Plan my week</h2>
@@ -8807,6 +8811,49 @@ function renderSeasonSync(){
     if($("#seasonUser"))$("#seasonUser").onkeydown=e=>{if(e.key==="Enter")go();};
   }
 }
+/* Best complementary trade partner (compact version of the League-intel fit, reused by the digest). */
+function bestTradeFit(){
+  if(!leagueSynced()||!(TRADE.teams&&TRADE.teams.length>1))return null;
+  const r=state.settings.roster||{}, POS=["QB","RB","WR","TE"];
+  const req={QB:(r.QB||0)+(r.SUPERFLEX||0)*0.5,RB:(r.RB||0)+(r.FLEX||0)*0.4,WR:(r.WR||0)+(r.FLEX||0)*0.4,TE:(r.TE||0)+(r.FLEX||0)*0.2};
+  const teams=TRADE.teams.map((t,i)=>({i,name:t.name||t.owner||("Team "+(i+1)),str:teamPosStrength(teamAssets(t),req)}));
+  const avg={};POS.forEach(p=>avg[p]=teams.reduce((a,x)=>a+(x.str[p]||0),0)/(teams.length||1));
+  teams.forEach(x=>{x.need={};x.surp={};POS.forEach(p=>{const d=avg[p]-(x.str[p]||0);x.need[p]=Math.max(0,d);x.surp[p]=Math.max(0,-d);});});
+  const me=teams[TRADE.me]||teams[0]; let best=null;
+  teams.filter(x=>x.i!==me.i).forEach(o=>{ let get=null,give=null,gg=0,gv=0;
+    POS.forEach(p=>{const a=Math.min(me.need[p],o.surp[p]);if(a>gg){gg=a;get=p;}});
+    POS.forEach(p=>{const s=Math.min(o.need[p],me.surp[p]);if(s>gv){gv=s;give=p;}});
+    if(get&&give&&get!==give&&gg+gv>10&&(!best||gg+gv>best.score))best={name:o.name,get,give,score:gg+gv}; });
+  return best;
+}
+
+/* Weekly digest: assemble the start/sit, waiver and trade engines into ONE ranked to-do list, so the
+   sim's power becomes action instead of something you dig for. Works with no AI key — the "Plan my
+   week" panel below is the optional AI narration of the same picture. Ranked by urgency: a hole in
+   your lineup (injury/empty/bye) is worth more than a marginal add, which is worth more than a trade. */
+function weeklyDigest(roster,w){
+  const acts=[], to=18;
+  try{ injuryReplacements(roster,w,to).forEach(x=>{ if(!x.fill)return;
+    acts.push({u:4,icon:"🚑",t:`Replace ${x.starter.name} (${x.starter.inj}) at ${slotLabel(x.slot)}`,
+      d:`Best fit on the wire: <b>${x.fill.name}</b> (${x.fill.pos}).`,jump:"waivers"}); }); }catch(e){}
+  try{ const L=weeklyLineup(roster,w);
+    const empties=L.slots.filter(s=>!s.pl).map(s=>slotLabel(s.slot));
+    const byes=L.slots.filter(s=>s.pl&&s.pl.bye===w).map(s=>s.pl.name);
+    if(empties.length)acts.push({u:4,icon:"⚠️",t:`${empties.length} empty starting slot${empties.length>1?"s":""} (${empties.join(", ")})`,
+      d:"Every empty slot is zero points — fill from your bench or the wire.",jump:"waivers"});
+    if(byes.length)acts.push({u:3,icon:"🗓️",t:`${byes.length} starter${byes.length>1?"s are":" is"} on bye (${byes.join(", ")})`,
+      d:"Cover the spot this week — the lineup below already shows your best legal fill.",jump:"waivers"});
+  }catch(e){}
+  try{ const wb=waiverBoard(roster,w,to,1);
+    if(wb&&wb.rows&&wb.rows[0]&&wb.rows[0].gain>0.3){ const r=wb.rows[0];
+      acts.push({u:2,icon:"📈",t:`Best waiver add: ${r.p.name} (${r.p.pos})`,
+        d:`+${fmt(r.gain)} pts rest-of-season.${r.bid?` Suggested FAAB <b>$${r.bid}</b> (clears the market, no overpay).`:""}${wb.drop?` Drop ${wb.drop.name}.`:""}`,jump:"waivers"}); }
+  }catch(e){}
+  try{ const f=bestTradeFit(); if(f)acts.push({u:1,icon:"🤝",t:`Trade angle: deal with ${lastName(f.name)}`,
+      d:`Send your <b>${f.give}</b> depth for their <b>${f.get}</b> — fills both rosters' holes. Open the Trades tab to price it by your title odds.`,jump:"trade"}); }catch(e){}
+  return acts.sort((a,b)=>b.u-a.u).slice(0,5);
+}
+
 function renderInSeason(){
   const sel=$("#seasonWeek"); if(!sel)return;
   if(!sel.options.length){
@@ -8821,6 +8868,21 @@ function renderInSeason(){
   const ctx=$("#seasonCtx"); if(ctx)ctx.textContent=leagueSynced()
     ? `week ${w} · live from your league · ${TRADE.teams[TRADE.me]?TRADE.teams[TRADE.me].name:"your team"}`
     : `week ${w} · adjusted for who they play`;
+  // highest-leverage weekly moves — the computed, no-AI-key version of "Plan my week"
+  const dg=$("#weekDigest"), dgc=$("#digestCtx");
+  if(dg){
+    if(!roster.length){ dg.innerHTML=`<div class="emptystate">Sync your league or draft a roster and this becomes your weekly to-do list — the lineup fixes, the waiver add worth your FAAB, and the trade angle.</div>`; if(dgc)dgc.textContent=""; }
+    else { const acts=weeklyDigest(roster,w); if(dgc)dgc.textContent=`week ${w}`;
+      dg.innerHTML=acts.length?`<div style="display:flex;flex-direction:column;gap:8px">`+acts.map((a,i)=>
+        `<div class="rec" style="margin:0;display:flex;align-items:flex-start;gap:10px">
+          <span style="font-size:18px;line-height:1.15">${a.icon}</span>
+          <div style="flex:1"><b>${i+1}. ${a.t}</b><div class="why">${a.d}</div></div>
+          ${a.jump?`<button class="ghost sm" data-dgjump="${a.jump}" style="white-space:nowrap">Open →</button>`:""}
+        </div>`).join("")+`</div>`
+       :`<div class="meta">✅ Nothing urgent this week — your lineup is set, no clear upgrade on the wire, and no clean trade angle. Sit tight.</div>`;
+      dg.querySelectorAll("[data-dgjump]").forEach(b=>b.onclick=()=>showTab(b.dataset.dgjump));
+    }
+  }
   const ss=$("#startSit");
   if(!roster.length){ ss.innerHTML=`<div class="emptystate">Draft or sync a roster first — then this becomes your weekly start/sit sheet.</div>`;
     if($("#tradeBox"))$("#tradeBox").innerHTML="";return; }
