@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-15';
+window.__BUILD__='2026-08-21-16';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -576,6 +576,17 @@ window.__BUILD__='2026-08-21-15';
   .fbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   table{width:100%;border-collapse:collapse}
   .tblwrap{overflow-x:auto}
+  /* Phone: the two big scrollable tables (draft board + projections) run wider than the screen, so
+     when you scroll sideways to reach a stat the player's NAME used to scroll off with it. Freeze the
+     name column in place, and drop the rank # (least useful on mobile, derivable from row order). */
+  @media(max-width:640px){
+    #availTable th:nth-child(1),#availTable td:nth-child(1),
+    #ptable th:nth-child(1),#ptable td:nth-child(1){display:none}
+    #availTable th:nth-child(2),#availTable td:nth-child(2),
+    #ptable th:nth-child(2),#ptable td:nth-child(2){
+      position:sticky;left:0;z-index:2;background:var(--panel);box-shadow:2px 0 5px -2px rgba(0,0,0,.28)}
+    #availTable th:nth-child(2),#ptable th:nth-child(2){z-index:3}
+  }
   th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line-2);position:sticky;top:0;background:var(--panel);cursor:pointer;white-space:nowrap;user-select:none}
   th.r,td.r{text-align:right}
   td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
