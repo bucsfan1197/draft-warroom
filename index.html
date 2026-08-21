@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-11';
+window.__BUILD__='2026-08-21-12';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -8656,7 +8656,7 @@ function renderWaivers(){
       <span class="ww-bid">${faabLeague?`<b>$${r.bid}</b><span class="meta">${r.bidPct}% FAAB</span>`:`<b>#${i+1}</b><span class="meta">claim order</span>`}</span>
     </div>`).join("")
     :`<div class="emptystate">Nothing on the wire would crack your starting lineup right now.</div>`)
-    +(rows.length?`<div class="note" style="margin-top:10px"><b>Ranked by points added to your lineup, not player value.</b> A star at a position you're already deep at is worth little; a fill for a hole is worth a lot. ${faabLeague?`Bids are a share of your <b>remaining</b> $${wb.remaining}, priced off the next-best option — if the name below does nearly the same job, don't overpay.${TRADE.transactions&&TRADE.transactions.some(t=>t.bid>0)?` Your league's recent winning bids: ${TRADE.transactions.filter(t=>t.bid>0).slice(0,5).map(t=>"$"+t.bid).join(", ")}.`:""}`:`This is a <b>waiver-priority</b> league — no FAAB. ${myWpos?`You currently hold waiver position <b>#${myWpos}</b>; `:""}spend your claim on the top name, since your priority resets to last after you win.`}</div>`:"");
+    +(rows.length?`<div class="note" style="margin-top:10px"><b>Ranked by points added to your lineup, not player value.</b> A star at a position you're already deep at is worth little; a fill for a hole is worth a lot. ${faabLeague?`Bids are what he's <b>worth to you</b> — his weekly upgrade to your starting lineup, as a share of your <b>remaining</b> $${wb.remaining}: depth prices near $0, a difference-maker most of your budget, never the last dollar.${TRADE.transactions&&TRADE.transactions.filter(t=>t.bid>0).length>=6?` Held to your league's real market (recent winning bids: ${TRADE.transactions.filter(t=>t.bid>0).slice(0,5).map(t=>"$"+t.bid).join(", ")}), so you clear it without overpaying.`:TRADE.transactions&&TRADE.transactions.some(t=>t.bid>0)?` (League's early bids: ${TRADE.transactions.filter(t=>t.bid>0).slice(0,5).map(t=>"$"+t.bid).join(", ")} — too few yet to price against.)`:""}`:`This is a <b>waiver-priority</b> league — no FAAB. ${myWpos?`You currently hold waiver position <b>#${myWpos}</b>; `:""}spend your claim on the top name, since your priority resets to last after you win.`}</div>`:"");
 
   // 3. JUST DROPPED — freshest opportunities
   const gems=droppedGems(from,to).filter(g=>posF==="ALL"||g.p.pos===posF||(posF==="FLEX"&&FLEX_POS.includes(g.p.pos)));
@@ -9023,8 +9023,8 @@ function renderInSeason(){
     +`<div class="note" style="margin-top:10px"><b>These are upgrades, not rankings.</b> A player is only worth what he adds to the
        lineup you actually start — a fourth good receiver is worth almost nothing, and a fill-in for an empty slot is worth a lot.
        ${wb.drop?`A claim would cost you <b>${wb.drop.name}</b>, the man whose loss hurts least — which is not the same as your lowest scorer.`:``}
-       <b>Bids</b> are priced off the next name down: if he does nearly the same job for a dollar, the right bid is nearly a dollar,
-       however good the player looks. Shown as a share of your <b>remaining</b> $${wb.remaining}.</div>`
+       <b>Bids</b> are what he's <b>worth to you</b> — his per-week upgrade to your starting lineup, as a share of your <b>remaining</b> $${wb.remaining}:
+       depth prices near $0 (claim it free), a real starter earns a real chunk, and it never bids your last dollar.</div>`
     :`<div class="emptystate">Nothing on the wire would crack your starting lineup.</div>`);
 
   /* ---- where the season stands ----
