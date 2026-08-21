@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-3';
+window.__BUILD__='2026-08-21-4';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -2505,6 +2505,10 @@ function migrate(st){
   if(st.settings.usageBlend==null)st.settings.usageBlend=true;
   if(st.settings.auction==null){st.settings.auction=false;st.settings.budget=200;}
   st.players.forEach(p=>{if(p.age==null)p.age=27;});
+  /* Never let a search box that was live when the state was saved come back and hide the whole
+     board on the next visit — a persisted "Josh Allen" in psearch made the Projections tab look
+     like every other player had vanished. Search/open are transient UI, so reset them on load. */
+  if(st.ui){ st.ui.search=""; st.ui.psearch=""; st.ui.popen=null; }
   // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
   const D=window.__FFDATA__;
   /* Identity for matching. A defense is its TEAM, never its name: the feed calls Atlanta's
