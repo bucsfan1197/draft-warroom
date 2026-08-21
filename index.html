@@ -1,4 +1,24 @@
 <meta charset="utf-8">
+<script>
+/* Self-heal a stale cached index.html. GitHub Pages caches this file (max-age 600) and some browsers
+   hold it far longer, so a normal refresh can keep serving old code — which is why 2025 stats looked
+   "missing" even though the live data had them. This checks the server for a newer build and, if the
+   running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
+   change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
+window.__BUILD__='2026-08-21-2';
+(function(){try{
+  fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
+    .then(function(r){return r.text();})
+    .then(function(t){
+      var m=t.match(/__BUILD__='([^']+)'/);
+      if(m&&m[1]&&m[1]!==window.__BUILD__){
+        var k='__healed_'+m[1];                 // reload at most once per build per tab → no loops
+        if(!sessionStorage.getItem(k)){ sessionStorage.setItem(k,'1');
+          location.replace(location.pathname+'?b='+encodeURIComponent(m[1])); }
+      }
+    }).catch(function(){});
+}catch(e){}})();
+</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0e9f6e">
 <meta name="description" content="Fantasy football draft optimizer: live Sleeper sync, championship-equity simulator, multi-source ADP.">
