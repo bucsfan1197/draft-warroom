@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-18';
+window.__BUILD__='2026-08-21-19';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -194,7 +194,29 @@ window.__BUILD__='2026-08-21-18';
   .liverow .num{font-variant-numeric:tabular-nums}
   .liverow .meta.num{min-width:56px;text-align:right}
   .livescore{font-variant-numeric:tabular-nums}
-  @media(max-width:700px){.liveHero{grid-template-columns:1fr auto 1fr;gap:6px}.livebig{font-size:30px}}
+  /* Game-day: the screen you stare at while games are on — a live status line, a glanceable
+     scoreboard, and the "riding on" call as its own accent card. */
+  .gameday-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);margin-bottom:12px;font-weight:600}
+  .gameday-status .livedot{margin-left:0}
+  .riding-card{margin-top:10px;padding:12px 14px;border-radius:13px;
+    background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 34%,transparent)}
+  .riding-hd{font-size:15px;color:var(--ink)}
+  .riding-swing{margin-top:6px;font-size:14px;color:var(--ink-2)}
+  .riding-swing .rs-lo{font-weight:800;color:var(--crit-ink)} .riding-swing .rs-hi{font-weight:800;color:var(--good-ink)}
+  .riding-swing .rs-arrow{color:var(--ink-2);margin:0 2px}
+  @media(max-width:700px){
+    /* big, high-contrast scoreboard card */
+    .liveHero{grid-template-columns:1fr auto 1fr;gap:5px;background:var(--panel-2);border:1px solid var(--line);border-radius:16px;padding:16px 8px 14px;align-items:start}
+    .winbig{font-size:54px}
+    .livebig{font-size:36px}
+    .liveMid .meta{font-size:10.5px;margin-top:2px}
+    .liveSide .h2hname{font-size:13px;font-weight:700}
+    .liveSide .meta{font-size:10.5px}
+    .liveNeed{font-size:14px;padding:12px 14px}
+    .riding-hd{font-size:16px} .riding-swing{font-size:15px}
+    .liverow .lvname{font-size:14px}
+    .liverow{padding:7px 0}
+  }
   /* AI GM copilot */
   .aifab{position:fixed;right:20px;bottom:20px;width:52px;height:52px;border-radius:50%;border:1px solid var(--line-2);
          background:var(--panel);box-shadow:var(--shadow);font-size:24px;cursor:pointer;z-index:60;line-height:1}
@@ -1149,6 +1171,8 @@ window.__BUILD__='2026-08-21-18';
     .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;
       color:var(--ink-2);padding:8px 2px 7px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
     .bn-item.on{color:var(--accent)}
+    .bn-live{color:var(--crit-ink)} .bn-live.on{color:var(--crit-ink)}
+    .bn-live .bn-ic{animation:livepulse 1.4s ease-in-out infinite}
     .bn-ic{font-size:19px;line-height:1}
     .bn-lb{font-size:10.5px;letter-spacing:.01em}
     .wrap{padding-bottom:calc(66px + env(safe-area-inset-bottom,0px))}
@@ -2991,6 +3015,7 @@ async function refreshLive(){
   }catch(e){ LIVE.err="couldn't reach the live feed"; }
   LIVE.loading=false;
   try{ if(!$("#tab-matchups").classList.contains("hide")) renderMatchups(); }catch(e){}
+  try{ renderBottomNav(); }catch(e){}   // surface/remove the pulsing "Live" tab as games go live/final
 }
 function liveActive(){ return LIVE.games.some(g=>g.state==="in"||g.state==="post"); }
 function gameForTeam(team){ return LIVE.games.find(g=>g.a===team||g.b===team); }
@@ -10398,7 +10423,12 @@ function renderLiveMatchup(A,B,opp,wk){
     ? `${remA.length} of yours still to play${myLeft>0?`, projected to add <b>${fmt(myLeft)}</b>`:""}`
     : `all your starters are final`;
 
+  const inPlay=LIVE.games?LIVE.games.filter(g=>g.state==="in").length:0;
+  const statusHtml=inPlay
+    ? `<span class="livedot"></span><b>LIVE</b> · ${inPlay} game${inPlay===1?"":"s"} in progress${LIVE.ts?` · updated ${agoText(LIVE.ts)}`:""}`
+    : `<span class="livedot" style="animation:none;background:var(--ink-2)"></span>No games in progress right now${LIVE.ts?` · updated ${agoText(LIVE.ts)}`:""}`;
   box.innerHTML=`
+    <div class="gameday-status">${statusHtml}</div>
     <div class="liveHero">
       <div class="liveSide">
         <div class="h2hname">You</div>
@@ -10407,7 +10437,7 @@ function renderLiveMatchup(A,B,opp,wk){
       </div>
       <div class="liveMid">
         <div class="winbig ${word.c}">${pctL}%</div>
-        <div class="meta" style="text-align:center">win probability, live</div>
+        <div class="meta" style="text-align:center">win prob</div>
         <div class="chip ${word.c}" style="margin-top:6px">${word.t}</div>
       </div>
       <div class="liveSide right">
@@ -10426,10 +10456,10 @@ function renderLiveMatchup(A,B,opp,wk){
       const top=lev.slice(0,3).filter(x=>x.swing>=0.04);
       if(!top.length)return "";
       const one=top[0];
-      return `<div class="liveNeed" style="border-top:1px dashed var(--line);margin-top:0">
-        🎯 <b>Riding on ${one.u.pl.name}</b> tonight — ${Math.round(one.pHi*100)}% if he goes off, ${Math.round(one.pLo*100)}% if he flops (a <b>${Math.round(one.swing*100)}-point</b> win-prob swing).${
-          top.length>1?` Then ${top.slice(1).map(x=>`${x.u.pl.name} (±${Math.round(x.swing*100)})`).join(", ")}.`:""}
-        <span class="meta"> Root hardest for the top name — that's where your night is decided.</span></div>`;
+      return `<div class="riding-card">
+        <div class="riding-hd">🎯 Riding on <b>${one.u.pl.name}</b> tonight</div>
+        <div class="riding-swing"><span class="rs-lo">${Math.round(one.pLo*100)}%</span> if he flops <span class="rs-arrow">→</span> <span class="rs-hi">${Math.round(one.pHi*100)}%</span> if he goes off <span class="meta">(${Math.round(one.swing*100)}-pt swing)</span></div>${
+          top.length>1?`<div class="meta" style="margin-top:5px">Then ${top.slice(1).map(x=>`${x.u.pl.name} (±${Math.round(x.swing*100)})`).join(", ")}. Root hardest for the top name — that's where your night is decided.</div>`:`<div class="meta" style="margin-top:5px">That's where your night is decided.</div>`}</div>`;
     })()}
     <div class="mchartwrap" style="margin-top:6px">${marginChart(sim.margin,p)}
       <div class="meta" style="margin-top:4px">Same simulation as before kickoff, with the clock folded in: finished players are locked, players in-game keep only the swing of the snaps they have left. That's why this moves as the games do.</div></div>
@@ -12298,7 +12328,12 @@ const BOTTOM_NAV=[{tab:"draft",ic:"🎯",label:"Draft"},{tab:"season",ic:"🗓�
 function renderBottomNav(){
   const bn=$("#bottomNav"); if(!bn)return;
   const active=(($$("section[id^='tab-']").find(s=>!s.classList.contains("hide"))||{}).id||"tab-draft").replace("tab-","");
-  bn.innerHTML=BOTTOM_NAV.map(b=>`<button class="bn-item${b.tab===active?" on":""}" data-bn="${b.tab}" aria-label="${b.label}">
+  // Game day: when NFL games are live, the scoreboard is what you want — surface it as a pulsing
+  // "Live" slot in place of Draft (which nobody opens mid-week).
+  const live=(typeof liveActive==="function")&&liveActive();
+  const inPlay=live&&typeof LIVE!=="undefined"&&LIVE.games&&LIVE.games.some(g=>g.state==="in");
+  const set=live?[{tab:"matchups",ic:"🔴",label:inPlay?"Live":"Scores",pulse:inPlay?1:0}].concat(BOTTOM_NAV.slice(1)):BOTTOM_NAV;
+  bn.innerHTML=set.map(b=>`<button class="bn-item${b.tab===active?" on":""}${b.pulse?" bn-live":""}" data-bn="${b.tab}" aria-label="${b.label}">
     <span class="bn-ic">${b.ic}</span><span class="bn-lb">${b.label}</span></button>`).join("");
   bn.querySelectorAll("[data-bn]").forEach(b=>b.onclick=()=>{ if(b.dataset.bn==="MORE"){openMobileMenu();} else {closeMobileMenu();showTab(b.dataset.bn);window.scrollTo(0,0);} });
 }
