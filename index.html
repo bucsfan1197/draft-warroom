@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-2';
+window.__BUILD__='2026-08-21-3';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -2519,17 +2519,27 @@ function migrate(st){
        key — players get traded, and keying on team would turn every move into a brand new
        player. Position is stable in a way that team isn't. */
     const pkey=p=>p.pos==="DST"?"DST:"+(p.team||nrm(p.name)):p.pos+":"+nrm(p.name);
-  // one-time: refresh to curve-derived projections + real ADP, preserving user overrides & picks
+    const USER_OWNED=new Set(["id","override","stats","age","so"]);   // things the user can edit
+  /* Sync fresh data-blob fields into existing saved players on EVERY load — NOT once per _projv.
+     Same hard-won lesson as the dedup block below: a version gate silently skips everyone whose pool
+     is "already current", so any data field added AFTER their save never reaches them. h25 (last
+     season's actuals) was exactly this — the raw feed had it, but a saved pool at _projv 21 kept
+     showing "No 2025 game data" because the field-copy only ran on a version bump. Overwriting all
+     non-USER_OWNED fields every load keeps the pool current for every field, present and future. */
+  if(D&&D.PLAYERS){
+    const byName={};D.PLAYERS.forEach(e=>byName[pkey(e)]=e);
+    st.players.forEach(p=>{const e=byName[pkey(p)];
+      if(e){ Object.keys(e).forEach(k=>{ if(!USER_OWNED.has(k)) p[k]=e[k]; });
+             p.bye=e.bye||TEAM_BYE[p.team]||p.bye;
+             if(p.age==null||p.age===27)p.age=e.age; }});
+  }
+  // one-time: adopt curve-derived stat lines + append any players new to the feed, preserving picks
   if(D&&D.PLAYERS&&st.settings._projv!==21){
     const byName={};D.PLAYERS.forEach(e=>byName[pkey(e)]=e);
     const have=new Set(st.players.map(pkey));
     let nid=Math.max(0,...st.players.map(p=>p.id||0))+1;
-    const USER_OWNED=new Set(["id","override","stats","age","so"]);   // things the user can edit
     st.players.forEach(p=>{const e=byName[pkey(p)];
-      p.bye=(e&&e.bye)||TEAM_BYE[p.team]||p.bye;
-      if(e){ Object.keys(e).forEach(k=>{ if(!USER_OWNED.has(k)) p[k]=e[k]; });
-             if(p.age==null||p.age===27)p.age=e.age;
-             if(p.override==null)p.stats={...e.stats}; }});
+      if(e&&p.override==null)p.stats={...e.stats}; });
     D.PLAYERS.forEach(e=>{if(!have.has(pkey(e)))st.players.push(
       Object.assign({},e,{id:nid++,override:null,stats:{...e.stats},
         bye:e.bye||0,age:e.age||27,adpSf:(e.adpSf!=null?e.adpSf:e.adp)}));});
