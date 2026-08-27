@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-21-20';
+window.__BUILD__='2026-08-26-21';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -4342,6 +4342,9 @@ async function learnLeague(leagueId){
     }catch(e){}
     loadSetupInputs();
   }
+  // Learning a league means it's YOUR league — pull the real rosters too so Waiver Wire, Trades and
+  // Team Grader are connected, not just the draft tendencies. (They read TRADE.teams.)
+  try{ await tradeLoadRosters(leagueId); if(leagueSynced())setupMsg+=` · <b>Waivers, Trades &amp; Grader connected.</b>`; }catch(e){}
   save();
   leagueStatus(`🧠 Learned <b>${mgrs.length} managers</b> from ${state.league.sources.length} draft(s): ${state.league.sources.join(", ")}. Mock CPU + simulator now draft like them.${setupMsg}`,"var(--good)");
   $("#leagueClearBtn").classList.remove("hide");
@@ -6789,15 +6792,19 @@ async function importLeagueScoring(){
     applySleeperRoster(lg.settings);
     const applied=applyLeagueSettings(lg);
     loadSetupInputs(); renderAll(); save();
+    // Also pull the actual rosters + FAAB + transactions, so importing here connects the WHOLE app —
+    // Waiver Wire, Trades and Team Grader all read TRADE.teams, and without this they'd stay empty.
+    try{ await tradeLoadRosters(id); }catch(e){}
     const R=state.settings.roster;
     const rosterStr=Object.entries(R).filter(([k,v])=>v).map(([k,v])=>k+":"+v).join(" ");
     const issues=verifyImportedRoster(lg);
+    const synced=leagueSynced()?` <b>Waiver Wire, Trades and Team Grader are now connected to this league.</b>`:"";
     if(issues.length){
       leagueStatus(`⚠ Imported <b>${lg.name}</b> but the roster looks wrong: ${issues.join("; ")}. Now: ${rosterStr}. Re-check you picked the right league.`,"var(--crit)");
     }else{
       // Explicitly confirm K/DST so it's obvious at a glance which positions came through.
       const flags=[R.SUPERFLEX?"superflex":"", R.K?"✓kicker":"no kicker", R.DST?"✓defense":"no defense"].filter(Boolean).join(", ");
-      leagueStatus(`⚙ Now using <b>${lg.name}</b> (${flags}): ${applied} scoring rules, ${state.settings.teams} teams, roster ${rosterStr}.`,"var(--good)");
+      leagueStatus(`⚙ Now using <b>${lg.name}</b> (${flags}): ${applied} scoring rules, ${state.settings.teams} teams, roster ${rosterStr}.${synced}`,"var(--good)");
     }
   }catch(e){leagueStatus("Couldn't import league settings.","var(--crit)");}
 }
@@ -7046,8 +7053,11 @@ async function tradeLoadRosters(leagueId){
     const sel=$("#tradeMe");
     sel.innerHTML=TRADE.teams.map((t,i)=>`<option value="${i}">${t.name} (${t.players.length}${t.picks&&t.picks.length?" +"+t.picks.length+" picks":""})</option>`).join("");
     sel.classList.remove("hide"); $("#tradeFindBtn").classList.remove("hide");
-    // guess which team is yours
-    const myUser=Object.keys(nameOf).find(id=>nameOf[id].toLowerCase()===(($("#syncUser").value||"").trim().toLowerCase()));
+    // guess which team is yours — check every place a username might live, not just the draft sync box,
+    // so an import from League Setup lands on the right team too.
+    const uname=(($("#syncUser")&&$("#syncUser").value.trim())||($("#tradeUser")&&$("#tradeUser").value.trim())
+                 ||localStorage.getItem("ffwr_syncuser")||DEFAULT_SLEEPER_USER||"").toLowerCase();
+    const myUser=Object.keys(nameOf).find(id=>(nameOf[id]||"").toLowerCase()===uname);
     const mi=TRADE.teams.findIndex(t=>t.owner===myUser); TRADE.me=mi>=0?mi:0; sel.value=String(TRADE.me);
     sel.onchange=()=>{TRADE.me=+sel.value; try{renderLeagueIntel();}catch(e){}};
     try{renderLeagueIntel();}catch(e){}
