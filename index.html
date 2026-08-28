@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-25';
+window.__BUILD__='2026-08-27-26';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -2066,7 +2066,8 @@ window.__BUILD__='2026-08-27-25';
           <div class="seg" id="s_rankfmt" title="Rank by points in a scoring format, or by VALUE for your exact league (roster + superflex)">
             <button data-v="league" class="on">Points</button><button data-v="value">⭐ Value (your league)</button><button data-v="0">Std</button><button data-v="0.5">Half</button><button data-v="1">PPR</button></div>
           <button class="ghost" id="pcompare" title="Show each player's projection and position rank in Standard, Half-PPR and PPR side by side">⚖ Compare formats</button>
-          <button class="draftbtn" id="pprint" title="A clean rankings sheet — print it, or 'Save as PDF' from the print dialog" style="width:auto;padding:8px 14px">🖨 Print / PDF</button>
+          <button class="draftbtn" id="pprint" title="Open the clean rankings sheet in the print dialog" style="width:auto;padding:8px 14px">🖨 Print</button>
+          <button class="draftbtn" id="pexportpdf" title="The same rankings sheet as a PDF — opens the print dialog; choose 'Save as PDF' as the destination" style="width:auto;padding:8px 14px">📄 Export PDF</button>
           <button class="ghost" id="pexport" title="Spreadsheet twin of the printable: every visible player with the league Value score and projected points in Std / Half / PPR, in the current rank order">Export CSV</button>
           <button class="ghost hide" id="presetall" title="Throw away every edit and go back to consensus">Reset my edits</button>
         </div>
@@ -11926,6 +11927,13 @@ function printRankings(){
   window.print();
   flash(`Rankings ready — choose "Save as PDF" or a printer`);
 }
+/* Same rankings sheet, framed as a PDF export. With zero third-party libraries the browser's own
+   print dialog IS the PDF writer — so this builds the identical sheet and opens it straight to the
+   "Save as PDF" flow (the user picks that destination in the dialog). */
+function exportRankingsPDF(){
+  printRankings();
+  flash(`Save-as-PDF ready — pick "Save as PDF" as the destination, then Save`);
+}
 
 /* This panel used to say "QB · last starter ≈ #12 · 313 pts", which is three pieces of jargon
    and a number with nothing to compare it to. The idea underneath is simple and useful, so say
@@ -12637,6 +12645,7 @@ function init(){
     renderPlayersTab();save(); };
   $("#pexport").onclick=exportProjCSV;
   if($("#pprint"))$("#pprint").onclick=printRankings;
+  if($("#pexportpdf"))$("#pexportpdf").onclick=exportRankingsPDF;
   segWire("#s_injscope",v=>{state.ui.injScope=v;renderInjuries();save();});
   if($("#injRefreshBtn"))$("#injRefreshBtn").onclick=()=>refreshInjuries();
   if($("#injBriefBtn"))$("#injBriefBtn").onclick=aiInjuryBrief;
