@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-24';
+window.__BUILD__='2026-08-27-25';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -1194,6 +1194,7 @@ window.__BUILD__='2026-08-27-24';
     #printSheet th.r,#printSheet td.r{text-align:right}
     #printSheet td{font-size:11px;padding:3px 6px;border-bottom:.5px solid #d0d0d0;color:#000}
     #printSheet tbody tr:nth-child(even) td{background:#f2f2f2;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    #printSheet th.pcol-on,#printSheet td.pcol-on{background:#dbe6f4!important;font-weight:600;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     #printSheet tr{page-break-inside:avoid}
     #printSheet .ps-foot{font-size:9px;color:#666;margin-top:8px}
     @page{margin:12mm}
@@ -2066,7 +2067,7 @@ window.__BUILD__='2026-08-27-24';
             <button data-v="league" class="on">Points</button><button data-v="value">⭐ Value (your league)</button><button data-v="0">Std</button><button data-v="0.5">Half</button><button data-v="1">PPR</button></div>
           <button class="ghost" id="pcompare" title="Show each player's projection and position rank in Standard, Half-PPR and PPR side by side">⚖ Compare formats</button>
           <button class="draftbtn" id="pprint" title="A clean rankings sheet — print it, or 'Save as PDF' from the print dialog" style="width:auto;padding:8px 14px">🖨 Print / PDF</button>
-          <button class="ghost" id="pexport" title="Download every visible row as a spreadsheet, including your edits">Export CSV</button>
+          <button class="ghost" id="pexport" title="Spreadsheet twin of the printable: every visible player with the league Value score and projected points in Std / Half / PPR, in the current rank order">Export CSV</button>
           <button class="ghost hide" id="presetall" title="Throw away every edit and go back to consensus">Reset my edits</button>
         </div>
         <div class="note" style="margin-bottom:12px;font-size:12px">
@@ -11630,6 +11631,26 @@ function renderFormatCompare(){
     ||`<tr><td colspan="7" class="meta" style="padding:14px">No players match this filter.</td></tr>`;
   const ec=$("#pEditCount"); if(ec)ec.textContent="Standard · Half-PPR · PPR — pts and position rank in each";
 }
+/* "Value for your league" score (0–100), computed once over the whole league pool so the table, the
+   printable sheet and the CSV all agree. Projection value over replacement (VORP) blended 60/40 with
+   your league's real draft market (the format/superflex-aware ADP). Pure VORP undervalues superflex
+   QBs — you must start two and the startable pool is thin — which the market prices in; blending the
+   two rank orders lifts elite QBs to where they actually go without abandoning the projection. The
+   score is format-independent (keyed to your league's actual scoring + roster), so it's the same
+   number under every "rank by" view. Returns { id: {lval, blend, vorp} }. */
+function leagueValueScores(){
+  const levels=replacementLevels().levels;
+  const rows=state.players.filter(inLeague).map(pl=>({pl,val:vorp(pl,levels)}));
+  [...rows].sort((a,b)=>b.val-a.val).forEach((r,i)=>r._vr=i);
+  const withAdp=rows.filter(r=>{const a=adpOf(r.pl);return a&&a<900;});
+  [...withAdp].sort((a,b)=>adpOf(a.pl)-adpOf(b.pl)).forEach((r,i)=>r._ar=i);
+  const noAdp=withAdp.length + (rows.length-withAdp.length)/2;   // undrafted players sit mid-pack on the market axis
+  const span=Math.max(60, withAdp.length*0.6);                  // spread scores across the draftable range
+  const out={};
+  rows.forEach(r=>{ const ar=(r._ar!=null)?r._ar:noAdp, blend=0.6*r._vr+0.4*ar;
+    out[r.pl.id]={lval:Math.max(0,Math.round(100*(1-blend/span))), blend, vorp:r.val}; });
+  return out;
+}
 function renderPlayersTab(){
   const u=state.ui, detail=!!u.pdetail, unit=u.pview==="game"?"pts/gm":"pts";
   if(u.pcompare){ renderFormatCompare(); return; }
@@ -11638,18 +11659,8 @@ function renderPlayersTab(){
   let rows=state.players.filter(inLeague).map(pl=>({pl,proj:valueMode?pviewOf(pl):pviewFmt(pl),
     val:valueMode?vorp(pl,vlevels):null}));
   if(valueMode){
-    // "Value for your league" = projection value over replacement (VORP), blended with your league's
-    // real draft market (the format/superflex-aware ADP). Pure VORP undervalues superflex QBs — you
-    // must start two and the startable pool is thin — which the market prices in; blending the two
-    // rank orders lifts elite QBs to where they actually go without abandoning the projection.
-    const byV=[...rows].sort((a,b)=>b.val-a.val); byV.forEach((r,i)=>r._vr=i);
-    const withAdp=rows.filter(r=>{const a=adpOf(r.pl);return a&&a<900;});
-    [...withAdp].sort((a,b)=>adpOf(a.pl)-adpOf(b.pl)).forEach((r,i)=>r._ar=i);
-    const noAdp=withAdp.length + (rows.length-withAdp.length)/2;   // undrafted players sit mid-pack on the market axis
-    // score span across the draftable range (~top 120) so the numbers actually separate startable players
-    const span=Math.max(60, withAdp.length*0.6);
-    rows.forEach(r=>{ const ar=(r._ar!=null)?r._ar:noAdp; r._blend=0.6*r._vr+0.4*ar;
-      r.lval=Math.max(0,Math.round(100*(1-r._blend/span))); });   // 0–100 league-value score
+    const lv=leagueValueScores();
+    rows.forEach(r=>{ const s=lv[r.pl.id]; r._blend=s.blend; r.lval=s.lval; });
   }
   if(u.pposFilter!=="ALL")rows=rows.filter(r=>u.pposFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.pposFilter);
   if(u.psearch)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.psearch.toLowerCase()));
@@ -11830,18 +11841,20 @@ function wireDetailRow(){
     state.players[+inp.dataset.proj].override=inp.value===""?null:+inp.value;
     renderAll();flash(inp.value===""?"Back to the stat line":"Fixed total set");});
 }
+/* CSV = the spreadsheet twin of the printable sheet: same rows, same order, same Value + Std/Half/PPR
+   columns, plus the analytical extras (range, sources, stat line) a spreadsheet can hold. */
 function exportProjCSV(){
   const u=state.ui;
-  let rows=state.players.filter(inLeague);
-  if(u.pposFilter!=="ALL")rows=rows.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
-  if(u.psearch)rows=rows.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
-  rows.sort((a,b)=>pviewOf(b)-pviewOf(a));
+  const {rows, selKey}=buildRankingRows();
+  const rbLbl={value:"Value (your league)",std:"Standard",half:"Half-PPR",ppr:"PPR"}[selKey]||"Points";
   const sc=["py","ptd","int","ry","rtd","rec","recy","rectd","fl"];
-  const head=["Rank","Player","Pos","Team","Bye","Age","ADP","Proj","Floor","Ceiling","Boom%","Bust%",
-    "ESPN","Sleeper","SourceGap%","Edited",...sc.map(c=>STATDEF[c][0])];
+  const head=["Rank","Pos","PosRank","Player","Team","Bye","Age","ADP",
+    "Value(0-100)","Std pts","Half pts","PPR pts","RankedBy",
+    "Floor","Ceiling","Boom%","Bust%","ESPN","Sleeper","SourceGap%","Edited",...sc.map(c=>STATDEF[c][0])];
   const esc=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
-  const body=rows.map((p,i)=>{const L=line(p),sp=srcSpread(p);
-    return [i+1,p.name,p.pos,p.team,p.bye||"",p.age||"",p.adp||"",fmt(pviewOf(p)),
+  const body=rows.map((r,i)=>{const p=r.pl,L=line(p),sp=srcSpread(p);
+    return [i+1,p.pos,p.pos+r.posRank,p.name,p.team||"",p.bye||"",p.age||"",r.adp&&r.adp<900?fmt(r.adp):"",
+      r.lval,fmt(r.std),fmt(r.half),fmt(r.ppr),rbLbl,
       p.dist?fmt(floorOf(p)):"",p.dist?fmt(ceilOf(p)):"",p.dist?Math.round(p.dist.boom*100):"",p.dist?Math.round(p.dist.bust*100):"",
       sp?Math.round(sp.e):"",sp?Math.round(sp.k):"",sp?Math.round(sp.rel*100):"",
       p.so?"stat line":(p.override!=null&&p.override!==""?"fixed total":""),
@@ -11849,39 +11862,67 @@ function exportProjCSV(){
   const csv=[head.map(esc).join(","),...body].join("\r\n");
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-  a.download=`projections-${state.ui.pview||"season"}.csv`;a.click();
-  flash(`Exported ${rows.length} players`);
+  a.download=`rankings-${selKey}-${u.pview||"season"}.csv`;a.click();
+  flash(`Exported ${rows.length} players — Value + Std/Half/PPR`);
 }
 
-/* A clean, printable rankings sheet — the thing you actually want at a draft: overall rank, position
-   rank, player, bye and projection under YOUR scoring, respecting the current filter/search/view.
-   No PDF library needed (this app ships zero deps): a print-only layout + window.print(), so the
+/* Shared rows for the printable sheet AND the CSV, so the two always carry the same thing: every
+   player with his league Value score and his projected points in all three receiving formats
+   (Std / Half / PPR), ordered by whatever "rank by" mode is on and honoring the filter/search/view. */
+function buildRankingRows(){
+  const u=state.ui, s=state.settings, lv=leagueValueScores();
+  let list=state.players.filter(inLeague);
+  if(u.pposFilter!=="ALL")list=list.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
+  if(u.psearch)list=list.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
+  const valueMode=u.rankFmt==="value";
+  const rec=(u.rankFmt==null||u.rankFmt==="league"||valueMode)?s.scoring.rec:+u.rankFmt;
+  const rows=list.map(pl=>{const v=lv[pl.id]||{};
+    return {pl, lval:v.lval||0, blend:v.blend||0,
+      std:pviewFmt(pl,0), half:pviewFmt(pl,0.5), ppr:pviewFmt(pl,1), sel:pviewFmt(pl,rec), adp:adpOf(pl)};});
+  rows.sort((a,b)=> valueMode ? (a.blend-b.blend) : (b.sel-a.sel));   // value: lower blend = better
+  const posN={}; rows.forEach(r=>{ r.posRank=(posN[r.pl.pos]=(posN[r.pl.pos]||0)+1); });
+  const leagueFmt=s.scoring.rec>=1?"ppr":s.scoring.rec>0?"half":"std";
+  const selKey=valueMode?"value":(rec>=1?"ppr":rec>0?"half":"std");
+  const modeLabel=valueMode?"Value (your league)"
+    :(u.rankFmt==null||u.rankFmt==="league")?"Points — your league scoring"
+    :rec>=1?"PPR points":rec>0?"Half-PPR points":"Standard points";
+  return {rows, valueMode, leagueFmt, selKey, rec, modeLabel};
+}
+
+/* A clean, printable rankings sheet — the thing you actually want at a draft: overall + position rank,
+   the league Value score, and projected points in Standard / Half / PPR side by side (★ = your league's
+   own format, the highlighted column is what the sheet is sorted by). Respects the current
+   filter/search/view. No PDF library needed (zero deps): a print-only layout + window.print(), so the
    browser's own "Save as PDF" produces the file. */
 function printRankings(){
   const u=state.ui, s=state.settings;
-  let rows=state.players.filter(inLeague);
-  if(u.pposFilter!=="ALL")rows=rows.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
-  if(u.psearch)rows=rows.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
-  rows.sort((a,b)=>pviewFmt(b)-pviewFmt(a));   // respects the "rank as" format toggle
-  const rf=u.rankFmt, rfRec=(rf==null||rf==="league")?s.scoring.rec:+rf;
-  const ppr=rfRec>=1?"PPR":rfRec>0?"Half-PPR":"Standard";
+  const {rows, valueMode, leagueFmt, selKey, modeLabel}=buildRankingRows();
+  const showPos=u.pposFilter==="ALL";
   const viewLbl={season:"Season total",game:"Per game",ros:"Rest-of-season"}[u.pview]||"Season";
   const posLbl=u.pposFilter==="ALL"?"All positions":u.pposFilter+" only";
-  const unit=u.pview==="game"?"/gm":"pts";
+  const unit=u.pview==="game"?" /gm":"";
   let dateStr=""; try{ dateStr=new Date().toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}); }catch(e){}
-  const showPos=u.pposFilter==="ALL", posN={};
+  const star=k=>k===leagueFmt?" ★":"";
+  const fth=k=>`<th class="r${selKey===k?" pcol-on":""}">`;   // highlight the format being ranked by
+  const ftd=k=>`<td class="r${selKey===k?" pcol-on":""}">`;
   let sheet=document.getElementById("printSheet");
   if(!sheet){ sheet=document.createElement("div"); sheet.id="printSheet"; sheet.className="printonly"; document.body.appendChild(sheet); }
   sheet.innerHTML=`
     <div class="ps-head">
-      <div class="ps-title">${viewLbl} Rankings</div>
-      <div class="ps-sub">Draft War Room · ${s.teams}-team · ${ppr}${s.format&&s.format!=="redraft"?" · "+s.format:""} · ${posLbl} · ${rows.length} players${dateStr?" · "+dateStr:""}</div>
+      <div class="ps-title">${viewLbl} Rankings — ${modeLabel}</div>
+      <div class="ps-sub">Draft War Room · ${s.teams}-team · ${s.roster.SUPERFLEX?"superflex":"1QB"} · ${posLbl} · ${rows.length} players${dateStr?" · "+dateStr:""} · ★ = your league format</div>
     </div>
-    <table><thead><tr><th class="r">#</th>${showPos?'<th>Pos</th>':''}<th>Player</th><th>Team</th><th class="r">Bye</th><th class="r">Proj (${unit})</th><th class="r">ADP</th></tr></thead>
-    <tbody>${rows.map((p,i)=>{ const pr=(posN[p.pos]=(posN[p.pos]||0)+1);
-      return `<tr><td class="r">${i+1}</td>${showPos?`<td>${p.pos}${pr}</td>`:''}<td>${p.name}</td><td>${p.team||""}</td><td class="r">${p.bye||""}</td><td class="r"><b>${fmt(pviewFmt(p))}</b></td><td class="r">${p.adp?fmt(p.adp):"—"}</td></tr>`;
-    }).join("")}</tbody></table>
-    <div class="ps-foot">Projected under your league's scoring. Overall rank #, position rank shown as e.g. RB3.</div>`;
+    <table><thead><tr>
+      <th class="r">#</th>${showPos?'<th>Pos</th>':''}<th>Player</th><th>Team</th><th class="r">Bye</th>
+      <th class="r${valueMode?" pcol-on":""}">Value</th>
+      ${fth("std")}Std${star("std")}${unit}</th>${fth("half")}Half${star("half")}${unit}</th>${fth("ppr")}PPR${star("ppr")}${unit}</th>
+      <th class="r">ADP</th></tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr>
+      <td class="r">${i+1}</td>${showPos?`<td>${r.pl.pos}${r.posRank}</td>`:''}<td>${r.pl.name}</td><td>${r.pl.team||""}</td><td class="r">${r.pl.bye||""}</td>
+      <td class="r${valueMode?" pcol-on":""}"><b>${r.lval}</b></td>
+      ${ftd("std")}${fmt(r.std)}</td>${ftd("half")}${fmt(r.half)}</td>${ftd("ppr")}${fmt(r.ppr)}</td>
+      <td class="r">${r.adp&&r.adp<900?fmt(r.adp):"—"}</td></tr>`).join("")}</tbody></table>
+    <div class="ps-foot">Value = 0–100 score for your exact league (projection value over replacement, blended with your ${s.roster.SUPERFLEX?"superflex ":""}draft market). Std / Half / PPR = projected points in each receiving format under your other settings. ★ = your league's format; the shaded column is what this sheet is ranked by. Position rank shown as e.g. RB3.</div>`;
   window.print();
   flash(`Rankings ready — choose "Save as PDF" or a printer`);
 }
