@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-23';
+window.__BUILD__='2026-08-27-24';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -2061,8 +2061,9 @@ window.__BUILD__='2026-08-27-23';
             <button data-v="season" class="on">Season</button><button data-v="game">Per game</button><button data-v="ros">Rest of season</button></div>
           <div class="seg" id="s_pdetail" title="Show the projected stat line behind each total">
             <button data-v="0" class="on">Totals</button><button data-v="1">Stat detail</button></div>
-          <div class="seg" id="s_rankfmt" title="Rank the whole board in a scoring format — for reference, WITHOUT changing your league setup">
-            <button data-v="league" class="on">Your format</button><button data-v="0">Std</button><button data-v="0.5">Half</button><button data-v="1">PPR</button></div>
+          <span class="meta" style="align-self:center">Rank by</span>
+          <div class="seg" id="s_rankfmt" title="Rank by points in a scoring format, or by VALUE for your exact league (roster + superflex)">
+            <button data-v="league" class="on">Points</button><button data-v="value">⭐ Value (your league)</button><button data-v="0">Std</button><button data-v="0.5">Half</button><button data-v="1">PPR</button></div>
           <button class="ghost" id="pcompare" title="Show each player's projection and position rank in Standard, Half-PPR and PPR side by side">⚖ Compare formats</button>
           <button class="draftbtn" id="pprint" title="A clean rankings sheet — print it, or 'Save as PDF' from the print dialog" style="width:auto;padding:8px 14px">🖨 Print / PDF</button>
           <button class="ghost" id="pexport" title="Download every visible row as a spreadsheet, including your edits">Export CSV</button>
@@ -11632,21 +11633,41 @@ function renderFormatCompare(){
 function renderPlayersTab(){
   const u=state.ui, detail=!!u.pdetail, unit=u.pview==="game"?"pts/gm":"pts";
   if(u.pcompare){ renderFormatCompare(); return; }
-  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pviewFmt(pl)}));
+  const valueMode = u.rankFmt==="value";
+  const vlevels = valueMode ? replacementLevels().levels : null;
+  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:valueMode?pviewOf(pl):pviewFmt(pl),
+    val:valueMode?vorp(pl,vlevels):null}));
+  if(valueMode){
+    // "Value for your league" = projection value over replacement (VORP), blended with your league's
+    // real draft market (the format/superflex-aware ADP). Pure VORP undervalues superflex QBs — you
+    // must start two and the startable pool is thin — which the market prices in; blending the two
+    // rank orders lifts elite QBs to where they actually go without abandoning the projection.
+    const byV=[...rows].sort((a,b)=>b.val-a.val); byV.forEach((r,i)=>r._vr=i);
+    const withAdp=rows.filter(r=>{const a=adpOf(r.pl);return a&&a<900;});
+    [...withAdp].sort((a,b)=>adpOf(a.pl)-adpOf(b.pl)).forEach((r,i)=>r._ar=i);
+    const noAdp=withAdp.length + (rows.length-withAdp.length)/2;   // undrafted players sit mid-pack on the market axis
+    // score span across the draftable range (~top 120) so the numbers actually separate startable players
+    const span=Math.max(60, withAdp.length*0.6);
+    rows.forEach(r=>{ const ar=(r._ar!=null)?r._ar:noAdp; r._blend=0.6*r._vr+0.4*ar;
+      r.lval=Math.max(0,Math.round(100*(1-r._blend/span))); });   // 0–100 league-value score
+  }
   if(u.pposFilter!=="ALL")rows=rows.filter(r=>u.pposFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.pposFilter);
   if(u.psearch)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.psearch.toLowerCase()));
   const key=u.psort,dir=u.pdir;
   rows.sort((a,b)=>{
     if(key==="name"||key==="pos"||key==="team")return dir*(a.pl[key]).localeCompare(b.pl[key]);
-    if(key==="proj")return dir*(a.proj-b.proj);
-    if(key==="vsadp")return dir*((b.pl.adp||999)-(a.pl.adp||999));
+    if(key==="proj")return valueMode ? dir*(b._blend-a._blend) : dir*(a.proj-b.proj);   // value mode: blended league value (lower _blend = better)
+    if(key==="adp")return dir*((adpOf(a.pl)||999)-(adpOf(b.pl)||999));                // superflex-aware ADP, not raw 1QB
+    if(key==="vsadp")return dir*((adpOf(b.pl)||999)-(adpOf(a.pl)||999));
     return dir*((a.pl[key]||0)-(b.pl[key]||0));
   });
   /* Say what the view actually covers. Before the season starts, rest-of-season IS the whole
      season — the numbers are right but identical to the Season view, which reads as a broken
      control unless you say so out loud. */
   const wkNow=state.ui.seasonWeek||1;
-  $("#pviewNote").innerHTML=u.pview==="game"
+  $("#pviewNote").innerHTML= valueMode
+      ? `A <b>0–100 value score for YOUR league</b> (${state.settings.roster.SUPERFLEX?"<b>superflex</b>":"1QB"}, ${state.settings.scoring.rec>=1?"PPR":state.settings.scoring.rec>0?"Half-PPR":"Standard"}): projection value over the replacement you'd otherwise start, <b>blended with your league's real draft market</b> (the ${state.settings.roster.SUPERFLEX?"superflex":"1QB"} ADP). Pure projection undervalues superflex QBs — you must start two and the pool is thin — so the market blend lifts elite QBs to where they actually go. This is your draft-day order; the small number is projected points.`
+    : u.pview==="game"
       ? `Average points per game the player is actually expected to play — byes and missed weeks excluded.`
     : u.pview==="ros"
       ? (wkNow<=1?`Weeks 1–18. <b>The season hasn't kicked off</b>, so rest-of-season is the same as the full season. Once you set the week on the In-Season tab, this drops the weeks already played.`
@@ -11666,7 +11687,7 @@ function renderPlayersTab(){
   Object.values(byPosAll).forEach(list=>{
     const pr={},ar={};
     [...list].sort((a,b)=>pts(b)-pts(a)).forEach((p,i)=>pr[p.id]=i+1);
-    [...list].filter(p=>p.adp).sort((a,b)=>a.adp-b.adp).forEach((p,i)=>ar[p.id]=i+1);
+    [...list].filter(p=>adpOf(p)&&adpOf(p)<900).sort((a,b)=>adpOf(a)-adpOf(b)).forEach((p,i)=>ar[p.id]=i+1);
     list.forEach(p=>{ if(ar[p.id])rankIn[p.id]={proj:pr[p.id],adp:ar[p.id],pos:p.pos}; });
   });
 
@@ -11677,7 +11698,9 @@ function renderPlayersTab(){
   const cols=detail&&sameP?statCols(u.pposFilter):[];
 
   $("#phead").innerHTML=`<th data-psort="rank">#</th><th data-psort="name">Player</th>`
-    +`<th data-psort="proj" class="r">Proj ${unit}</th>`
+    +(valueMode
+       ? `<th data-psort="proj" class="r" title="A 0–100 value score for your exact league: projection value over replacement, blended with your league's real draft market (superflex/format ADP). Projected points shown beside it.">Value <span class="thsub">/100 · pts</span></th>`
+       : `<th data-psort="proj" class="r">Proj ${unit}</th>`)
     +`<th style="min-width:120px" title="This player's own spread of outcomes — the bar is floor to ceiling, the mark is the projection">Range</th>`
     +`<th class="r" data-psort="adp" title="Where the room drafts him, and how that compares to where he ranks here">ADP</th>`
     +`<th title="Do ESPN and Sleeper agree about him? Separate question from the range.">Sources</th>`
@@ -11698,12 +11721,12 @@ function renderPlayersTab(){
     return band+`<tr class="prow${open?" open":""}" data-row="${pl.id}">
       <td class="num meta">${i+1}</td>
       <td class="plname"><span class="pos ${pl.pos}">${pl.pos}</span> ${pl.name} <span class="meta">${pl.team}${pl.bye?" · bye "+pl.bye:""}</span> ${injChip(pl)}${pl.so?' <span class="chip info" title="You changed his stat line">your line</span>':''}${pl.override!=null&&pl.override!==""?' <span class="chip warn" title="Fixed total — does not follow your scoring settings">fixed total</span>':''}</td>
-      <td class="r num"><b>${fmt(r.proj)}</b></td>
+      <td class="r num">${valueMode?`<b>${r.lval}</b> <span class="meta">${fmt(r.proj)}pt</span>`:`<b>${fmt(r.proj)}</b>`}</td>
       <td>${d?`<span class="rangebar" title="Could reasonably finish anywhere from ${fmt(lo)} to ${fmt(hi)} ${unit}">
             <span class="rb-track"><span class="rb-fill" style="left:${lo/maxC*100}%;width:${Math.max(1,(hi-lo)/maxC*100)}%"></span>
             <span class="rb-dot" style="left:${r.proj/maxC*100}%"></span></span>
             <span class="meta rb-lab">${fmt(lo)}–${fmt(hi)}</span></span>`:'<span class="meta">—</span>'}</td>
-      <td class="r num meta">${pl.adp?fmt(pl.adp):'—'}${vsadp!=null&&Math.abs(vsadp)>=3?`<br><span class="vsadp ${vsadp>0?"good":"bad"}" title="${rk?`${pl.pos}${rk.proj} here, but the ${ORD(rk.adp)} ${pl.pos} off the board. ${vsadp>0?`Drafted ${vsadp} ${pl.pos}s later than he ranks — that is the value.`:`Drafted ${-vsadp} ${pl.pos}s earlier than he ranks.`}`:""}">${vsadp>0?"+":""}${vsadp}</span>`:''}</td>
+      <td class="r num meta">${adpOf(pl)&&adpOf(pl)<900?fmt(adpOf(pl)):'—'}${vsadp!=null&&Math.abs(vsadp)>=3?`<br><span class="vsadp ${vsadp>0?"good":"bad"}" title="${rk?`${pl.pos}${rk.proj} here, but the ${ORD(rk.adp)} ${pl.pos} off the board. ${vsadp>0?`Drafted ${vsadp} ${pl.pos}s later than he ranks — that is the value.`:`Drafted ${-vsadp} ${pl.pos}s earlier than he ranks.`}`:""}">${vsadp>0?"+":""}${vsadp}</span>`:''}</td>
       <td>${agreeChip(pl)}</td>
       ${cols.map(c=>`<td class="r num${pl.so&&pl.so[c]!=null?' edited':''}">${fmt((L[c]||0)*vscale)}</td>`).join("")}
     </tr>`+(open?detailRow(pl,cols.length+6):"");
