@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-30';
+window.__BUILD__='2026-08-27-31';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -9762,13 +9762,24 @@ function simSeason(iters,override,captureIdx){
   const made=new Array(T).fill(0), wins=new Array(T).fill(0), pfs=new Array(T).fill(0);
   const nSeeds=Math.max(1,Math.min(T,SC.playoffTeams||6));
   const medianOn=!!state.settings.medianMatch;   // second W/L each week vs the league median
+  /* A synthetic round-robin (no real schedule loaded — which the Team Grader always forces to grade a
+     team against a hypothetical field) is a SINGLE fixed slate. Reused every iteration, each team's
+     bye-week timing luck bakes in and never averages out: a top-scoring, low-variance team can read
+     mid-pack in wins (measured on a real league — a true #2–3 by all-play/points-for/title-odds fell
+     to a #7 seed purely from which weeks it met which opponent). Relabel teams to schedule slots
+     randomly each iteration so timing washes out and wins track true strength. Real schedules
+     (SC.real) and already-played weeks (wk.done) are left exactly as they are. */
+  const synth=!SC.real;
   for(let it=0;it<N;it++){
     const sf=teamSd.map(m=>{ const o={}; for(const id in m)o[id]=seasonFactor(m[id]); return o; });
     const scoreOf=(ti,units)=>units.reduce((s,u)=>s+u.base*u.mult*(sf[ti][u.pl.id]||1)*weekFactor(u.cv),0);
+    let perm=null;
+    if(synth){ perm=[...Array(T).keys()]; for(let i=T-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=perm[i];perm[i]=perm[j];perm[j]=t; } }
     const w=new Array(T).fill(0), pf=new Array(T).fill(0);
     SC.weeks.forEach(wk=>{
       const sc={};
-      wk.pairs.forEach(([a,b])=>{
+      wk.pairs.forEach(([a0,b0])=>{
+        const a=perm?perm[a0]:a0, b=perm?perm[b0]:b0;   // relabel slots→teams (identity for real schedules)
         let sa,sb;
         if(wk.done&&wk.done[a]!=null&&wk.done[b]!=null){ sa=wk.done[a]; sb=wk.done[b]; }
         else { sa=scoreOf(a,U[wk.week][a]||[]); sb=scoreOf(b,U[wk.week][b]||[]); }
