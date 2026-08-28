@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-22';
+window.__BUILD__='2026-08-27-23';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -611,6 +611,7 @@ window.__BUILD__='2026-08-27-22';
   }
   th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line-2);position:sticky;top:0;background:var(--panel);cursor:pointer;white-space:nowrap;user-select:none}
   th.r,td.r{text-align:right}
+  .fmt-on{text-align:right;background:var(--accent-soft)}   /* your league's column, in the format-compare view */
   td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
   tbody tr:hover{background:var(--panel-2)}
   .plname{font-weight:600}
@@ -2060,6 +2061,9 @@ window.__BUILD__='2026-08-27-22';
             <button data-v="season" class="on">Season</button><button data-v="game">Per game</button><button data-v="ros">Rest of season</button></div>
           <div class="seg" id="s_pdetail" title="Show the projected stat line behind each total">
             <button data-v="0" class="on">Totals</button><button data-v="1">Stat detail</button></div>
+          <div class="seg" id="s_rankfmt" title="Rank the whole board in a scoring format — for reference, WITHOUT changing your league setup">
+            <button data-v="league" class="on">Your format</button><button data-v="0">Std</button><button data-v="0.5">Half</button><button data-v="1">PPR</button></div>
+          <button class="ghost" id="pcompare" title="Show each player's projection and position rank in Standard, Half-PPR and PPR side by side">⚖ Compare formats</button>
           <button class="draftbtn" id="pprint" title="A clean rankings sheet — print it, or 'Save as PDF' from the print dialog" style="width:auto;padding:8px 14px">🖨 Print / PDF</button>
           <button class="ghost" id="pexport" title="Download every visible row as a spreadsheet, including your edits">Export CSV</button>
           <button class="ghost hide" id="presetall" title="Throw away every edit and go back to consensus">Reset my edits</button>
@@ -11163,6 +11167,27 @@ function pviewOf(pl){
   if(v==="ros")  return rosPts(pl,state.ui.seasonWeek||1);
   return p;
 }
+/* Project in an arbitrary reception format WITHOUT touching the league's real scoring — used by the
+   "rank as" toggle and the format-comparison view. Temporarily swaps scoring.rec (synchronous, always
+   restored) so every view basis (season / per-game / rest-of-season) recomputes correctly. */
+function pviewFmt(pl, recOverride){
+  let rf = recOverride;
+  if(rf==null){ const f=state.ui.rankFmt; rf=(f==null||f==="league")?null:+f; }
+  if(rf==null) return pviewOf(pl);
+  const saved=state.settings.scoring.rec; state.settings.scoring.rec=rf;
+  const v=pviewOf(pl); state.settings.scoring.rec=saved;
+  return v;
+}
+/* Each in-league player's projection, OVERALL board rank, and position rank under one reception
+   format. Overall rank is what actually swings with format (a pass-catcher climbs the whole board in
+   PPR); position rank is stabler but useful for "is he a WR1 or a WR3". */
+function ranksForFmt(rec){
+  const scored=state.players.filter(inLeague).map(p=>({p,v:pviewFmt(p,rec)})).sort((a,b)=>b.v-a.v);
+  const out={}, posN={};
+  scored.forEach((x,i)=>{ const pr=(posN[x.p.pos]=(posN[x.p.pos]||0)+1);
+    out[x.p.id]={rank:i+1, posRank:pr, pts:x.v}; });
+  return out;
+}
 /* Two different uncertainties, deliberately kept apart.
    `dist` is how wide THIS PLAYER's own outcomes are — the same projection can still finish
    anywhere in a band. Source disagreement is a different thing entirely: it's whether the
@@ -11576,9 +11601,38 @@ function renderGrades(){
   if(vseg)vseg.querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.v===(state.ui.gView||"board")));
   gradesRefresh();
 }
+/* Format-comparison view: every player's projection + position rank in Standard, Half-PPR and PPR at
+   once, sorted by YOUR league's format (highlighted). Shows how much format swings a pass-catcher —
+   Ja'Marr Chase is a top-3 WR in PPR and a mid-WR2 in Standard, same projection underneath. */
+function renderFormatCompare(){
+  const u=state.ui, leagueRec=+state.settings.scoring.rec||0;
+  const curFmt = leagueRec>=1?1:leagueRec>0?0.5:0;   // snap to the nearest of the three for highlighting
+  let list=state.players.filter(inLeague);
+  if(u.pposFilter!=="ALL")list=list.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
+  if(u.psearch)list=list.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
+  const R={0:ranksForFmt(0),0.5:ranksForFmt(0.5),1:ranksForFmt(1)};
+  list.sort((a,b)=>pviewFmt(b,leagueRec)-pviewFmt(a,leagueRec));
+  const hl=r=>Math.abs(r-curFmt)<1e-9?' class="fmt-on"':' class="r"';
+  const viewWord=u.pview==="game"?"per game":u.pview==="ros"?"rest-of-season":"season";
+  $("#pviewNote").innerHTML=`Each player's projection with <b>overall board rank</b> (and position rank) in all three formats (${viewWord}). Your league is <b>${curFmt>=1?"PPR":curFmt>0?"Half-PPR":"Standard"}</b> — highlighted. Watch a pass-catcher climb the whole board from Standard to PPR — that's the format effect, and it's what your rankings follow.`;
+  $("#phead").innerHTML=`<th class="r">#</th><th>Pos</th><th>Player</th><th class="r">Bye</th>`
+    +`<th${hl(0)}>Std</th><th${hl(0.5)}>Half</th><th${hl(1)}>PPR</th>`;
+  const cell=(p,rec)=>{ const x=R[rec][p.id]; return x?`<b>#${x.rank}</b> <span class="meta">${p.pos}${x.posRank} · ${fmt(x.pts)}</span>`:"—"; };
+  $("#playersBody").innerHTML=list.map((p,i)=>`<tr>
+      <td class="r meta">${i+1}</td>
+      <td><span class="pos ${p.pos}">${p.pos}</span></td>
+      <td>${p.name} <span class="meta">${p.team||""}</span>${p.injNews?injChip(p):""}</td>
+      <td class="r meta">${p.bye||""}</td>
+      <td${hl(0)}>${cell(p,0)}</td>
+      <td${hl(0.5)}>${cell(p,0.5)}</td>
+      <td${hl(1)}>${cell(p,1)}</td></tr>`).join("")
+    ||`<tr><td colspan="7" class="meta" style="padding:14px">No players match this filter.</td></tr>`;
+  const ec=$("#pEditCount"); if(ec)ec.textContent="Standard · Half-PPR · PPR — pts and position rank in each";
+}
 function renderPlayersTab(){
   const u=state.ui, detail=!!u.pdetail, unit=u.pview==="game"?"pts/gm":"pts";
-  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pviewOf(pl)}));
+  if(u.pcompare){ renderFormatCompare(); return; }
+  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pviewFmt(pl)}));
   if(u.pposFilter!=="ALL")rows=rows.filter(r=>u.pposFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.pposFilter);
   if(u.psearch)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.psearch.toLowerCase()));
   const key=u.psort,dir=u.pdir;
@@ -11785,8 +11839,9 @@ function printRankings(){
   let rows=state.players.filter(inLeague);
   if(u.pposFilter!=="ALL")rows=rows.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
   if(u.psearch)rows=rows.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
-  rows.sort((a,b)=>pviewOf(b)-pviewOf(a));
-  const ppr=s.scoring.rec>=1?"PPR":s.scoring.rec>0?"Half-PPR":"Standard";
+  rows.sort((a,b)=>pviewFmt(b)-pviewFmt(a));   // respects the "rank as" format toggle
+  const rf=u.rankFmt, rfRec=(rf==null||rf==="league")?s.scoring.rec:+rf;
+  const ppr=rfRec>=1?"PPR":rfRec>0?"Half-PPR":"Standard";
   const viewLbl={season:"Season total",game:"Per game",ros:"Rest-of-season"}[u.pview]||"Season";
   const posLbl=u.pposFilter==="ALL"?"All positions":u.pposFilter+" only";
   const unit=u.pview==="game"?"/gm":"pts";
@@ -11801,7 +11856,7 @@ function printRankings(){
     </div>
     <table><thead><tr><th class="r">#</th>${showPos?'<th>Pos</th>':''}<th>Player</th><th>Team</th><th class="r">Bye</th><th class="r">Proj (${unit})</th><th class="r">ADP</th></tr></thead>
     <tbody>${rows.map((p,i)=>{ const pr=(posN[p.pos]=(posN[p.pos]||0)+1);
-      return `<tr><td class="r">${i+1}</td>${showPos?`<td>${p.pos}${pr}</td>`:''}<td>${p.name}</td><td>${p.team||""}</td><td class="r">${p.bye||""}</td><td class="r"><b>${fmt(pviewOf(p))}</b></td><td class="r">${p.adp?fmt(p.adp):"—"}</td></tr>`;
+      return `<tr><td class="r">${i+1}</td>${showPos?`<td>${p.pos}${pr}</td>`:''}<td>${p.name}</td><td>${p.team||""}</td><td class="r">${p.bye||""}</td><td class="r"><b>${fmt(pviewFmt(p))}</b></td><td class="r">${p.adp?fmt(p.adp):"—"}</td></tr>`;
     }).join("")}</tbody></table>
     <div class="ps-foot">Projected under your league's scoring. Overall rank #, position rank shown as e.g. RB3.</div>`;
   window.print();
@@ -12510,6 +12565,12 @@ function init(){
     $$(sel+" button").forEach(x=>x.classList.toggle("on",x===b)); fn(b.dataset.v);});
   segWire("#s_pview",v=>{state.ui.pview=v;renderPlayersTab();save();});
   segWire("#s_pdetail",v=>{state.ui.pdetail=+v;renderPlayersTab();save();});
+  segWire("#s_rankfmt",v=>{state.ui.rankFmt=v;renderPlayersTab();save();});
+  if($("#pcompare"))$("#pcompare").onclick=()=>{ state.ui.pcompare=!state.ui.pcompare;
+    $("#pcompare").classList.toggle("on",state.ui.pcompare);
+    $("#s_pdetail").classList.toggle("hide",state.ui.pcompare);   // stat-detail & format-compare are different table shapes
+    $("#s_rankfmt").classList.toggle("hide",state.ui.pcompare);   // compare already shows all formats
+    renderPlayersTab();save(); };
   $("#pexport").onclick=exportProjCSV;
   if($("#pprint"))$("#pprint").onclick=printRankings;
   segWire("#s_injscope",v=>{state.ui.injScope=v;renderInjuries();save();});
