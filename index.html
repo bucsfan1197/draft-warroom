@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-28';
+window.__BUILD__='2026-08-27-29';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -3630,7 +3630,13 @@ function adpOf(pl){
     if(dyn&&sf) v = (pl.adpSdynSf!=null?pl.adpSdynSf:(pl.adpSsf!=null?pl.adpSsf:(pl.adpSdyn!=null?pl.adpSdyn:null)));
     else if(dyn) v = (pl.adpSdyn!=null?pl.adpSdyn:(pl.adpS!=null?pl.adpS:null));
     else v = sf ? (pl.adpSsf!=null?pl.adpSsf:null) : (pl.adpS!=null?pl.adpS:null); }
-  if(v==null) v = sf ? (pl.adpSf!=null?pl.adpSf:pl.adp) : pl.adp; // FFC (default + fallback)
+  if(v==null){ const dyn=state.settings.format==="dynasty";
+    // FFC (default + fallback for every source). In a DYNASTY league, market order is the dynasty ADP
+    // (Sleeper-derived) — young players up, aging vets down — not the redraft ADP. Fall back through
+    // dynasty-SF -> dynasty-1QB -> redraft only when the dynasty field is missing for a player.
+    if(dyn) v = sf ? (pl.adpSdynSf!=null?pl.adpSdynSf:(pl.adpSdyn!=null?pl.adpSdyn:(pl.adpSf!=null?pl.adpSf:pl.adp)))
+                   : (pl.adpSdyn!=null?pl.adpSdyn:pl.adp);
+    else    v = sf ? (pl.adpSf!=null?pl.adpSf:pl.adp) : pl.adp; }
   return v!=null?v:999;
 }
 const ADP_SRC={ffc:"FFC",espn:"ESPN",yahoo:"Yahoo",sleeper:"Sleeper",ecr:"Experts (ECR)",custom:"Custom"};
@@ -11660,12 +11666,15 @@ function leagueValueScores(){
    PPR — the format only tilts it through the reception-sensitive projection. Returns { id: boardPos }
    where a lower number drafts earlier. */
 function formatBoardScores(rec){
-  const savedRec=state.settings.scoring.rec, savedSF=state.settings.roster.SUPERFLEX;
-  state.settings.scoring.rec=rec; state.settings.roster.SUPERFLEX=0;   // value over a 1QB replacement, in this format
+  const savedRec=state.settings.scoring.rec, savedSF=state.settings.roster.SUPERFLEX, savedFmt=state.settings.format;
+  // A 1-QB redraft board in this format: value over a 1QB replacement on current-year points (not the
+  // age-adjusted dynasty value), anchored on redraft 1QB ADP — so it stays a clean redraft reference
+  // even when the league itself is dynasty (the dynasty order lives in the ⭐ Value tab).
+  state.settings.scoring.rec=rec; state.settings.roster.SUPERFLEX=0; state.settings.format="redraft";
   let rows;
   try{ const levels=replacementLevels().levels;
     rows=state.players.filter(inLeague).map(pl=>({pl, v:vorp(pl,levels), a:pl.adp})); }
-  finally{ state.settings.scoring.rec=savedRec; state.settings.roster.SUPERFLEX=savedSF; }
+  finally{ state.settings.scoring.rec=savedRec; state.settings.roster.SUPERFLEX=savedSF; state.settings.format=savedFmt; }
   [...rows].sort((x,y)=>y.v-x.v).forEach((r,i)=>r._vr=i);              // our projection rank (0-best)
   const withAdp=rows.filter(r=>r.a&&r.a<900);
   [...withAdp].sort((x,y)=>x.a-y.a).forEach((r,i)=>r._ar=i);          // real 1QB market ADP rank
@@ -11715,7 +11724,9 @@ function renderPlayersTab(){
                  :`Only weeks ${wkNow}–18 — the points this player still has left to give.`)
       : `Full-season totals for all 18 weeks.`;
   $("#pviewNote").innerHTML= valueMode
-      ? `A <b>0–100 value score for YOUR league</b> (${state.settings.roster.SUPERFLEX?"<b>superflex</b>":"1QB"}, ${leagueRec>=1?"PPR":leagueRec>0?"Half-PPR":"Standard"}): projection value over the replacement you'd otherwise start, <b>blended with your league's real draft market</b> (the ${state.settings.roster.SUPERFLEX?"superflex":"1QB"} ADP). Pure projection undervalues superflex QBs — you must start two and the pool is thin — so the market blend lifts elite QBs to where they actually go. This is your draft-day order; the small number is projected points.`
+      ? (()=>{const dyn=state.settings.format==="dynasty", sf=state.settings.roster.SUPERFLEX;
+          const tag=`${dyn?"<b>dynasty</b> ":""}${sf?"<b>superflex</b>":"1QB"}, ${leagueRec>=1?"PPR":leagueRec>0?"Half-PPR":"Standard"}`;
+          return `A <b>0–100 value score for YOUR league</b> (${tag}): ${dyn?"<b>age-adjusted dynasty</b> value":"projection value"} over the replacement you'd otherwise start, <b>blended with your league's real draft market</b> (the ${dyn?"dynasty ":""}${sf?"superflex":"1QB"} ADP)${dyn?" — so young players rise and aging vets fall, the way dynasty drafts actually treat them":""}. ${sf?"Pure projection undervalues superflex QBs — you must start two and the pool is thin — so the market blend lifts elite QBs to where they actually go. ":""}This is your draft-day order; the small number is projected points.`;})()
     : fmtSel
       ? `<b>${fmtName} draft board</b> — ordered like a real <b>1-QB ${fmtName}</b> league: our own ADP, built from the actual market ADP and corrected by our projections (${fmtRec} pt${fmtRec===1?"":"s"} per catch${fmtRec===0?", receptions don't score":""}). It is <b>not</b> raw points — raw points would put a QB like Josh Allen at #1, and nobody drafts him there. Std / Half / PPR stay close to each other on purpose; the format only tilts pass-catchers up or down. The number beside each player is his projected ${fmtName} points; the <b>order</b> is where he actually goes. ${matchesLeague?`This is a 1-QB board — for your <b>superflex</b> order use <b>⭐ Value (your league)</b>.`:`For your ${state.settings.roster.SUPERFLEX?"<b>superflex</b> ":""}league's own order use <b>⭐ Value (your league)</b>.`} <span class="meta">${baseNote}</span>`
     : baseNote;
