@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-29';
+window.__BUILD__='2026-08-27-30';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -12688,7 +12688,9 @@ function init(){
     $$(sel+" button").forEach(x=>x.classList.toggle("on",x===b)); fn(b.dataset.v);});
   segWire("#s_pview",v=>{state.ui.pview=v;renderPlayersTab();save();});
   segWire("#s_pdetail",v=>{state.ui.pdetail=+v;renderPlayersTab();save();});
-  segWire("#s_rankfmt",v=>{state.ui.rankFmt=v;renderPlayersTab();save();});
+  // Choosing a rank-by mode means "show me THIS ranking", so snap the sort back to the ranking column
+  // (proj/value/board), descending — otherwise a lingering "sort by Player" leaves the list alphabetical.
+  segWire("#s_rankfmt",v=>{state.ui.rankFmt=v;state.ui.psort="proj";state.ui.pdir=-1;renderPlayersTab();save();});
   if($("#pcompare"))$("#pcompare").onclick=()=>{ state.ui.pcompare=!state.ui.pcompare;
     $("#pcompare").classList.toggle("on",state.ui.pcompare);
     $("#s_pdetail").classList.toggle("hide",state.ui.pcompare);   // stat-detail & format-compare are different table shapes
