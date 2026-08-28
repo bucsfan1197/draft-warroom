@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-27';
+window.__BUILD__='2026-08-27-28';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -11652,13 +11652,37 @@ function leagueValueScores(){
     out[r.pl.id]={lval:Math.max(0,Math.round(100*(1-blend/span))), blend, vorp:r.val}; });
   return out;
 }
+/* "Our ADP" draft board for a standard 1QB league of a given reception format (Std/Half/PPR). Ranking a
+   format list by raw projected points is NOT how anyone drafts — in Standard it puts Josh Allen at #1
+   because QBs pile up raw points, yet his real 1QB ADP is ~34. So the format lists are ordered like an
+   actual board: anchored on the real 1QB market ADP and corrected by our projection's value over
+   replacement. Market dominates (0.62) so the board stays realistic and barely moves between Std/Half/
+   PPR — the format only tilts it through the reception-sensitive projection. Returns { id: boardPos }
+   where a lower number drafts earlier. */
+function formatBoardScores(rec){
+  const savedRec=state.settings.scoring.rec, savedSF=state.settings.roster.SUPERFLEX;
+  state.settings.scoring.rec=rec; state.settings.roster.SUPERFLEX=0;   // value over a 1QB replacement, in this format
+  let rows;
+  try{ const levels=replacementLevels().levels;
+    rows=state.players.filter(inLeague).map(pl=>({pl, v:vorp(pl,levels), a:pl.adp})); }
+  finally{ state.settings.scoring.rec=savedRec; state.settings.roster.SUPERFLEX=savedSF; }
+  [...rows].sort((x,y)=>y.v-x.v).forEach((r,i)=>r._vr=i);              // our projection rank (0-best)
+  const withAdp=rows.filter(r=>r.a&&r.a<900);
+  [...withAdp].sort((x,y)=>x.a-y.a).forEach((r,i)=>r._ar=i);          // real 1QB market ADP rank
+  const noAdp=withAdp.length + (rows.length-withAdp.length)/2;        // undrafted players sit mid-pack
+  const out={};
+  rows.forEach(r=>{ const ar=(r._ar!=null)?r._ar:noAdp; out[r.pl.id]=0.62*ar+0.38*r._vr; });
+  return out;
+}
 function renderPlayersTab(){
   const u=state.ui, detail=!!u.pdetail, unit=u.pview==="game"?"pts/gm":"pts";
   if(u.pcompare){ renderFormatCompare(); return; }
   const valueMode = u.rankFmt==="value";
+  const fmtSel=(u.rankFmt==="0"||u.rankFmt==="0.5"||u.rankFmt==="1"), fmtRec=fmtSel?+u.rankFmt:null;
   const vlevels = valueMode ? replacementLevels().levels : null;
+  const board = fmtSel ? formatBoardScores(fmtRec) : null;
   let rows=state.players.filter(inLeague).map(pl=>({pl,proj:valueMode?pviewOf(pl):pviewFmt(pl),
-    val:valueMode?vorp(pl,vlevels):null}));
+    val:valueMode?vorp(pl,vlevels):null, _board:board?board[pl.id]:null}));
   if(valueMode){
     const lv=leagueValueScores();
     rows.forEach(r=>{ const s=lv[r.pl.id]; r._blend=s.blend; r.lval=s.lval; });
@@ -11668,7 +11692,7 @@ function renderPlayersTab(){
   const key=u.psort,dir=u.pdir;
   rows.sort((a,b)=>{
     if(key==="name"||key==="pos"||key==="team")return dir*(a.pl[key]).localeCompare(b.pl[key]);
-    if(key==="proj")return valueMode ? dir*(b._blend-a._blend) : dir*(a.proj-b.proj);   // value mode: blended league value (lower _blend = better)
+    if(key==="proj")return valueMode ? dir*(b._blend-a._blend) : fmtSel ? dir*(b._board-a._board) : dir*(a.proj-b.proj);   // value/format modes rank by blended board (lower = better)
     if(key==="adp")return dir*((adpOf(a.pl)||999)-(adpOf(b.pl)||999));                // superflex-aware ADP, not raw 1QB
     if(key==="vsadp")return dir*((adpOf(b.pl)||999)-(adpOf(a.pl)||999));
     return dir*((a.pl[key]||0)-(b.pl[key]||0));
@@ -11681,7 +11705,6 @@ function renderPlayersTab(){
      showing raw points in THAT format, and the header + note have to say so out loud — otherwise
      every format looks identical to the others and to the league "Points" view (especially when the
      league IS that format), which reads as a broken control. */
-  const rf=u.rankFmt, fmtSel=(rf==="0"||rf==="0.5"||rf==="1"), fmtRec=fmtSel?+rf:null;
   const fmtName=fmtRec===1?"PPR":fmtRec===0.5?"Half-PPR":fmtRec===0?"Standard":null;
   const fmtShort=fmtRec===1?"PPR":fmtRec===0.5?"Half":fmtRec===0?"Std":null;
   const leagueRec=state.settings.scoring.rec, matchesLeague=fmtSel&&fmtRec===leagueRec;
@@ -11694,7 +11717,7 @@ function renderPlayersTab(){
   $("#pviewNote").innerHTML= valueMode
       ? `A <b>0–100 value score for YOUR league</b> (${state.settings.roster.SUPERFLEX?"<b>superflex</b>":"1QB"}, ${leagueRec>=1?"PPR":leagueRec>0?"Half-PPR":"Standard"}): projection value over the replacement you'd otherwise start, <b>blended with your league's real draft market</b> (the ${state.settings.roster.SUPERFLEX?"superflex":"1QB"} ADP). Pure projection undervalues superflex QBs — you must start two and the pool is thin — so the market blend lifts elite QBs to where they actually go. This is your draft-day order; the small number is projected points.`
     : fmtSel
-      ? `<b>${fmtName} scoring</b> — everyone ranked by raw ${fmtName} points (${fmtRec} pt${fmtRec===1?"":"s"} per catch${fmtRec===0?" — receptions don't score":""}). ${fmtRec>=1?"Pass-catchers climb the board; pure runners and QBs slide.":fmtRec>0?"A middle ground — receptions count half.":"Receptions are worth nothing, so QBs and pure runners rise and pass-catchers fall."} ${matchesLeague?`This is <b>your league's own format</b>, so these numbers match the "Points" view.`:`These are pure scoring-format points, <b>not</b> adjusted for your ${state.settings.roster.SUPERFLEX?"superflex ":""}roster — for that, use <b>⭐ Value (your league)</b>.`} <span class="meta">${baseNote}</span>`
+      ? `<b>${fmtName} draft board</b> — ordered like a real <b>1-QB ${fmtName}</b> league: our own ADP, built from the actual market ADP and corrected by our projections (${fmtRec} pt${fmtRec===1?"":"s"} per catch${fmtRec===0?", receptions don't score":""}). It is <b>not</b> raw points — raw points would put a QB like Josh Allen at #1, and nobody drafts him there. Std / Half / PPR stay close to each other on purpose; the format only tilts pass-catchers up or down. The number beside each player is his projected ${fmtName} points; the <b>order</b> is where he actually goes. ${matchesLeague?`This is a 1-QB board — for your <b>superflex</b> order use <b>⭐ Value (your league)</b>.`:`For your ${state.settings.roster.SUPERFLEX?"<b>superflex</b> ":""}league's own order use <b>⭐ Value (your league)</b>.`} <span class="meta">${baseNote}</span>`
     : baseNote;
   const edits=state.players.filter(p=>p.so||(p.override!=null&&p.override!=="")).length;
   $("#pEditCount").textContent=edits?`${edits} player${edits>1?"":""} edited by you`:"showing the ESPN + Sleeper consensus";
@@ -11719,7 +11742,7 @@ function renderPlayersTab(){
   // One shared axis so the range bars are comparable down the column, not each self-scaled.
   const maxC=Math.max(1,...rows.map(r=>r.pl.dist?r.proj*r.pl.dist.c:r.proj));
   const sameP=u.pposFilter!=="ALL"&&u.pposFilter!=="FLEX";
-  const breaks=(sameP&&key==="proj"&&dir===-1)?tierBreaks(rows.map(r=>r.proj)):new Set();
+  const breaks=(sameP&&key==="proj"&&dir===-1&&!fmtSel)?tierBreaks(rows.map(r=>r.proj)):new Set();
   const cols=detail&&sameP?statCols(u.pposFilter):[];
 
   $("#phead").innerHTML=`<th data-psort="rank">#</th><th data-psort="name">Player</th>`
@@ -11889,11 +11912,15 @@ function buildRankingRows(){
   if(u.pposFilter!=="ALL")list=list.filter(p=>u.pposFilter==="FLEX"?FLEX_POS.includes(p.pos):p.pos===u.pposFilter);
   if(u.psearch)list=list.filter(p=>p.name.toLowerCase().includes(u.psearch.toLowerCase()));
   const valueMode=u.rankFmt==="value";
+  const fmtSel=(u.rankFmt==="0"||u.rankFmt==="0.5"||u.rankFmt==="1");
   const rec=(u.rankFmt==null||u.rankFmt==="league"||valueMode)?s.scoring.rec:+u.rankFmt;
+  const board=fmtSel?formatBoardScores(rec):null;
   const rows=list.map(pl=>{const v=lv[pl.id]||{};
-    return {pl, lval:v.lval||0, blend:v.blend||0,
+    return {pl, lval:v.lval||0, blend:v.blend||0, board:board?board[pl.id]:0,
       std:pviewFmt(pl,0), half:pviewFmt(pl,0.5), ppr:pviewFmt(pl,1), sel:pviewFmt(pl,rec), adp:adpOf(pl)};});
-  rows.sort((a,b)=> valueMode ? (a.blend-b.blend) : (b.sel-a.sel));   // value: lower blend = better
+  // Value: lower blend = earlier. Format modes: order by the "our ADP" draft board (a realistic order,
+  // not raw points). League Points: by projected points.
+  rows.sort((a,b)=> valueMode ? (a.blend-b.blend) : fmtSel ? (a.board-b.board) : (b.sel-a.sel));
   const posN={}; rows.forEach(r=>{ r.posRank=(posN[r.pl.pos]=(posN[r.pl.pos]||0)+1); });
   const leagueFmt=s.scoring.rec>=1?"ppr":s.scoring.rec>0?"half":"std";
   const selKey=valueMode?"value":(rec>=1?"ppr":rec>0?"half":"std");
