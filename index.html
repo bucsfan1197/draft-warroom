@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-31';
+window.__BUILD__='2026-08-27-32';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -10742,7 +10742,10 @@ function runGrader(){
     TRADE.teams=field; TRADE.me=0; TRADE.schedule=null; TRADE.slots=slots; TRADE.leagueId=null;
     SEASONSIM={key:null,val:null}; SIMCACHE={key:null};
     const S=simSeason(500,null,0), me=S[0];      // captureIdx 0 → SEASONSIM_DIST = my per-season win counts
-    const order=[...S.keys()].sort((a,b)=>(S[b].wins-S[a].wins)||(S[b].pf-S[a].pf));
+    // Seed by projected points per week (schedule-independent strength), matching the League power
+    // rankings — wins/playoff% are noisier and, on a real schedule, carry schedule luck a grade shouldn't.
+    const ppgOf=t=>S[t].pf/Math.max(1,S[t].games);
+    const order=[...S.keys()].sort((a,b)=>(ppgOf(b)-ppgOf(a))||(S[b].wins-S[a].wins));
     const seed=order.indexOf(0)+1;
     // record RANGE from the win distribution (15th–85th) — not just the mean
     let recLo=me.wins, recHi=me.wins;
@@ -10837,13 +10840,17 @@ function renderGraderResults(r){
   if($("#grAiOut"))$("#grAiOut").innerHTML="";                          // fresh grade → clear old write-up
   if($("#grAiBtn")){ $("#grAiBtn").classList.toggle("hide",!aiConfigured()); $("#grAiBtn").textContent="🤖 Strengths & weaknesses"; }
   if(r.err){box.innerHTML=`<div class="emptystate">Couldn't grade this team: ${r.err}</div>`;return;}
-  const losses=Math.max(0,r.games-r.wins), grade=grLetter(r.playoff);
+  // Grade off your RANK in the field (seed percentile), not absolute playoff odds. In a 12-team league
+  // even the best roster tops out ~60-70% playoff odds, so an odds-based letter caps everyone at B/C and
+  // a genuine #2 team reads "B". Seed percentile is league-size-independent: #1 ≈ A, median ≈ C.
+  const losses=Math.max(0,r.games-r.wins);
+  const seedPct=r.teams>1?Math.round((r.teams-r.seed)/(r.teams-1)*100):100, grade=grLetter(seedPct);
   const ctx=$("#grResultCtx"); if(ctx)ctx.textContent=`${GRADER.name||"Your team"} · vs a ${r.teams}-team ${r.real?"real":"typical"} field`;
   const posStr={}; r.starters.forEach(u=>{posStr[u.pl.pos]=(posStr[u.pl.pos]||0)+u.base*u.mult;});
   const rlo=r.recLo!=null?Math.round(r.recLo):null, rhi=r.recHi!=null?Math.round(r.recHi):null;
   box.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:14px">
-      <div class="tier ${gradeCls(r.playoff/100)}" style="font-size:32px;font-weight:800;padding:8px 18px;border-radius:14px;min-width:56px;text-align:center">${grade}</div>
+      <div class="tier ${gradeCls(seedPct/100)}" style="font-size:32px;font-weight:800;padding:8px 18px;border-radius:14px;min-width:56px;text-align:center">${grade}</div>
       <div><div class="eyebrow">Projected record</div><div style="font-size:26px;font-weight:700">${r.wins.toFixed(1)}–${losses.toFixed(1)}</div><div class="meta">over ${r.games} games${rlo!=null&&rhi!=null&&rhi>rlo?` · likely ${rlo}–${r.games-rlo} to ${rhi}–${r.games-rhi}`:""}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:14px">
@@ -10896,11 +10903,14 @@ function renderGraderPower(){
   setTimeout(()=>{
     try{
       const svS=SEASONSIM; SEASONSIM={key:null,val:null};
-      const S=simSeason(400); SEASONSIM=svS;
+      const S=simSeason(1500); SEASONSIM=svS;   // 400 was too few — the tightly-packed middle reshuffled every run
       const meI=myTeamIdx();
+      // Rank by projected POINTS PER WEEK — the schedule-independent strength signal. Playoff% is a
+      // make/miss threshold with high variance (and moves with schedule luck), so ranking on it made a
+      // true #2 read as #6 on a noisy run; it's shown as info, not used as the sort key.
       const rows=S.map((s,i)=>({i,name:(TRADE.teams[i]&&TRADE.teams[i].name)||("Team "+(i+1)),
-        playoff:Math.round(s.playoff*100),wins:s.wins,pf:s.pf,games:Math.max(1,s.games)}))
-        .sort((a,b)=>(b.playoff-a.playoff)||(b.wins-a.wins)||(b.pf-a.pf));
+        playoff:Math.round(s.playoff*100),wins:s.wins,pf:s.pf,games:Math.max(1,s.games),ppg:s.pf/Math.max(1,s.games)}))
+        .sort((a,b)=>(b.ppg-a.ppg)||(b.wins-a.wins)||(b.playoff-a.playoff));
       box.innerHTML=rows.map((r,rank)=>`<div class="kv"${r.i===meI?' style="background:var(--accent-soft);border-radius:8px;padding:6px 8px"':''}>
           <span><b class="num" style="width:26px;display:inline-block">#${rank+1}</b> ${r.i===meI?"★ ":""}${r.name} <span class="meta">${r.wins.toFixed(1)}–${(r.games-r.wins).toFixed(1)} · ${fmt(r.pf/r.games)} pts/wk</span></span>
           <span class="chip ${r.playoff>=70?"good":r.playoff>=35?"":"crit"}">${r.playoff}% playoff</span></div>`).join("")
