@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-32';
+window.__BUILD__='2026-08-27-33';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -4249,7 +4249,10 @@ async function sleeperConnect(){
     let scoreMsg="";
     if(d.league_id){ try{ const lg=await SJ(`https://api.sleeper.app/v1/league/${d.league_id}`);
       if(lg&&!lg.error){ const n=applyLeagueSettings(lg); if(lg.name)TRADE.leagueName=lg.name;
-        if(n)scoreMsg=` · scoring imported`; } }catch(e){} }
+        // Say out loud which FORMAT was detected — a dynasty/keeper/superflex draft must re-value the whole
+        // board, and the user needs to see that it switched (it's the difference between a redraft and a
+        // dynasty ranking). applyLeagueSettings already set state.settings.format from the league type.
+        scoreMsg=` · ${isDyno()?"dynasty":keeperIsOn()?"keeper":"redraft"}${state.settings.roster.SUPERFLEX?" superflex":""}${n?", scoring imported":""}`; } }catch(e){} }
     let slotMsg=scoreMsg;
     if(user){
       try{
@@ -4264,6 +4267,11 @@ async function sleeperConnect(){
     try{localStorage.setItem("ffwr_syncid",id);localStorage.setItem("ffwr_syncuser",user);}catch(e){}
     $("#syncBtn").textContent="Disconnect";
     loadSetupInputs();
+    // Refresh the WHOLE app to the imported league — format (dynasty/keeper), superflex, teams, scoring —
+    // right now, before pulling picks. syncTick also renders, but only if its pick-fetch succeeds, so a
+    // network hiccup there used to leave the Draft Room showing the old (redraft) board even though the
+    // settings had already changed. This guarantees the board switches over the moment you connect.
+    renderAll();
     await syncTick(true,slotMsg);
     if(SYNC.timer)clearInterval(SYNC.timer);
     SYNC.timer=setInterval(()=>syncTick(false,slotMsg),3000);
