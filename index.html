@@ -5,7 +5,7 @@
    "missing" even though the live data had them. This checks the server for a newer build and, if the
    running copy is behind, reloads once to a cache-busting URL. BUMP __BUILD__ on every index.html
    change. Kept in the first 4KB so the Range fetch below can read it cheaply. */
-window.__BUILD__='2026-08-27-34';
+window.__BUILD__='2026-08-27-35';
 (function(){try{
   fetch(location.pathname+'?__v='+Date.now(),{cache:'no-store',headers:{Range:'bytes=0-4095'}})
     .then(function(r){return r.text();})
@@ -4942,22 +4942,13 @@ function renderAvail(){
   const {levels}=replacementLevels();
   const drafted=draftedIds();
   const u=state.ui;
-  /* Market-anchored board order. Pure VORP badly misranks superflex/dynasty QBs: Josh Allen is the 1.01
-     in a superflex draft (ADP #1) but his VORP is only ~11th, and Lamar ~40th — because dynasty compresses
-     QB value-over-replacement (every QB holds value for years, so the replacement QB is nearly as good on
-     paper). The real draft market prices that scarcity in. So the default board blends the VORP order with
-     the league's own (superflex/dynasty-aware) ADP, ADP-dominant, the way players actually come off the
-     board — while the VORP column still flags who's a genuine value. Auction keeps the pure-$ VORP order. */
-  const pool=state.players.filter(inLeague);
-  const board={};
-  if(!state.settings.auction){
-    const vr={}; [...pool].sort((a,b)=>vorp(b,levels)-vorp(a,levels)).forEach((p,i)=>vr[p.id]=i);
-    const withAdp=pool.filter(p=>adpOf(p)&&adpOf(p)<900), ar={};
-    [...withAdp].sort((a,b)=>adpOf(a)-adpOf(b)).forEach((p,i)=>ar[p.id]=i);
-    const noAdp=withAdp.length+(pool.length-withAdp.length)/2;
-    pool.forEach(p=>{ const a=(ar[p.id]!=null)?ar[p.id]:noAdp; board[p.id]=0.6*a+0.4*(vr[p.id]||0); });
-  }
-  let rows=pool.map(pl=>({pl,proj:pts(pl),vorp:vorp(pl,levels),board:board[pl.id]||0,age:pl.age||0,drafted:drafted.has(pl.id)}));
+  /* The board is ordered by the league's own ADP — the real draft/consensus market, which is
+     superflex- and dynasty-aware (adpOf → the dynasty-superflex market for a dynasty SF league). Pure
+     VORP badly misranks a dynasty draft: it buries Josh Allen (the 1.01, ADP #1) around #11 and Lamar
+     (#9) near #40, because dynasty compresses value-over-replacement (every QB holds value for years).
+     Ordering by ADP means the board matches the ADP column and how players actually come off the board,
+     while the VORP column still flags who's a value vs that order. Auction uses the pure-$ VORP order. */
+  let rows=state.players.filter(inLeague).map(pl=>({pl,proj:pts(pl),vorp:vorp(pl,levels),age:pl.age||0,drafted:drafted.has(pl.id)}));
   if(u.posFilter!=="ALL")rows=rows.filter(r=>u.posFilter==="FLEX"?FLEX_POS.includes(r.pl.pos):r.pl.pos===u.posFilter);
   if(u.search)rows=rows.filter(r=>r.pl.name.toLowerCase().includes(u.search.toLowerCase()));
   if(u.hideDrafted)rows=rows.filter(r=>!r.drafted);
@@ -4967,10 +4958,10 @@ function renderAvail(){
     if(key==="name"){av=a.pl.name;bv=b.pl.name;return dir*av.localeCompare(bv);}
     if(key==="pos"){av=a.pl.pos;bv=b.pl.pos;return dir*av.localeCompare(bv);}
     if(key==="adp"){av=adpOf(a.pl);bv=adpOf(b.pl);}
-    // Default board sort (and the VORP header) ranks by the market-anchored blend — lower blend drafts
-    // earlier — so the board matches real draft order. Auction has no blend and falls back to raw VORP.
-    else if((key==="rank"||key==="vorp")&&!state.settings.auction){return dir*(b.board-a.board);}
-    else if(key==="rank"){av=a.vorp;bv=b.vorp;}
+    // Default board order = ADP (superflex/dynasty-aware) so it matches the ADP column and real draft
+    // order; pure VORP buries dynasty-SF QBs. Auction keeps the raw-$ VORP order.
+    else if((key==="rank"||key==="vorp")&&!state.settings.auction){return dir*(adpOf(b.pl)-adpOf(a.pl));}
+    else if(key==="rank"||key==="vorp"){av=a.vorp;bv=b.vorp;}
     else{av=a[key];bv=b[key];}
     return dir*(av-bv);
   });
@@ -4980,7 +4971,11 @@ function renderAvail(){
      and it costs no extra width. */
   const vh=$("#vorpHead");if(vh)vh.innerHTML=isDyno()?'Better by<span class="thsub">next 4 yrs</span>':"Better by";  const auct=state.settings.auction, actx=auct?auctionCtx():null;
   const ah=$("#adpHead");if(ah)ah.textContent=auct?"$ Val":"ADP";
-  $("#availCount").textContent=auct?`${rows.length} shown · $ values${actx.infl!==1?` · inflation ${actx.infl.toFixed(2)}×`:''}`:`${rows.length} shown · ADP: ${ADP_SRC[state.settings.adpSource||'ffc']} ${isSF()?'SF':'1QB'}`;
+  // Name the ADP for what it actually is. In a dynasty/keeper league adpOf serves the DYNASTY market
+  // (dynasty-superflex when SF), not the selected redraft source — labeling it "FFC SF" made a correct
+  // dynasty board look like it was using redraft ADP.
+  const adpLbl = isDyno()?`Dynasty ${isSF()?'SF':'1QB'}` : keeperIsOn()?`Keeper ${isSF()?'SF':'1QB'}` : `${ADP_SRC[state.settings.adpSource||'ffc']} ${isSF()?'SF':'1QB'}`;
+  $("#availCount").textContent=auct?`${rows.length} shown · $ values${actx.infl!==1?` · inflation ${actx.infl.toFixed(2)}×`:''}`:`${rows.length} shown · ADP: ${adpLbl}`;
   const abar=$("#auctionBar");
   if(auct){
     abar.classList.remove("hide");
